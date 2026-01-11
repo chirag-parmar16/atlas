@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build Output
+dist/
+out/
+build/
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# Atlas Specific
+session-*.mp4
+visual-manual-*.md
+heavy-fullstack/
+manual-python-project/
+test-projects/

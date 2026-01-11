@@ -1,0 +1,25 @@
+# Source Code (we only ship compiled JS in dist/)
+src/
+tsconfig.json
+nodemon.json
+
+# Development & Config
+.gitignore
+.npmignore
+.github/
+.vscode/
+jest.config.js
+.eslintrc.js
+.prettierrc
+
+# Documentation & Diagrams (Keep README and LICENSE)
+diagrams/
+docs/
+heavy-fullstack/
+manual-python-project/
+test-projects/
+
+# Temporary/Output Files
+*.mp4
+*.log
+visual-manual-*.md

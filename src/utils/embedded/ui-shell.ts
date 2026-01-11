@@ -1,0 +1,452 @@
+
+export const UI_SHELL = `
+// ui-shell.js
+(function () {
+    // Prevent double injection
+    if (window.Atlas) return;
+
+    // --- 1. Hardened Runtime & API ---
+    
+    // Severity Enum
+    const SEVERITY = { INFO: 0, WARN: 1, ERROR: 2 };
+
+    // Internal Protected State
+    const __STATE__ = {
+        tools: [],
+        violations: []
+    };
+
+    // Expose State for extraction (Namespace)
+    Object.defineProperty(window, '__ATLAS__', {
+        value: __STATE__,
+        writable: false,
+        configurable: false
+    });
+
+    // Public Controlled API
+    const AtlasAPI = {
+        Severity: SEVERITY,
+        
+        addTool: function (name, renderCallback, onShow) {
+            __STATE__.tools.push({ name, renderCallback, onShow });
+        },
+
+        reportViolation: function (source, message, level) {
+            const v = { source, message, level, timestamp: Date.now() };
+            __STATE__.violations.push(v);
+            updateStatusIndicator(); // Defined later
+            window.dispatchEvent(new CustomEvent('atlas-violation', { detail: v }));
+        }
+    };
+
+    // Lock global API
+    Object.defineProperty(window, 'Atlas', {
+        value: AtlasAPI,
+        writable: false,
+        configurable: false
+    });
+
+    // --- Global Error Handlers ---
+    window.onerror = function (msg, url, lineNo, columnNo, error) {
+        if (window.Atlas && window.Atlas.reportViolation) {
+            // Shorten URL to just filename
+            const filename = url ? url.split('/').pop() : 'inline';
+            const txt = \`Uncaught: \${msg} @ \${filename}:\${lineNo}\`;
+            window.Atlas.reportViolation('Runtime', txt, window.Atlas.Severity.ERROR);
+        }
+    };
+
+    window.addEventListener('unhandledrejection', function (event) {
+        if (window.Atlas && window.Atlas.reportViolation) {
+            const reason = event.reason ? (event.reason.stack || event.reason) : 'Unknown reason';
+            // Truncate long stacks
+            const shortReason = String(reason).split('\\n')[0]; 
+            window.Atlas.reportViolation('Promise', \`Unhandled: \${shortReason}\`, window.Atlas.Severity.WARN);
+        }
+    });
+
+    // --- UI Helpers ---
+    let statusBtn = null;
+    
+    function updateStatusIndicator() {
+        if (!statusBtn) return;
+        
+        const counts = { [SEVERITY.INFO]: 0, [SEVERITY.WARN]: 0, [SEVERITY.ERROR]: 0 };
+        __STATE__.violations.forEach(v => counts[v.level] = (counts[v.level] || 0) + 1);
+
+        // Determine Status Color
+        let color = '#10b981'; // Green
+        let icon = '✔';
+        
+        if (counts[SEVERITY.ERROR] > 0) {
+            color = '#ef4444'; // Red
+            icon = '⚠';
+        } else if (counts[SEVERITY.WARN] > 0) {
+            color = '#f59e0b'; // Yellow
+            icon = '⚠';
+        }
+
+        const iconEl = statusBtn.querySelector('.icon');
+        const countEl = statusBtn.querySelector('.count');
+        
+        if (iconEl && countEl) {
+             iconEl.style.color = color;
+             iconEl.innerText = icon;
+             countEl.innerText = counts[SEVERITY.ERROR] + counts[SEVERITY.WARN];
+        }
+        
+        // Pulse effect on new violation
+        statusBtn.classList.add('pulse');
+        setTimeout(() => statusBtn.classList.remove('pulse'), 500);
+    }
+
+    // Load CSS
+    const css = \`
+        :host { font-family: 'Inter', system-ui, sans-serif; }
+        * { box-sizing: border-box; }
+        /* Container is relative so absolute menu positions against it */
+        .container { position: relative; display: flex; flex-direction: column; align-items: flex-end; }
+        
+        .pill-btn {
+          background: rgba(20, 20, 20, 0.90); backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.1); color: white;
+          padding: 8px 16px; border-radius: 9999px; cursor: grab;
+          font-weight: 600; font-size: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+          display: flex; align-items: center; gap: 8px; transition: transform 0.1s;
+          user-select: none;
+          /* Ensure button is always on top of menu visually if overlapped */
+          position: relative; 
+          z-index: 2;
+        }
+        .pill-btn:active { cursor: grabbing; transform: scale(0.98); }
+        .pill-btn:hover { background: rgba(30, 30, 30, 0.95); }
+        .dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; }
+        
+        .menu {
+          position: absolute; /* Floating relative to the button */
+          width: 600px; height: 500px;
+          background: rgba(20, 20, 20, 0.95); backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+          display: flex; flex-direction: column; overflow: hidden;
+          opacity: 0; pointer-events: none; 
+          transform: scale(0.95);
+          transition: opacity 0.2s, transform 0.2s;
+          z-index: 1;
+        }
+        .menu.visible { opacity: 1; pointer-events: auto; transform: scale(1); }
+        
+        .tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); }
+        .tab {
+            flex: 1; padding: 10px; text-align: center; cursor: pointer; color: #fff; font-size: 12px;
+            background: transparent; border: none; opacity: 0.6; transition: opacity 0.2s;
+        }
+        .tab:hover { opacity: 0.9; }
+        .tab.active { opacity: 1; border-bottom: 2px solid #10b981; font-weight: bold; background: rgba(255,255,255,0.05); }
+        
+        .content { flex: 1; overflow-y: auto; padding: 12px; position: relative; }
+        .panel { display: none; height: 100%; flex-direction: column; gap: 10px; }
+        .panel.active { display: flex; }
+        
+        button.action-btn {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            color: #eee; padding: 8px; border-radius: 6px; cursor: pointer; text-align: left;
+            font-size: 13px; transition: background 0.2s;
+        }
+        button.action-btn:hover { background: rgba(255,255,255,0.1); }
+    \`;
+
+    window.addEventListener('DOMContentLoaded', () => {
+        const host = document.createElement('div');
+        host.id = 'atlas-tools-host';
+        host.style.position = 'fixed';
+        // Initial position
+        host.style.bottom = '20px';
+        host.style.right = '20px';
+        host.style.zIndex = '2147483647';
+        document.body.appendChild(host);
+
+        const shadow = host.attachShadow({ mode: 'open' });
+        const style = document.createElement('style');
+        style.textContent = css;
+        shadow.appendChild(style);
+
+        const container = document.createElement('div');
+        container.className = 'container';
+
+        const menu = document.createElement('div');
+        menu.className = 'menu';
+
+        // Tabs & Content
+        const tabs = document.createElement('div');
+        tabs.className = 'tabs';
+        menu.appendChild(tabs);
+
+        const content = document.createElement('div');
+        content.className = 'content';
+        menu.appendChild(content);
+
+        // Render plugins
+        __STATE__.tools.forEach((tool, index) => {
+            const btn = document.createElement('button');
+            btn.className = 'tab';
+            btn.innerText = tool.name;
+            btn.onclick = () => switchTab(tool.name);
+            tabs.appendChild(btn);
+
+            const panel = document.createElement('div');
+            panel.className = 'panel';
+            panel.id = \`panel-\${tool.name}\`;
+
+            if (tool.renderCallback) {
+                const el = tool.renderCallback();
+                if (el) panel.appendChild(el);
+            }
+            content.appendChild(panel);
+
+            if (index === 0) {
+                btn.classList.add('active');
+                panel.classList.add('active');
+            }
+        });
+
+        // Pill Button
+        const mainBtn = document.createElement('button');
+        mainBtn.className = 'pill-btn';
+        mainBtn.innerHTML = 'Atlas <span class="icon" style="margin-left:8px; color:#10b981">✔</span> <span class="count" style="margin-left:4px; font-family:monospace; opacity:0.8">0</span>';
+        
+        statusBtn = mainBtn; // Redirect status updates to main button
+
+        // RECORDER STATE
+        let recordingTimer = null;
+        let recordingStartTime = 0;
+
+        window.Atlas.setRecordingState = (isActive) => {
+            if (isActive) {
+                recordingStartTime = Date.now();
+                mainBtn.classList.add('recording');
+                menu.classList.remove('visible'); // Auto-Minimize
+                updateTimer();
+                recordingTimer = setInterval(updateTimer, 1000);
+            } else {
+                mainBtn.classList.remove('recording');
+                clearInterval(recordingTimer);
+                recordingTimer = null;
+                // Reset UI
+                mainBtn.innerHTML = 'Atlas <span class="icon" style="margin-left:8px; color:#10b981">✔</span> <span class="count" style="margin-left:4px; font-family:monospace; opacity:0.8">0</span>';
+                updateStatusIndicator(); // Restore status
+            }
+        };
+
+        function updateTimer() {
+            if (!recordingTimer) return;
+            const diff = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const m = Math.floor(diff / 60).toString().padStart(2, '0');
+            const s = Math.floor(diff % 60).toString().padStart(2, '0');
+            
+            mainBtn.innerHTML = \`
+                <span style="color:#ef4444; margin-right:6px;">●</span> REC \${m}:\${s}
+                <button id="pill-stop-btn" style="margin-left:8px; background:rgba(255,255,255,0.2); border:none; color:white; border-radius:4px; padding:2px 6px; cursor:pointer; font-size:10px;">STOP</button>
+            \`;
+            
+            // Re-bind Stop Button
+            const stopBtn = mainBtn.querySelector('#pill-stop-btn');
+            if (stopBtn) {
+                stopBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    // trigger stop via event
+                    window.dispatchEvent(new CustomEvent('atlas-stop-recording'));
+                };
+            }
+        }
+        
+
+
+        // Add CSS for pulse
+        const pulseStyle = document.createElement('style');
+        pulseStyle.textContent = \`
+            .pill-btn.pulse { animation: pulse-red 0.5s ease-in-out; }
+            @keyframes pulse-red {
+                0% { transform: scale(1); }
+                50% { transform: scale(1.1); }
+                100% { transform: scale(1); }
+            }
+        \`;
+        shadow.appendChild(pulseStyle);
+
+        container.appendChild(menu);
+        container.appendChild(mainBtn);
+        shadow.appendChild(container);
+
+        // --- Drag Logic ---
+        let isDragging = false;
+        let startX, startY, initialLeft, initialTop;
+
+        mainBtn.addEventListener('mousedown', (e) => {
+            const rect = host.getBoundingClientRect();
+            
+            // Lock current position in fixed pixels
+            host.style.bottom = 'auto';
+            host.style.right = 'auto';
+            host.style.left = rect.left + 'px';
+            host.style.top = rect.top + 'px';
+
+            initialLeft = rect.left;
+            initialTop = rect.top;
+            startX = e.clientX;
+            startY = e.clientY;
+            isDragging = false;
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+
+        function onMouseMove(e) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+
+            if (!isDragging && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+                isDragging = true;
+                menu.classList.remove('visible');
+            }
+
+            if (isDragging) {
+                e.preventDefault();
+                host.style.left = (initialLeft + dx) + 'px';
+                host.style.top = (initialTop + dy) + 'px';
+            }
+        }
+
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            updateQuadrant(); // Re-orient after drop
+            saveState(); // Save new position
+            setTimeout(() => { isDragging = false; }, 50);
+        }
+
+        // --- Smart Positioning (Absolute Logic) ---
+        function updateQuadrant() {
+            const rect = mainBtn.getBoundingClientRect();
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+
+            const isRightHalf = rect.left > winW / 2;
+            const isBottomHalf = rect.top > winH / 2;
+            const gap = '12px';
+
+            // Reset all
+            menu.style.top = '';
+            menu.style.bottom = '';
+            menu.style.left = '';
+            menu.style.right = '';
+
+            if (isBottomHalf) {
+                 // Open UPWARDS
+                 menu.style.bottom = \`calc(100% + \${gap})\`;
+            } else {
+                 // Open DOWNWARDS
+                 menu.style.top = \`calc(100% + \${gap})\`;
+            }
+
+            if (isRightHalf) {
+                // Align RIGHT edge
+                menu.style.right = '0';
+            } else {
+                // Align LEFT edge
+                menu.style.left = '0';
+            }
+        }
+
+        function switchTab(name) {
+            const allTabs = tabs.querySelectorAll('.tab');
+            allTabs.forEach(t => {
+                t.classList.toggle('active', t.innerText === name);
+            });
+
+            const allPanels = content.querySelectorAll('.panel');
+            allPanels.forEach(p => {
+                p.classList.toggle('active', p.id === \`panel-\${name}\`);
+            });
+
+            const tool = __STATE__.tools.find(t => t.name === name);
+            if (tool && tool.onShow) tool.onShow();
+            
+            // Save State
+            const visible = menu.classList.contains('visible');
+            sessionStorage.setItem('atlas-ui-state', JSON.stringify({ visible, activeTab: name }));
+        }
+        
+        // Initial setup
+        const savedState = sessionStorage.getItem('atlas-ui-state');
+        if (savedState) {
+            try {
+                const s = JSON.parse(savedState);
+                if (s.visible) menu.classList.add('visible');
+                // Restore Active Tab
+                if (s.activeTab) switchTab(s.activeTab);
+                
+                // Restore Position
+                if (s.x && s.y) {
+                    host.style.bottom = 'auto';
+                    host.style.right = 'auto';
+                    host.style.left = s.x;
+                    host.style.top = s.y;
+                }
+            } catch (e) { }
+        } else {
+             // Default open for first time? No, default closed is better.
+        }
+        
+        // Save State Helper
+        const saveState = () => {
+             const visible = menu.classList.contains('visible');
+             const activeTabBtn = tabs.querySelector('.tab.active');
+             const activeTab = activeTabBtn ? activeTabBtn.innerText : null;
+             
+             // Save Position
+             const rect = host.getBoundingClientRect();
+             const x = rect.left + 'px';
+             const y = rect.top + 'px';
+
+             sessionStorage.setItem('atlas-ui-state', JSON.stringify({ visible, activeTab, x, y }));
+        };
+
+        // Click listener for Toggle
+        mainBtn.addEventListener('click', (e) => {
+            if (isDragging) return;
+            const isVisible = menu.classList.contains('visible');
+            if (isVisible) menu.classList.remove('visible');
+            else {
+                updateQuadrant(); // Look before leaping
+                menu.classList.add('visible');
+            }
+            saveState(); // Save on toggle
+        });
+        
+        updateQuadrant();
+
+        // 6. GLOBAL HOTKEY LISTENER (Stealth Mode)
+        window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.code === 'Space') {
+                e.preventDefault();
+                if (host.classList.contains('stealth')) {
+                    host.classList.remove('stealth');
+                    // Ensure it stays visible if user toggled it on
+                } else {
+                    host.classList.add('stealth');
+                }
+            }
+        });
+    });
+
+    // Helper to store state when tab changes.
+    // We need to inject this into the switchTab function or just override the click handler logic?
+    // Since switchTab is defined inside the DOMContentLoaded scope in the original file, we can't easily patch it from here without replacing the whole block.
+    // Instead, let's just add a mutation observer or click listeners to tabs?
+    // Efficient way: Re-write the switchTab definition in the next Replace block? 
+    // Wait, I can only replace contiguous blocks.
+    // Let's just modify the switchTab function definition later in the file.
+
+})();
+`;
