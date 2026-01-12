@@ -166,6 +166,12 @@ Atlas operates by launching a controlled Puppeteer instance that acts as a proxy
 
 ---
 
+## ⚠️ Known Limitations
+- **WebSockets**: WebSocket connections currently bypass the Atlas proxy and will not be visible in the Network tab or affected by throttling.
+- **Process Cleanup**: If Atlas crashes, ensure your local server process is stopped manually before restarting.
+
+---
+
 ## 📄 License
 
 MIT © Atlas Team
