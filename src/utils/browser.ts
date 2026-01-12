@@ -10,11 +10,21 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     console.log('[Atlas] Launching Browser Orchestrator...');
 
     // 1. Resolve Chrome Path
-    const installations = Launcher.getInstallations();
-    const chromePath = installations.length > 0 ? installations[0] : '';
+    let chromePath = '';
+    try {
+        const installations = Launcher.getInstallations();
+        chromePath = installations.length > 0 ? installations[0] : '';
+    } catch (e) {
+        console.warn(`[Atlas] Warning: Failed to auto-detect Chrome: ${(e as any).message}`);
+    }
 
     if (!chromePath) {
-        throw new Error("[Atlas] Google Chrome not found. Please install Chrome to use Atlas.");
+        console.error(`\n\x1b[31m[CRITICAL] Google Chrome not found!\x1b[0m`);
+        console.error(`Atlas requires Google Chrome to be installed on your system.`);
+        console.error(`Please install Chrome and try again: \x1b[36mhttps://www.google.com/chrome/\x1b[0m\n`);
+
+        // Graceful exit instead of crash
+        process.exit(1);
     }
     console.log(`[Atlas] Using Chrome: ${chromePath}`);
 

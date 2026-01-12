@@ -88,6 +88,16 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
         // 3. TARGET PROXY (If hostname matches domain, proxy to localhost)
         if (url.hostname === domain) {
+            // [FIX] WebSocket / HMR Bypass
+            // Fetch cannot handle WebSockets, so we must redirect these directly to localhost
+            if (request.resourceType() === 'websocket' || request.headers()['upgrade'] === 'websocket') {
+                const targetPath = url.pathname;
+                const localUrl = `ws://localhost:${localPort}${targetPath}${url.search}`;
+                // console.log(`[Proxy] Bypassing WebSocket: ${url.href} -> ${localUrl}`);
+                await request.continue({ url: localUrl });
+                return;
+            }
+
             const targetPath = url.pathname;
             const localUrl = `http://localhost:${localPort}${targetPath}${url.search}`;
 
@@ -105,6 +115,16 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                 const duration = Date.now() - startTime;
 
                 const resHeaders: any = Object.fromEntries(response.headers.entries());
+
+                // [FIX] Preserve multiple Set-Cookie headers
+                // Node 18+ fetch (Undici) merges duplicate headers in .entries(), but supports getSetCookie()
+                if (typeof (response.headers as any).getSetCookie === 'function') {
+                    const cookies = (response.headers as any).getSetCookie();
+                    if (cookies && cookies.length > 0) {
+                        resHeaders['set-cookie'] = cookies;
+                    }
+                }
+
                 delete resHeaders['x-frame-options'];
                 delete resHeaders['content-security-policy'];
                 // Fix: Remove content-length/encoding mismatch (Node fetch decompresses, but header might be compressed size)

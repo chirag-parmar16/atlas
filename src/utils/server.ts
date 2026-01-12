@@ -90,11 +90,16 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                                             try {
                                                 // Windows tree kill hack or just kill
                                                 if (process.platform === 'win32') {
-                                                    spawn('taskkill', ['/pid', child.pid!.toString(), '/f', '/t']);
+                                                    // Windows: 'taskkill' is required to kill the entire process tree (shell: true spawns a shell which spawns the node process)
+                                                    // /f = force, /t = tree (children)
+                                                    if (child.pid) spawn('taskkill', ['/pid', child.pid.toString(), '/f', '/t']);
                                                 } else {
+                                                    // POSIX: Standard kill works fine for most cases, though process groups might be better for shell:true
                                                     child.kill();
                                                 }
-                                            } catch (e) { }
+                                            } catch (e) {
+                                                // Ignore errors if process is already dead
+                                            }
                                         }
                                     });
                                 }
