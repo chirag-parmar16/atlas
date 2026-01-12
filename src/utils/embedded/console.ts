@@ -56,9 +56,10 @@ export const CONSOLE = `
     }
 
     function captureLog(type, args) {
-        const message = args.map(arg =>
-            typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-        ).join(' ');
+        const message = args.map(arg => {
+            if (arg instanceof Error) return arg.stack || arg.message;
+            return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
+        }).join(' ');
         
         // Run Security Checks
         checkLeaks(message);

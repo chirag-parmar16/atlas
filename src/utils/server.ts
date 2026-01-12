@@ -106,12 +106,9 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                         // Timeout 30s
                         setTimeout(() => {
                             clearInterval(checkInterval);
-                            // Resolve anyway, assuming it's up or will be
-                            resolve({
-                                port,
-                                child,
-                                cleanup: () => child.kill()
-                            });
+                            // Fix: Reject cleanly instead of launching dead
+                            reject(new Error("Server start timed out (30s). Port did not become active."));
+                            try { child.kill(); } catch (e) { }
                         }, 30000);
 
                         // Early Exit Watch

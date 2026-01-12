@@ -76,6 +76,12 @@ export const NETWORK = `
             if (tbody) {
                 const newRow = createRow(data);
                 tbody.appendChild(newRow);
+                
+                // Memory Leak Fix: Cap requests
+                if (tbody.children.length > 500) {
+                    tbody.removeChild(tbody.firstChild);
+                }
+
                 if (renderList.scrollTop + renderList.clientHeight >= renderList.scrollHeight - 50) {
                      renderList.scrollTop = renderList.scrollHeight;
                 }

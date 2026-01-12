@@ -36,29 +36,65 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
     await page.setUserAgent(ua);
 
+    // DEBUG: Bridge Console
+    page.on('console', msg => console.log(`[Browser Console] ${msg.type().toUpperCase()}: ${msg.text()}`));
+    page.on('pageerror', (err: any) => console.error(`[Browser Error] ${err.toString()}`));
+
     // Generic Tool Injection
     // @ts-ignore
-    const injectTools = async (targetPage: any) => {
+    const setupPage = async (targetPage: any) => {
         const tools = [UI_SHELL, TOOLS, CONSOLE, INSPECTOR, NETWORK, RECORDER, TRAFFIC, HEALTH, CHAOS];
+
+        // 1. Network Manager (Isolated per page)
+        const netMgr = createNetworkManager(targetPage, { domain, localPort });
+        await netMgr.init();
+
+        // 2. Inject Tools
         // @ts-ignore
         await targetPage.evaluateOnNewDocument((toolScripts: string[]) => {
             console.log("%c[Atlas] Injecting Runtime...", "color:cyan");
-            // Execute Tools
             toolScripts.forEach(script => {
-                try { new Function(script)(); } catch (e) { console.error(e); }
+                try {
+                    new Function(script)();
+                } catch (e: any) {
+                    console.error('[Atlas Runtime Error]', e.message, e.stack);
+                }
             });
         }, tools);
+
+        // 3. Recorder (Single instance attached to main page? Or per page?)
+        // Recorder typically records the *tab* it was attached to. 
+        // For now, let's keep it simple: Attach recorder to every page but only the user controls one? 
+        // Actually, recorder.ts is designed to attach only once. Let's keep recorder on Main Page only for now or re-evaluate.
+        // The original code passed 'recorder' log generation to 'close'.
+        // Let's only attach recorder to the initial page to avoid conflict, or if needed we can attach to all. 
+        // Given visual-manual is likely single-session, let's attach to all but they might overwrite properties. 
+        // Safe bet: Attach to all.
+        // const rec = attachRecorder(targetPage, { projectPath });
+        // await rec.init();
     };
 
-    // 4. Attach Modules
-    const networkManager = createNetworkManager(page, { domain, localPort });
-    await networkManager.init();
+    // 4. Attach Modules (Initial Page)
+    await setupPage(page);
 
+    // Attach Recorder specifically to the main page (Controller)
     const recorder = attachRecorder(page, { projectPath });
     await recorder.init();
 
-    // 5. Inject Tools (Main Page)
-    await injectTools(page);
+    const runToolsNow = async (p: any) => {
+        const tools = [UI_SHELL, TOOLS, CONSOLE, INSPECTOR, NETWORK, RECORDER, TRAFFIC, HEALTH, CHAOS];
+
+        await p.evaluate((toolScripts: string[]) => {
+            toolScripts.forEach(script => {
+                try {
+                    new Function(script)();
+                } catch (e: any) {
+                    console.error('[Atlas Runtime Error]', e.message, e.stack);
+                }
+            });
+        }, tools);
+    };
+    await runToolsNow(page);
 
     // 3. Navigation Lock & Multi-Tab Support
     browser.on('targetcreated', async (target) => {
@@ -66,20 +102,16 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             const newPage = await target.page();
             if (newPage && newPage !== page) {
                 try {
-                    const originalUrl = target.url();
                     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
                     await newPage.setUserAgent(ua);
 
-                    // Optimization: Parallelize attachment
-                    await Promise.all([
-                        networkManager.attach(newPage),
-                        injectTools(newPage)
-                    ]);
+                    // Setup isolated tools for new tab
+                    await setupPage(newPage);
 
-                    // FORCE RELOAD to Fix Race Condition
-                    if (originalUrl && originalUrl !== 'about:blank') {
-                        await newPage.goto(originalUrl, { waitUntil: 'domcontentloaded' }).catch(() => { });
-                    }
+                    // Inject immediately into current context
+                    await runToolsNow(newPage);
+
+                    // REMOVED: Force Reload (Fixed Double Load)
                 } catch (e) {
                     console.error("Failed to setup new page", e);
                 }
@@ -90,7 +122,8 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // 6. Navigation
     try {
         console.log(`[Atlas] Navigating to https://${domain}...`);
-        await page.goto(`https://${domain}`, { waitUntil: 'networkidle0' });
+        // Fix: Use domcontentloaded instead of networkidle0 for reliability
+        await page.goto(`https://${domain}`, { waitUntil: 'domcontentloaded' });
     } catch (e) {
         console.error("Navigation failed", e);
     }

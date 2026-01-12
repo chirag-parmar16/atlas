@@ -5,7 +5,6 @@ export const INSPECTOR = `
     let isInspecting = false;
     let selectedOverlay = null;
     let tooltip = null;
-    let host = null; // Reference to the Atlas Host to ignore clicks
     let inspectDetails = null; // Container for details
 
     function createOverlay(borderColor, backgroundColor) {
@@ -145,8 +144,7 @@ export const INSPECTOR = `
 
         // --- CHANGED LOGIC START ---
         const getAppDoc = () => {
-            const frame = document.getElementById('project-view');
-            return frame ? (frame.contentDocument || frame.contentWindow.document) : null;
+             return document;
         };
 
         toggleBtn.onclick = () => {

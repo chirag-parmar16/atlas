@@ -211,6 +211,21 @@ export const RECORDER = `
             if (isRecording) stopRecording();
         });
 
+        // Listen for Pause
+        window.addEventListener('atlas-toggle-pause', (e) => {
+            if (!isRecording) return;
+            const isPaused = e.detail.paused;
+            if (window.atlasTogglePause) window.atlasTogglePause(isPaused);
+            
+            if (isPaused) {
+                status.innerText = 'Status: ⏸ Paused';
+                status.style.color = '#f59e0b';
+            } else {
+                status.innerText = 'Status: ● Recording...';
+                status.style.color = '#ff4444';
+            }
+        });
+
         container.appendChild(btn);
         container.appendChild(status);
         return container;

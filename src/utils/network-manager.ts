@@ -107,6 +107,10 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                 const resHeaders: any = Object.fromEntries(response.headers.entries());
                 delete resHeaders['x-frame-options'];
                 delete resHeaders['content-security-policy'];
+                // Fix: Remove content-length/encoding mismatch (Node fetch decompresses, but header might be compressed size)
+                delete resHeaders['content-length'];
+                delete resHeaders['content-encoding'];
+                delete resHeaders['transfer-encoding'];
 
                 // --- LOG TO ATLAS UI ---
                 const safeLogData = {

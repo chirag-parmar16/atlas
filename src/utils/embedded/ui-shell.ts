@@ -1,12 +1,8 @@
 
 export const UI_SHELL = `
-// ui-shell.js
 (function () {
-    // Prevent double injection
     if (window.Atlas) return;
 
-    // --- 1. Hardened Runtime & API ---
-    
     // Severity Enum
     const SEVERITY = { INFO: 0, WARN: 1, ERROR: 2 };
 
@@ -47,14 +43,15 @@ export const UI_SHELL = `
     });
 
     // --- Global Error Handlers ---
-    window.onerror = function (msg, url, lineNo, columnNo, error) {
+    // --- Global Error Handlers ---
+    window.addEventListener('error', function (event) {
         if (window.Atlas && window.Atlas.reportViolation) {
             // Shorten URL to just filename
-            const filename = url ? url.split('/').pop() : 'inline';
-            const txt = \`Uncaught: \${msg} @ \${filename}:\${lineNo}\`;
+            const filename = event.filename ? event.filename.split('/').pop() : 'inline';
+            const txt = \`Uncaught: \${event.message} @ \${filename}:\${event.lineno}\`;
             window.Atlas.reportViolation('Runtime', txt, window.Atlas.Severity.ERROR);
         }
-    };
+    });
 
     window.addEventListener('unhandledrejection', function (event) {
         if (window.Atlas && window.Atlas.reportViolation) {
@@ -156,7 +153,8 @@ export const UI_SHELL = `
         button.action-btn:hover { background: rgba(255,255,255,0.1); }
     \`;
 
-    window.addEventListener('DOMContentLoaded', () => {
+    const initShell = () => {
+        if (document.getElementById('atlas-tools-host')) return; // Prevent duplicates
         const host = document.createElement('div');
         host.id = 'atlas-tools-host';
         host.style.position = 'fixed';
@@ -165,6 +163,16 @@ export const UI_SHELL = `
         host.style.right = '20px';
         host.style.zIndex = '2147483647';
         document.body.appendChild(host);
+
+        // Architecture Fix: App Shell Survival
+        // Ensure host is not deleted by App hydration
+        const observer = new MutationObserver((mutations) => {
+            if (!document.body.contains(host)) {
+               // Re-inject if removed
+               document.body.appendChild(host);
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: false });
 
         const shadow = host.attachShadow({ mode: 'open' });
         const style = document.createElement('style');
@@ -219,43 +227,97 @@ export const UI_SHELL = `
 
         // RECORDER STATE
         let recordingTimer = null;
-        let recordingStartTime = 0;
+        let accumulatedMs = 0;
+        let segmentStartTime: number | null = null;
 
         window.Atlas.setRecordingState = (isActive) => {
             if (isActive) {
-                recordingStartTime = Date.now();
+                // START RECORDING
+                accumulatedMs = 0;
+                segmentStartTime = Date.now();
+                isPaused = false;
+                
                 mainBtn.classList.add('recording');
                 menu.classList.remove('visible'); // Auto-Minimize
                 updateTimer();
                 recordingTimer = setInterval(updateTimer, 1000);
             } else {
+                // STOP RECORDING
                 mainBtn.classList.remove('recording');
                 clearInterval(recordingTimer);
                 recordingTimer = null;
+                
+                // Reset State
+                accumulatedMs = 0;
+                segmentStartTime = null;
+                isPaused = false;
+
                 // Reset UI
                 mainBtn.innerHTML = 'Atlas <span class="icon" style="margin-left:8px; color:#10b981">✔</span> <span class="count" style="margin-left:4px; font-family:monospace; opacity:0.8">0</span>';
                 updateStatusIndicator(); // Restore status
             }
         };
 
+        let isPaused = false;
+
         function updateTimer() {
-            if (!recordingTimer) return;
-            const diff = Math.floor((Date.now() - recordingStartTime) / 1000);
+            if (!recordingTimer && !isPaused) return;
+            
+            // Calculate Duration
+            let currentTotalMs = accumulatedMs;
+            if (!isPaused && segmentStartTime) {
+                currentTotalMs += (Date.now() - segmentStartTime);
+            }
+
+            const diff = Math.floor(currentTotalMs / 1000);
             const m = Math.floor(diff / 60).toString().padStart(2, '0');
             const s = Math.floor(diff % 60).toString().padStart(2, '0');
             
-            mainBtn.innerHTML = \`
-                <span style="color:#ef4444; margin-right:6px;">●</span> REC \${m}:\${s}
-                <button id="pill-stop-btn" style="margin-left:8px; background:rgba(255,255,255,0.2); border:none; color:white; border-radius:4px; padding:2px 6px; cursor:pointer; font-size:10px;">STOP</button>
-            \`;
+            // State-based UI
+            const statusColor = isPaused ? '#f59e0b' : '#ef4444';
+            const statusText = isPaused ? 'PAUSED' : 'REC';
+            const pauseIcon = isPaused ? '▶' : '⏸';
             
-            // Re-bind Stop Button
+            // Template safely constructed
+            let html = '<span style="color:' + statusColor + '; margin-right:6px;">●</span> ' + statusText + ' ' + m + ':' + s;
+            html += '<button id="pill-pause-btn" style="margin-left:8px; background:rgba(255,255,255,0.1); border:none; color:white; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:12px;">' + pauseIcon + '</button>';
+            html += '<button id="pill-stop-btn" style="margin-left:4px; background:rgba(255,50,50,0.3); border:none; color:white; border-radius:4px; padding:2px 6px; cursor:pointer; font-size:10px;">STOP</button>';
+            
+            mainBtn.innerHTML = html;
+            
+            // Re-bind Buttons
             const stopBtn = mainBtn.querySelector('#pill-stop-btn');
             if (stopBtn) {
                 stopBtn.onclick = (e) => {
                     e.stopPropagation();
-                    // trigger stop via event
+                    // Instant Feedback
+                    clearInterval(recordingTimer);
+                    mainBtn.innerHTML = '<span style="color:#ef4444;">⏳ Stopping...</span>';
+                    // Trigger backend
                     window.dispatchEvent(new CustomEvent('atlas-stop-recording'));
+                };
+            }
+
+            const pauseBtn = mainBtn.querySelector('#pill-pause-btn');
+            if (pauseBtn) {
+                pauseBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    isPaused = !isPaused;
+                    
+                    if (isPaused) {
+                        // PAUSE: Accumulate elapsed time, freeze segment
+                        if (segmentStartTime) {
+                            accumulatedMs += (Date.now() - segmentStartTime);
+                            segmentStartTime = null;
+                        }
+                    } else {
+                        // RESUME: Start new segment
+                        segmentStartTime = Date.now();
+                    }
+
+                    mainBtn.classList.toggle('paused', isPaused);
+                    updateTimer(); // Refresh UI
+                    window.dispatchEvent(new CustomEvent('atlas-toggle-pause', { detail: { paused: isPaused } }));
                 };
             }
         }
@@ -438,15 +500,23 @@ export const UI_SHELL = `
                 }
             }
         });
-    });
+    };
+    
+    // 7. BOOTSTRAP
+    try {
+        console.log('[Atlas] 🚀 Bootstrapping UI Shell...');
+        if (document.readyState === 'loading') {
+            console.log('[Atlas] Document loading, waiting for DOMContentLoaded...');
+            window.addEventListener('DOMContentLoaded', initShell);
+        } else {
+            console.log('[Atlas] Document ready, running initShell immediately...');
+            initShell(); 
+        }
+    } catch (e) {
+        console.error('[Atlas] Bootstrap Failed:', e);
+    }
 
     // Helper to store state when tab changes.
-    // We need to inject this into the switchTab function or just override the click handler logic?
-    // Since switchTab is defined inside the DOMContentLoaded scope in the original file, we can't easily patch it from here without replacing the whole block.
-    // Instead, let's just add a mutation observer or click listeners to tabs?
-    // Efficient way: Re-write the switchTab definition in the next Replace block? 
-    // Wait, I can only replace contiguous blocks.
-    // Let's just modify the switchTab function definition later in the file.
 
 })();
 `;
