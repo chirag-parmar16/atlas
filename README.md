@@ -1,9 +1,9 @@
 # 🗺️ Atlas
-> **The Browser Sandbox for Universal Web Development**
+> **The Chrome-Based Sandbox for Universal Web Development**
 
 
 
-Atlas is a powerful **local development sandbox** that creates an isolated browser environment for your web projects. It allows you to test your application with **production domain masking**, **network throttling**, **chaos engineering**, and **session recording**—all without deploying a single line of code.
+Atlas is a powerful **local development sandbox** that launches your web projects in an isolated **Chrome browser window**. It allows you to test your application with **production domain masking**, **network throttling**, **chaos engineering**, and **session recording**—all without deploying a single line of code.
 
 It acts as a "flight simulator" for web developers, letting you fly your app in dangerous conditions (slow network, API failures, strict security) while safely on the ground (localhost).
 
@@ -109,7 +109,7 @@ Atlas automatically detects your project type:
     *   Install dependencies (`npm install`)
     *   Build the project (`npm run build`)
     *   Start the server (`npm start` or `npm run dev`)
-    *   Launch the sandbox on the detected port.
+    *   Launch a Chrome browser window with the sandbox environment.
 
 2.  **Manual Mode**: If no `package.json` is found, Atlas will:
     *   Prompt you for the **local port** your app is running on.
@@ -224,7 +224,7 @@ The "Security Warden" module actively monitors your app for violations:
 
 ## 🧩 The Atlas UI
 
-Atlas injects a **floating pill** into the bottom-left corner of your browser. Click it to expand the tool belt.
+Atlas injects a **floating pill** into the bottom-right corner of the browser window. Click it to expand the tool belt.
 
 | Tool        | Description                                                              |
 | ----------- | ------------------------------------------------------------------------ |
