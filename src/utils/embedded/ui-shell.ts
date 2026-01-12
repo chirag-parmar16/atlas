@@ -501,12 +501,21 @@ export const UI_SHELL = `
     // 7. BOOTSTRAP
     try {
         console.log('[Atlas] 🚀 Bootstrapping UI Shell...');
+        const bootstrap = () => {
+            if (document.body) {
+                initShell();
+            } else {
+                // Wait for body to be available
+                requestAnimationFrame(bootstrap);
+            }
+        };
+
         if (document.readyState === 'loading') {
             console.log('[Atlas] Document loading, waiting for DOMContentLoaded...');
-            window.addEventListener('DOMContentLoaded', initShell);
+            window.addEventListener('DOMContentLoaded', bootstrap);
         } else {
-            console.log('[Atlas] Document ready, running initShell immediately...');
-            initShell(); 
+            console.log('[Atlas] Document ready, running bootstrap...');
+            bootstrap(); 
         }
     } catch (e) {
         console.error('[Atlas] Bootstrap Failed:', e);

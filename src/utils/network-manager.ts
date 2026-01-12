@@ -20,17 +20,17 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
     // --- EXPOSED FUNCTIONS ---
     const exposeControls = async () => {
         await page.exposeFunction('setThrottling', (profile: string) => {
-            console.log(`[Proxy] Throttling set to: ${profile}`);
+            // console.log(`[Proxy] Throttling set to: ${profile}`);
             currentThrottlingProfile = profile;
         });
 
         await page.exposeFunction('setSecurityMode', (mode: string) => {
-            console.log(`[Proxy] Security Mode set to: ${mode}`);
+            // console.log(`[Proxy] Security Mode set to: ${mode}`);
             currentSecurityMode = mode;
         });
 
         await page.exposeFunction('setChaosConfig', (config: any) => {
-            console.log(`[Proxy] Chaos Config updated:`, config);
+            // console.log(`[Proxy] Chaos Config updated:`, config);
             chaosConfig = config;
         });
 
@@ -41,7 +41,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
         await page.exposeFunction('clearNetworkHistory', () => {
             requestLogHistory.length = 0;
-            console.log('[Proxy] Network history cleared');
+            // console.log('[Proxy] Network history cleared');
         });
     };
 
@@ -213,7 +213,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
         // 4. Block Other External Navigation on Main Frame
         if (isMainFrame && url.hostname !== domain && !url.hostname.includes('localhost')) {
-            console.log(`[Atlas] Blocking external navigation to: ${url.hostname}`);
+            // console.log(`[Atlas] Blocking external navigation to: ${url.hostname}`);
             await request.abort('blockedbyclient');
             return;
         }
@@ -234,7 +234,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         await page.exposeFunction('startTrafficSim', async (targetUrl: string, count: number) => {
             const http = await import('http');
 
-            console.log(`[Node] Starting traffic sim: ${count} users -> ${targetUrl}`);
+            // console.log(`[Node] Starting traffic sim: ${count} users -> ${targetUrl}`);
             const agent = new http.Agent({ keepAlive: true, maxSockets: 1000 });
 
             // Rewrite URL to local server

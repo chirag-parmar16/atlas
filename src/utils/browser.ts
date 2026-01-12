@@ -36,9 +36,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
     await page.setUserAgent(ua);
 
-    // DEBUG: Bridge Console
-    page.on('console', msg => console.log(`[Browser Console] ${msg.type().toUpperCase()}: ${msg.text()}`));
-    page.on('pageerror', (err: any) => console.error(`[Browser Error] ${err.toString()}`));
+    // DEBUG: Bridge Console (Silenced for cleaner terminal)
+    // page.on('console', msg => console.log(`[Browser Console] ${msg.type().toUpperCase()}: ${msg.text()}`));
+    // page.on('pageerror', (err: any) => console.error(`[Browser Error] ${err.toString()}`));
 
     // Generic Tool Injection
     // @ts-ignore
