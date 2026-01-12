@@ -18,6 +18,17 @@ export const UI_SHELL = `
         configurable: false
     });
 
+    // --- ICONS ---
+    const ICONS = {
+        CHECK: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+        ALERT: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+        PAUSE: '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>',
+        PLAY: '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>',
+        STOP: '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"></rect></svg>',
+        LOGO: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>'
+    };
+
+
     // Public Controlled API
     const AtlasAPI = {
         Severity: SEVERITY,
@@ -71,14 +82,14 @@ export const UI_SHELL = `
 
         // Determine Status Color
         let color = '#10b981'; // Green
-        let icon = '✔';
+        let icon = ICONS.CHECK;
         
         if (counts[SEVERITY.ERROR] > 0) {
             color = '#ef4444'; // Red
-            icon = '⚠';
+            icon = ICONS.ALERT;
         } else if (counts[SEVERITY.WARN] > 0) {
             color = '#f59e0b'; // Yellow
-            icon = '⚠';
+            icon = ICONS.ALERT;
         }
 
         const iconEl = statusBtn.querySelector('.icon');
@@ -86,9 +97,10 @@ export const UI_SHELL = `
         
         if (iconEl && countEl) {
              iconEl.style.color = color;
-             iconEl.innerText = icon;
+             iconEl.innerHTML = icon;
              countEl.innerText = counts[SEVERITY.ERROR] + counts[SEVERITY.WARN];
         }
+
         
         // Pulse effect on new violation
         statusBtn.classList.add('pulse');
@@ -131,7 +143,21 @@ export const UI_SHELL = `
         }
         .menu.visible { opacity: 1; pointer-events: auto; transform: scale(1); }
         
-        .tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); }
+        /* WATERMARK */
+        .menu .watermark {
+            position: absolute;
+            bottom: -20px;
+            right: -20px;
+            width: 300px;
+            height: 300px;
+            z-index: 0;
+            opacity: 0.03; /* Very faint */
+            pointer-events: none;
+            color: #10b981;
+        }
+
+        .tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); position:relative; z-index:1; }
+
         .tab {
             flex: 1; padding: 10px; text-align: center; cursor: pointer; color: #fff; font-size: 12px;
             background: transparent; border: none; opacity: 0.6; transition: opacity 0.2s;
@@ -139,8 +165,9 @@ export const UI_SHELL = `
         .tab:hover { opacity: 0.9; }
         .tab.active { opacity: 1; border-bottom: 2px solid #10b981; font-weight: bold; background: rgba(255,255,255,0.05); }
         
-        .content { flex: 1; overflow-y: auto; padding: 12px; position: relative; }
+        .content { flex: 1; overflow-y: auto; padding: 12px; position: relative; z-index:1; }
         .panel { display: none; height: 100%; flex-direction: column; gap: 10px; }
+
         .panel.active { display: flex; }
         
         button.action-btn {
@@ -183,6 +210,13 @@ export const UI_SHELL = `
         const menu = document.createElement('div');
         menu.className = 'menu';
 
+        // Watermark Injection
+        const watermark = document.createElement('div');
+        watermark.className = 'watermark';
+        // Use a larger version of the logo SVG
+        watermark.innerHTML = ICONS.LOGO.replace('width="18"', 'width="100%"').replace('height="18"', 'height="100%"');
+        menu.appendChild(watermark);
+
         // Tabs & Content
         const tabs = document.createElement('div');
         tabs.className = 'tabs';
@@ -219,7 +253,7 @@ export const UI_SHELL = `
         // Pill Button
         const mainBtn = document.createElement('button');
         mainBtn.className = 'pill-btn';
-        mainBtn.innerHTML = 'Atlas <span class="icon" style="margin-left:8px; color:#10b981">✔</span> <span class="count" style="margin-left:4px; font-family:monospace; opacity:0.8">0</span>';
+        mainBtn.innerHTML = \`<span style="margin-right:6px; color:#10b981; display:flex;">\${ICONS.LOGO}</span> Atlas <span class="icon" style="margin-left:8px; color:#10b981; display:flex;">\${ICONS.CHECK}</span> <span class="count" style="margin-left:4px; font-family:monospace; opacity:0.8">0</span>\`;
         
         statusBtn = mainBtn; // Redirect status updates to main button
 
@@ -251,7 +285,7 @@ export const UI_SHELL = `
                 isPaused = false;
 
                 // Reset UI
-                mainBtn.innerHTML = 'Atlas <span class="icon" style="margin-left:8px; color:#10b981">✔</span> <span class="count" style="margin-left:4px; font-family:monospace; opacity:0.8">0</span>';
+                mainBtn.innerHTML = \`<span style="margin-right:6px; color:#10b981; display:flex;">\${ICONS.LOGO}</span> Atlas <span class="icon" style="margin-left:8px; color:#10b981; display:flex;">\${ICONS.CHECK}</span> <span class="count" style="margin-left:4px; font-family:monospace; opacity:0.8">0</span>\`;
                 updateStatusIndicator(); // Restore status
             }
         };
@@ -274,12 +308,12 @@ export const UI_SHELL = `
             // State-based UI
             const statusColor = isPaused ? '#f59e0b' : '#ef4444';
             const statusText = isPaused ? 'PAUSED' : 'REC';
-            const pauseIcon = isPaused ? '▶' : '⏸';
+            const pauseIcon = isPaused ? ICONS.PLAY : ICONS.PAUSE;
             
             // Template safely constructed
-            let html = '<span style="color:' + statusColor + '; margin-right:6px;">●</span> ' + statusText + ' ' + m + ':' + s;
-            html += '<button id="pill-pause-btn" style="margin-left:8px; background:rgba(255,255,255,0.1); border:none; color:white; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:12px;">' + pauseIcon + '</button>';
-            html += '<button id="pill-stop-btn" style="margin-left:4px; background:rgba(255,50,50,0.3); border:none; color:white; border-radius:4px; padding:2px 6px; cursor:pointer; font-size:10px;">STOP</button>';
+            let html = '<span style="color:' + statusColor + '; margin-right:6px;">●</span> ' + statusText + ' ' + m + ':' + s; // Keep dot as text or svg? Text circle is fine for REC dot, or use SVG. Let's keep ● for now as it flashes well.
+            html += '<button id="pill-pause-btn" style="margin-left:8px; background:rgba(255,255,255,0.1); border:none; color:white; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:12px; display:flex; align-items:center;">' + pauseIcon + '</button>';
+            html += '<button id="pill-stop-btn" style="margin-left:4px; background:rgba(255,50,50,0.3); border:none; color:white; border-radius:4px; padding:2px 6px; cursor:pointer; font-size:10px; display:flex; align-items:center;">' + ICONS.STOP + '</button>';
             
             mainBtn.innerHTML = html;
             

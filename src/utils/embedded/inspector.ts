@@ -136,9 +136,13 @@ export const INSPECTOR = `
         \`;
         container.appendChild(style);
 
+        const ICONS = {
+            SEARCH: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>'
+        };
+
         const toggleBtn = document.createElement('button');
         toggleBtn.className = 'action-btn';
-        toggleBtn.innerText = '🔍 Toggle Inspect Mode';
+        toggleBtn.innerHTML = \`<span style="display:flex; align-items:center; justify-content:center; gap:6px;">\${ICONS.SEARCH} Toggle Inspect Mode</span>\`;
         toggleBtn.style.textAlign = 'center';
         toggleBtn.style.marginBottom = '10px';
 
@@ -158,7 +162,7 @@ export const INSPECTOR = `
 
             if (isInspecting) {
                 toggleBtn.style.border = '1px solid #10b981';
-                toggleBtn.innerText = '🔍 Inspect Mode (Active)';
+                toggleBtn.innerHTML = \`<span style="display:flex; align-items:center; justify-content:center; gap:6px;">\${ICONS.SEARCH} Inspect Mode (Active)</span>\`;
                 toggleBtn.style.color = '#10b981';
                 
                 // Target the IFRAME document
@@ -167,7 +171,7 @@ export const INSPECTOR = `
                 appDoc.body.style.cursor = 'crosshair'; 
             } else {
                 toggleBtn.style.border = '1px solid rgba(255,255,255,0.1)';
-                toggleBtn.innerText = '🔍 Inspect Mode (Off)';
+                toggleBtn.innerHTML = \`<span style="display:flex; align-items:center; justify-content:center; gap:6px;">\${ICONS.SEARCH} Inspect Mode (Off)</span>\`;
                 toggleBtn.style.color = '#ccc';
                 
                 appDoc.removeEventListener('click', onClick, true);

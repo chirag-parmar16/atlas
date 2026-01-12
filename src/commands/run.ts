@@ -97,7 +97,7 @@ export async function run() {
                 req.on('error', (err) => reject(err));
                 req.end();
             });
-            console.log("✔ Connection verified.");
+            console.log("[OK] Connection verified.");
         } catch (e) {
             console.error(`\n[Error] Could not connect to localhost:${serverPort}.`);
             console.error(`Please ensure your server is RUNNING (e.g. 'python server.py') and using port ${serverPort}.`);

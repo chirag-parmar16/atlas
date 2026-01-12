@@ -10,6 +10,11 @@ export const HEALTH = `
         container.style.padding = '10px';
         container.style.color = '#eee';
 
+        const ICONS = {
+            CHECK: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+        };
+
+
         const title = document.createElement('h3');
         title.innerText = 'System Health & Violations';
         title.style.margin = '0 0 10px 0';
@@ -138,7 +143,7 @@ export const HEALTH = `
             if (violations.length === 0) {
                 const empty = document.createElement('div');
                 empty.className = 'empty-state';
-                empty.innerText = '✅ System Healthy. No violations detected.';
+                empty.innerHTML = \`<span style="display:flex; align-items:center; justify-content:center; gap:8px;">\${ICONS.CHECK} System Healthy. No violations detected.</span>\`;
                 empty.style.color = '#10b981';
                 empty.style.textAlign = 'center';
                 empty.style.marginTop = '20px';

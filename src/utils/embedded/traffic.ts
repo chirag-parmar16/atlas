@@ -8,6 +8,13 @@ export const TRAFFIC = `
         container.style.background = 'rgba(255,255,255,0.03)';
         container.style.borderRadius = '8px';
 
+        const ICONS = {
+             LAUNCH: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>',
+             CHECK: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+             CROSS: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'
+        };
+
+
         const header = document.createElement('div');
         header.innerText = 'Multiuser Reach (Server-Side)';
         header.style.fontSize = '12px';
@@ -43,11 +50,11 @@ export const TRAFFIC = `
             const { s, f, c, total } = pendingUpdate;
 
             stats.style.color = '#facc15';
-            stats.innerText = \`Simulating: \${c}/\${total} | ✅ \${s} | ❌ \${f}\`;
+            stats.innerHTML = \`Simulating: \${c}/\${total} | <span style="color:#10b981">\${ICONS.CHECK}</span> \${s} | <span style="color:#ef4444">\${ICONS.CROSS}</span> \${f}\`;
 
             if (c === total) {
                 stats.style.color = '#10b981';
-                stats.innerText += ' (Done)';
+                stats.innerHTML += ' (Done)';
             }
         }
 
@@ -77,14 +84,18 @@ export const TRAFFIC = `
         startBtn.className = 'action-btn';
         startBtn.style.flex = '1';
         startBtn.style.background = '#3b82f6';
-        startBtn.innerText = '🚀 Launch Traffic';
+        startBtn.style.display = 'flex';
+        startBtn.style.alignItems = 'center';
+        startBtn.style.justifyContent = 'center';
+        startBtn.style.gap = '6px';
+        startBtn.innerHTML = \`\${ICONS.LAUNCH} Launch Traffic\`;
 
         startBtn.onclick = async () => {
             const count = parseInt(countInput.value) || 50;
             startBtn.disabled = true;
             countInput.disabled = true;
             startBtn.innerText = 'Running...';
-            stats.innerText = 'Initializing...';
+            stats.innerHTML = 'Initializing...';
             stats.style.color = '#facc15';
 
             try {
@@ -96,11 +107,11 @@ export const TRAFFIC = `
                 }
             } catch (e) {
                 stats.style.color = 'red';
-                stats.innerText = 'Error: ' + e.message;
+                stats.innerHTML = 'Error: ' + e.message;
             } finally {
                 startBtn.disabled = false;
                 countInput.disabled = false;
-                startBtn.innerText = '🚀 Launch Traffic';
+                startBtn.innerHTML = \`\${ICONS.LAUNCH} Launch Traffic\`;
             }
         };
 
