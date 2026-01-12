@@ -1,40 +1,7 @@
 # 🗺️ Atlas
 > **The Browser Sandbox for Universal Web Development**
 
-<style>
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 16px 0;
-    font-size: 14px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-}
-th {
-    background: #1e3a5f;
-    color: #fff;
-    padding: 12px 8px;
-    text-align: left;
-    border: 1px solid #2d4a6f;
-}
-td {
-    padding: 10px 8px;
-    border: 1px solid #333;
-    color: #e0e0e0;
-}
-tr:nth-child(odd) td {
-    background: #1a1a2e;
-}
-tr:nth-child(even) td {
-    background: #16213e;
-}
-code {
-    background: rgba(255,255,255,0.1);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: monospace;
-    color: #ff9e64;
-}
-</style>
+
 
 Atlas is a powerful **local development sandbox** that creates an isolated browser environment for your web projects. It allows you to test your application with **production domain masking**, **network throttling**, **chaos engineering**, and **session recording**—all without deploying a single line of code.
 
