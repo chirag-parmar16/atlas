@@ -89,39 +89,39 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                                         cleanup: async () => {
                                             if (!child || !child.pid) return;
 
-                                            // 1. Graceful Shutdown
-                                            const signal = process.platform === 'win32' ? 'SIGINT' : 'SIGTERM';
-                                            // onLog(`[Atlas] Sending ${signal}...`);
-                                            child.kill(signal);
+                                            // Use tree-kill for cross-platform process tree termination
+                                            const treeKill = require('tree-kill');
 
-                                            // 2. Wait 5 seconds (Atlas Timeout)
-                                            const start = Date.now();
-                                            while (Date.now() - start < 5000) {
-                                                try {
-                                                    // Check if process exists
-                                                    process.kill(child.pid, 0);
-                                                    await new Promise(r => setTimeout(r, 200));
-                                                } catch (e) {
-                                                    // Process is gone
-                                                    return;
-                                                }
-                                            }
+                                            return new Promise<void>((resolve) => {
+                                                // Attempt graceful shutdown first
+                                                treeKill(child.pid, 'SIGTERM', (err?: Error) => {
+                                                    if (err) {
+                                                        // Process already dead or error occurred
+                                                        resolve();
+                                                        return;
+                                                    }
 
-                                            // 3. Force Kill (SIGKILL / taskkill)
-                                            try {
-                                                // Check one last time
-                                                process.kill(child.pid, 0);
-                                                // onLog('[Atlas] Shutdown timed out. Force killing...');
+                                                    // Wait 5 seconds for graceful shutdown
+                                                    const gracePeriod = setTimeout(() => {
+                                                        // Force kill if still alive after grace period
+                                                        try {
+                                                            process.kill(child.pid!, 0); // Check if still alive
+                                                            treeKill(child.pid, 'SIGKILL', () => {
+                                                                resolve();
+                                                            });
+                                                        } catch (e) {
+                                                            // Process already dead
+                                                            resolve();
+                                                        }
+                                                    }, 5000);
 
-                                                if (process.platform === 'win32') {
-                                                    // Windows: 'taskkill' is required to kill the entire process tree
-                                                    spawn('taskkill', ['/pid', child.pid.toString(), '/f', '/t']);
-                                                } else {
-                                                    child.kill('SIGKILL');
-                                                }
-                                            } catch (e) {
-                                                // Already dead
-                                            }
+                                                    // If process dies during grace period, clear timeout
+                                                    child.on('exit', () => {
+                                                        clearTimeout(gracePeriod);
+                                                        resolve();
+                                                    });
+                                                });
+                                            });
                                         }
                                     });
                                 }
@@ -130,13 +130,41 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                             req.end();
                         }, 500);
 
-                        // Timeout 30s
+                        // Configurable Timeout (Env Var > Config File > Default 30s)
+                        let startupTimeout = 30000; // Default
+                        try {
+                            // 1. Check for config file
+                            const configPath = path.join(projectPath, 'atlas.config.json');
+                            if (fs.existsSync(configPath)) {
+                                const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+                                if (config.startupTimeout && typeof config.startupTimeout === 'number') {
+                                    startupTimeout = config.startupTimeout;
+                                    onLog(`[Atlas] Using timeout from atlas.config.json: ${startupTimeout}ms`);
+                                }
+                            }
+
+                            // 2. Check for environment variable (overrides config file)
+                            if (process.env.ATLAS_STARTUP_TIMEOUT) {
+                                const envTimeout = parseInt(process.env.ATLAS_STARTUP_TIMEOUT, 10);
+                                if (!isNaN(envTimeout) && envTimeout > 0) {
+                                    startupTimeout = envTimeout;
+                                    onLog(`[Atlas] Using timeout from ATLAS_STARTUP_TIMEOUT env: ${startupTimeout}ms`);
+                                }
+                            }
+                        } catch (e) {
+                            // Ignore config parsing errors, use default
+                        }
+
+                        if (startupTimeout === 30000) {
+                            onLog(`[Atlas] Using default startup timeout: ${startupTimeout}ms`);
+                        }
+
                         setTimeout(() => {
                             clearInterval(checkInterval);
                             // Fix: Reject cleanly instead of launching dead
-                            reject(new Error("Server start timed out (30s). Port did not become active."));
+                            reject(new Error(`Server start timed out (${startupTimeout}ms). Port did not become active.`));
                             try { child.kill(); } catch (e) { }
-                        }, 30000);
+                        }, startupTimeout);
 
                         // Early Exit Watch
                         child.on('exit', (code) => {

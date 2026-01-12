@@ -13,6 +13,17 @@ export async function run() {
     console.clear();
     console.log(`\nStarting Atlas for project: ${projectName}`);
 
+    // CHECK: Require atlas.config.json to exist
+    const configPath = path.join(projectPath, 'atlas.config.json');
+    if (!fs.existsSync(configPath)) {
+        console.error('\n\x1b[31m[Error] Atlas is not initialized in this project.\x1b[0m\n');
+        console.error('Please run: \x1b[36matlas init\x1b[0m first to create the configuration file.\n');
+        console.error('Workflow:');
+        console.error('  1. \x1b[36matlas init\x1b[0m   - Initialize Atlas configuration');
+        console.error('  2. \x1b[36matlas run\x1b[0m    - Run your project in Atlas\n');
+        process.exit(1);
+    }
+
     if (!fs.existsSync(projectPath)) {
         console.error(`Project not found at ${projectPath}`);
         process.exit(1);

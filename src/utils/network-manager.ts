@@ -261,6 +261,13 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
     // --- WEBSOCKET PROXY ---
     // We need a separate WebSocket server because Puppeteer's request interception doesn't fully support message-level control for WS.
+    // This proxy server intercepts WebSocket connections, forwards them to the real target, and injects chaos/throttling on messages.
+    // Architecture:
+    //   Browser WS Client -> Proxy Server (this) -> Real Local Server
+    // All messages pass through this proxy, allowing us to:
+    //   1. Apply network throttling (Slow 4G, Fast 4G)
+    //   2. Inject chaos (packet drops, latency spikes)
+    //   3. Simulate offline mode (close connections)
     let wsProxyServer: any;
     let wsProxyPort = 0;
 

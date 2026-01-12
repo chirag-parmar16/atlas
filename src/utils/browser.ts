@@ -28,7 +28,29 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     }
     console.log(`[Atlas] Using Chrome: ${chromePath}`);
 
-    // 2. Launch Visible Browser
+    // 2. Check FFmpeg Availability (Required for Session Recording)
+    let ffmpegAvailable = false;
+    try {
+        const ffmpeg = require('@ffmpeg-installer/ffmpeg');
+        if (ffmpeg.path) {
+            ffmpegAvailable = true;
+            console.log(`[Atlas] FFmpeg detected: ${ffmpeg.path}`);
+        }
+    } catch (e) {
+        // FFmpeg package not available
+    }
+
+    if (!ffmpegAvailable) {
+        console.warn(`\n\x1b[33m[WARNING] FFmpeg not found!\x1b[0m`);
+        console.warn(`Atlas requires FFmpeg for session recording functionality.\n`);
+        console.warn(`Installation Instructions:`);
+        console.warn(`  Windows: choco install ffmpeg  OR  Download from \x1b[36mhttps://ffmpeg.org/download.html\x1b[0m`);
+        console.warn(`  macOS:   brew install ffmpeg`);
+        console.warn(`  Linux:   sudo apt install ffmpeg  OR  sudo yum install ffmpeg\n`);
+        console.warn(`You can continue without FFmpeg, but recording will be disabled.\n`);
+    }
+
+    // 3. Launch Visible Browser
     const browser = await puppeteer.launch({
         executablePath: chromePath,
         headless: false,

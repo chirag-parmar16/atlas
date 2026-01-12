@@ -23,13 +23,85 @@ npm install -g atlas-cli
 
 ## 💻 Usage
 
-Navigate to your project directory and run:
+Atlas requires initialization before running a project. Follow these steps:
+
+### 1. Navigate to Your Project
+```bash
+cd /path/to/your/project
+```
+
+### 2. Initialize Atlas
+```bash
+atlas init
+```
+
+This creates an `atlas.config.json` file in your project directory with default settings:
+- Startup timeout: 30 seconds
+- Recording: Enabled  
+- Debug mode: Disabled
+
+> **Note**: Each project requires its own initialization. You cannot run Atlas without initializing first.
+
+### 3. Run Atlas
+```bash
+atlas run
+```
+
+---
+
+## 📟 CLI Commands
+
+### `atlas init`
+Initialize Atlas in the current project directory.
+
+```bash
+atlas init
+```
+
+**What it does:**
+- Creates `atlas.config.json` in your project root
+- Sets up default configuration (timeout, recording, debug mode)
+- Must be run once per project before using `atlas run`
+
+**Output:**
+```
+✓ Successfully initialized Atlas!
+
+Created: /path/to/project/atlas.config.json
+
+Default configuration:
+  • Startup timeout: 30 seconds
+  • Recording: Enabled
+  • Debug mode: Disabled
+
+You can now run: atlas run
+```
+
+**Note:** If `atlas.config.json` already exists, init will skip creation to avoid overwriting your custom settings.
+
+---
+
+### `atlas run`
+Run your project in an isolated Atlas environment.
 
 ```bash
 atlas run
 ```
 
-### Modes
+**Prerequisites:**
+- Must run `atlas init` first
+- Requires `atlas.config.json` in project directory
+
+**Error if not initialized:**
+```
+[Error] Atlas is not initialized in this project.
+
+Please run: atlas init first to create the configuration file.
+```
+
+---
+
+## 🎮 Modes
 
 Atlas automatically detects your project type:
 
@@ -48,6 +120,35 @@ Atlas automatically detects your project type:
 When you run `atlas run`, you will be asked:
 *   **Domain**: What production domain do you want to simulate? (e.g., `myapp.com`)
     *   *Atlas will map this domain to localhost inside the sandbox.*
+
+### Optional Configuration
+
+You can optionally create an `atlas.config.json` file in your project root to customize Atlas behavior:
+
+```json
+{
+  "startupTimeout": 30000,
+  "recordingEnabled": true,
+  "debugMode": false
+}
+```
+
+**Configuration Options**:
+- `startupTimeout` (number): Maximum time in milliseconds to wait for server startup. Default: 30000 (30 seconds)
+- `recordingEnabled` (boolean): Enable/disable session recording. Default: true
+- `debugMode` (boolean): Enable verbose logging. Default: false
+
+**Environment Variables**:
+- `ATLAS_STARTUP_TIMEOUT`: Override startup timeout (takes precedence over config file)
+
+Example:
+```bash
+# Windows PowerShell
+$env:ATLAS_STARTUP_TIMEOUT=60000; atlas run
+
+# macOS/Linux
+ATLAS_STARTUP_TIMEOUT=60000 atlas run
+```
 
 ---
 
@@ -166,8 +267,34 @@ Atlas operates by launching a controlled Puppeteer instance that acts as a proxy
 
 ---
 
+## 🔌 WebSocket Support
+
+Atlas fully supports **WebSocket interception and proxying**, including real-time chaos engineering and network throttling.
+
+### How It Works
+1. **Automatic Detection**: Atlas detects WebSocket upgrade requests and redirects them through a dedicated proxy server.
+2. **Transparent Proxying**: WebSocket connections are proxied to your local server while maintaining full bidirectional communication.
+3. **Chaos Injection**: Apply packet drops, latency spikes, and connection failures to WebSocket messages in real-time.
+4. **Network Throttling**: Simulate slow connections by adding configurable latency to WebSocket message delivery.
+5. **Offline Mode**: Properly simulates connection failures by closing WebSocket connections when Offline mode is enabled.
+
+### What Gets Intercepted
+- WebSocket handshake requests (`Upgrade: websocket` headers)
+- All WebSocket messages (both client → server and server → client)
+- Hot Module Replacement (HMR) WebSocket connections from Vite, Webpack, etc.
+
+### Chaos Engineering for WebSockets
+When Chaos mode is enabled, the following behaviors apply to WebSocket messages:
+
+| Setting           | Effect                                           |
+| ----------------- | ------------------------------------------------ |
+| **Packet Drop**   | Randomly drops WebSocket frames without delivery |
+| **Latency Spike** | Delays message delivery by 2-5 seconds           |
+| **Error Rate**    | Currently applies to HTTP requests only          |
+
+---
+
 ## ⚠️ Known Limitations
-- **WebSockets**: WebSocket connections currently bypass the Atlas proxy and will not be visible in the Network tab or affected by throttling.
 - **Process Cleanup**: If Atlas crashes, ensure your local server process is stopped manually before restarting.
 
 ---

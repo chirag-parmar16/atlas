@@ -251,51 +251,6 @@ export const UI_SHELL = `
             }
         });
 
-        // Chaos Toggle (Quick Access)
-        const chaosBtn = document.createElement('button');
-        chaosBtn.innerHTML = ICONS.BOLT + ' Chaos';
-        chaosBtn.style.marginLeft = 'auto'; // Push to right
-        chaosBtn.style.marginRight = '10px';
-        chaosBtn.style.background = 'transparent';
-        chaosBtn.style.border = '1px solid rgba(255,255,255,0.1)';
-        chaosBtn.style.borderRadius = '4px';
-        chaosBtn.style.color = '#666';
-        chaosBtn.style.cursor = 'pointer';
-        chaosBtn.style.fontSize = '11px';
-        chaosBtn.style.display = 'flex';
-        chaosBtn.style.alignItems = 'center';
-        chaosBtn.style.gap = '4px';
-        chaosBtn.style.padding = '4px 8px';
-        
-        chaosBtn.onclick = () => {
-             if (window.toggleChaos) {
-                 const isEnabled = window.toggleChaos();
-                 updateChaosBtn(isEnabled);
-             }
-        };
-
-        const updateChaosBtn = (enabled) => {
-            if (enabled) {
-                chaosBtn.style.color = '#ef4444'; // Red
-                chaosBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-                chaosBtn.style.background = 'rgba(239, 68, 68, 0.1)';
-            } else {
-                chaosBtn.style.color = '#666';
-                chaosBtn.style.borderColor = 'rgba(255,255,255,0.1)';
-                chaosBtn.style.background = 'transparent';
-            }
-        };
-
-        // Poll for initial state (since chaos script might load/sync later)
-        setTimeout(() => {
-             // We can check config via the exposed hook if we had one, 
-             // but toggling false->false is safe or just assuming off initially.
-             // Better: listen for an event if we had one. 
-             // For now, assume off.
-        }, 500);
-
-        tabs.appendChild(chaosBtn);
-
         // Pill Button
         const mainBtn = document.createElement('button');
         mainBtn.className = 'pill-btn';

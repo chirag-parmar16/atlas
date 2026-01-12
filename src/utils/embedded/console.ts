@@ -2,6 +2,7 @@
 export const CONSOLE = `
 // console.js
 (function () {
+    const MAX_LOGS = 1000; // Memory leak prevention: cap log entries
     const capturedLogs = [];
     const processedIds = new Set();
     const originalConsole = { log: console.log, warn: console.warn, error: console.error };
@@ -73,6 +74,11 @@ export const CONSOLE = `
         processedIds.add(id);
 
         capturedLogs.push({ type, message, time });
+        
+        // Memory leak prevention: cap array size
+        if (capturedLogs.length > MAX_LOGS) {
+            capturedLogs.shift(); // Remove oldest entry
+        }
 
         // Dispatch event to update UI
         window.dispatchEvent(new CustomEvent('atlas-console-log', { detail: { type, message, time } }));
@@ -272,6 +278,11 @@ export const CONSOLE = `
             };
 
             scrollContainer.appendChild(entry);
+            
+            // Memory leak prevention: cap DOM elements
+            if (scrollContainer.children.length > MAX_LOGS) {
+                scrollContainer.removeChild(scrollContainer.firstChild);
+            }
 
             if (scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 50) {
                 scrollContainer.scrollTop = scrollContainer.scrollHeight;
