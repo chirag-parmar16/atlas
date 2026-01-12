@@ -124,7 +124,10 @@ export async function run() {
     // 6. Cleanup Hook
     const performCleanup = async () => {
         console.log('\n[Atlas] Cleaning up...');
-        if (serverCleanup) serverCleanup();
+        // Switch logs back to console so user can see shutdown progress
+        logTarget = (msg) => console.log(msg);
+
+        if (serverCleanup) await serverCleanup();
         await close();
         process.exit();
     };

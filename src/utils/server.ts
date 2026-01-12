@@ -86,19 +86,41 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                                     resolve({
                                         port,
                                         child,
-                                        cleanup: () => {
+                                        cleanup: async () => {
+                                            if (!child || !child.pid) return;
+
+                                            // 1. Graceful Shutdown
+                                            const signal = process.platform === 'win32' ? 'SIGINT' : 'SIGTERM';
+                                            // onLog(`[Atlas] Sending ${signal}...`);
+                                            child.kill(signal);
+
+                                            // 2. Wait 5 seconds (Atlas Timeout)
+                                            const start = Date.now();
+                                            while (Date.now() - start < 5000) {
+                                                try {
+                                                    // Check if process exists
+                                                    process.kill(child.pid, 0);
+                                                    await new Promise(r => setTimeout(r, 200));
+                                                } catch (e) {
+                                                    // Process is gone
+                                                    return;
+                                                }
+                                            }
+
+                                            // 3. Force Kill (SIGKILL / taskkill)
                                             try {
-                                                // Windows tree kill hack or just kill
+                                                // Check one last time
+                                                process.kill(child.pid, 0);
+                                                // onLog('[Atlas] Shutdown timed out. Force killing...');
+
                                                 if (process.platform === 'win32') {
-                                                    // Windows: 'taskkill' is required to kill the entire process tree (shell: true spawns a shell which spawns the node process)
-                                                    // /f = force, /t = tree (children)
-                                                    if (child.pid) spawn('taskkill', ['/pid', child.pid.toString(), '/f', '/t']);
+                                                    // Windows: 'taskkill' is required to kill the entire process tree
+                                                    spawn('taskkill', ['/pid', child.pid.toString(), '/f', '/t']);
                                                 } else {
-                                                    // POSIX: Standard kill works fine for most cases, though process groups might be better for shell:true
-                                                    child.kill();
+                                                    child.kill('SIGKILL');
                                                 }
                                             } catch (e) {
-                                                // Ignore errors if process is already dead
+                                                // Already dead
                                             }
                                         }
                                     });

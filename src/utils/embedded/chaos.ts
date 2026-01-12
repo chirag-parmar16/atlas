@@ -39,6 +39,14 @@ export const CHAOS = `
             updateStatusParams();
         };
 
+        // EXPOSE TOGGLE for UI Shell
+        window.toggleChaos = (forceState) => {
+             if (typeof forceState === 'boolean') config.enabled = forceState;
+             else config.enabled = !config.enabled;
+             sync();
+             return config.enabled;
+        };
+
         const updateStatusParams = () => {
              const active = config.enabled;
              toggleBtn.style.background = active ? '#ef4444' : '#333';

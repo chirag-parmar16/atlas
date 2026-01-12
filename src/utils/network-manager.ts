@@ -90,11 +90,22 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         if (url.hostname === domain) {
             // [FIX] WebSocket / HMR Bypass
             // Fetch cannot handle WebSockets, so we must redirect these directly to localhost
+            // [FIX] WebSocket / HMR Bypass
+            // Fetch cannot handle WebSockets, so we must redirect these directly to localhost
             if (request.resourceType() === 'websocket' || request.headers()['upgrade'] === 'websocket') {
                 const targetPath = url.pathname;
-                const localUrl = `ws://localhost:${localPort}${targetPath}${url.search}`;
-                // console.log(`[Proxy] Bypassing WebSocket: ${url.href} -> ${localUrl}`);
-                await request.continue({ url: localUrl });
+
+                // If we have a proxy running, use it
+                if (wsProxyPort > 0) {
+                    const originalTarget = `ws://localhost:${localPort}${targetPath}${url.search}`;
+                    const proxyUrl = `ws://localhost:${wsProxyPort}${targetPath}?__target=${encodeURIComponent(originalTarget)}`;
+                    // console.log(`[Proxy] Intercepting WebSocket: ${url.href} -> ${proxyUrl}`);
+                    await request.continue({ url: proxyUrl });
+                } else {
+                    // Fallback (Shouldn't happen if init waits)
+                    const localUrl = `ws://localhost:${localPort}${targetPath}${url.search}`;
+                    await request.continue({ url: localUrl });
+                }
                 return;
             }
 
@@ -248,8 +259,99 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         p.on('request', (req) => handleRequest(req, p));
     };
 
+    // --- WEBSOCKET PROXY ---
+    // We need a separate WebSocket server because Puppeteer's request interception doesn't fully support message-level control for WS.
+    let wsProxyServer: any;
+    let wsProxyPort = 0;
+
+    const initWsProxy = async () => {
+        const { WebSocketServer, WebSocket } = await import('ws');
+
+        return new Promise<void>((resolve) => {
+            wsProxyServer = new WebSocketServer({ port: 0 }); // Random port
+
+            wsProxyServer.on('listening', () => {
+                wsProxyPort = (wsProxyServer.address() as any).port;
+                // console.log(`[Proxy] WS Interceptor running on port ${wsProxyPort}`);
+                resolve();
+            });
+
+            wsProxyServer.on('connection', (clientWs: any, req: any) => {
+                // Parse original target from URL (passed by our interceptor)
+                // Format: ws://localhost:PROXY_PORT/path?__target=ENCODED_TARGET_URL
+                const reqUrl = new URL(req.url, 'http://localhost');
+                const targetUrlEncoded = reqUrl.searchParams.get('__target');
+
+                if (!targetUrlEncoded) {
+                    clientWs.close();
+                    return;
+                }
+
+                const targetUrl = decodeURIComponent(targetUrlEncoded);
+
+                // --- OFFLINE CHECK (On Connect) ---
+                if (currentThrottlingProfile === 'Offline' || currentSecurityMode === 'Offline') {
+                    clientWs.close(); // Simulate connection failure
+                    return;
+                }
+
+                // Connect to real target
+                const targetWs = new WebSocket(targetUrl);
+
+                // Open
+                targetWs.on('open', () => {
+                    // Send buffered messages if any? (Usually none at this point)
+                });
+
+                // Error
+                targetWs.on('error', (e: any) => {
+                    // console.error('[Proxy] WS Target Error:', e.message);
+                    clientWs.close();
+                });
+
+                clientWs.on('error', (e: any) => {
+                    // console.error('[Proxy] WS Client Error:', e.message);
+                    targetWs.close();
+                });
+
+                // Close
+                targetWs.on('close', () => clientWs.close());
+                clientWs.on('close', () => targetWs.close());
+
+                // --- MESSAGE HANDLING (With Latency) ---
+                const sendMessage = (ws: any, data: any, isBinary: boolean) => {
+                    let latency = 0;
+                    if (currentThrottlingProfile === 'Slow 4G') latency = 100;
+                    else if (currentThrottlingProfile === 'Fast 4G') latency = 20;
+
+                    // Chaos
+                    if (chaosConfig.enabled) {
+                        if (chaosConfig.dropRate > 0 && Math.random() * 100 < chaosConfig.dropRate) return; // Drop frame
+                        if (chaosConfig.latencyRate > 0 && Math.random() * 100 < chaosConfig.latencyRate) {
+                            latency += (2000 + Math.random() * 3000);
+                        }
+                    }
+
+                    if (latency > 0) {
+                        setTimeout(() => {
+                            if (ws.readyState === WebSocket.OPEN) ws.send(data, { binary: isBinary });
+                        }, latency);
+                    } else {
+                        if (ws.readyState === WebSocket.OPEN) ws.send(data, { binary: isBinary });
+                    }
+                };
+
+                targetWs.on('message', (data: any, isBinary: boolean) => sendMessage(clientWs, data, isBinary));
+                clientWs.on('message', (data: any, isBinary: boolean) => sendMessage(targetWs, data, isBinary));
+            });
+        });
+    };
+
     // Initialize
     const init = async () => {
+        // Init WS Proxy
+        await initWsProxy();
+
         // --- TRAFFIC SIMULATION ---
         await page.exposeFunction('startTrafficSim', async (targetUrl: string, count: number) => {
             const http = await import('http');
