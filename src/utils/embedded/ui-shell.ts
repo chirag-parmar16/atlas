@@ -1,4 +1,3 @@
-
 export const UI_SHELL = `
 (function () {
     if (window.Atlas) return;
@@ -42,7 +41,6 @@ export const UI_SHELL = `
         configurable: false
     });
 
-    // --- Global Error Handlers ---
     // --- Global Error Handlers ---
     window.addEventListener('error', function (event) {
         if (window.Atlas && window.Atlas.reportViolation) {
@@ -228,7 +226,7 @@ export const UI_SHELL = `
         // RECORDER STATE
         let recordingTimer = null;
         let accumulatedMs = 0;
-        let segmentStartTime: number | null = null;
+        let segmentStartTime = null; // [FIXED] Removed TypeScript type ": number | null"
 
         window.Atlas.setRecordingState = (isActive) => {
             if (isActive) {
@@ -322,8 +320,6 @@ export const UI_SHELL = `
             }
         }
         
-
-
         // Add CSS for pulse
         const pulseStyle = document.createElement('style');
         pulseStyle.textContent = \`
@@ -515,8 +511,6 @@ export const UI_SHELL = `
     } catch (e) {
         console.error('[Atlas] Bootstrap Failed:', e);
     }
-
-    // Helper to store state when tab changes.
 
 })();
 `;

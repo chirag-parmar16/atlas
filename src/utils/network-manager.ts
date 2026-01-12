@@ -175,7 +175,38 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                 });
 
             } catch (error) {
-                await request.abort('connectionrefused');
+                // [FIXED BLOCK] Instead of aborting (which hides UI), respond with a custom Error Page.
+                // This keeps the DOM alive so the Immortal Pill can render.
+
+                const errorMsg = (error as any).message || 'Unknown Error';
+                const errorHtml = `
+                    <html>
+                    <head>
+                        <title>Atlas Proxy Error</title>
+                        <style>
+                            body { background: #111; color: #eee; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                            .container { text-align: center; max-width: 500px; padding: 20px; border: 1px solid #333; border-radius: 8px; background: #1a1a1a; }
+                            h1 { color: #ef4444; margin-bottom: 10px; }
+                            p { color: #aaa; margin-bottom: 20px; }
+                            .code { font-family: monospace; background: #000; padding: 10px; border-radius: 4px; color: #facc15; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container">
+                            <h1>Connection Failed</h1>
+                            <p>Atlas could not connect to your local server.</p>
+                            <div class="code">Target: http://localhost:${localPort}<br>Error: ${errorMsg}</div>
+                            <p style="margin-top:20px; font-size: 12px;">Use the Atlas Tool (bottom right) to reload once your server is ready.</p>
+                        </div>
+                    </body>
+                    </html>
+                `;
+
+                await request.respond({
+                    status: 502,
+                    contentType: 'text/html',
+                    body: errorHtml
+                });
             }
             return;
         }
