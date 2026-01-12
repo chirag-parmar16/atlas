@@ -85,6 +85,37 @@ export const INSPECTOR = `
         const computed = window.getComputedStyle(el);
         const p = (name) => computed.getPropertyValue(name);
 
+
+        // Attributes
+        let attrsHtml = '<div style="margin-bottom:12px;font-weight:bold;color:#eee;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">Attributes</div>';
+        if (el.attributes.length > 0) {
+            Array.from(el.attributes).forEach(attr => {
+                attrsHtml += '<div class="prop-row"><span class="prop-label">' + attr.name + '</span> <span class="prop-val" style="color:#a5b4fc">' + attr.value + '</span></div>';
+            });
+        } else {
+             attrsHtml += '<div style="color:#666;font-style:italic;">None</div>';
+        }
+
+        // Styles (Computed)
+        const stylesToShow = ['color', 'background-color', 'font-family', 'font-size', 'margin', 'padding', 'border', 'display', 'position', 'z-index'];
+        let stylesHtml = '<div style="margin-top:12px;margin-bottom:12px;font-weight:bold;color:#eee;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">Computed Styles</div>';
+        stylesToShow.forEach(key => {
+            const val = p(key);
+            if (val && val !== 'none' && val !== '0px' && val !== 'auto' && val !== 'normal' && val !== 'rgba(0, 0, 0, 0)') {
+                stylesHtml += '<div class="prop-row"><span class="prop-label">' + key + '</span> <span class="prop-val">' + val + '</span></div>';
+            }
+        });
+
+        // Content (Text)
+        let contentHtml = '<div style="margin-top:12px;margin-bottom:12px;font-weight:bold;color:#eee;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">Content</div>';
+        const text = el.innerText ? el.innerText.trim() : '';
+        if (text) {
+             const shortText = text.length > 100 ? text.substring(0, 100) + '...' : text;
+             contentHtml += '<div style="font-family:monospace; color:#d1d5db; word-break:break-word; background:rgba(0,0,0,0.3); padding:6px; border-radius:4px;">' + shortText + '</div>';
+        } else {
+             contentHtml += '<div style="color:#666;font-style:italic;">Empty / Media</div>';
+        }
+
         inspectDetails.innerHTML = 
           '<div style="font-size:12px;font-family:monospace;margin-bottom:12px;white-space:nowrap;overflow-x:auto;padding-bottom:4px;">' + breadcrumbsHtml + '</div>' +
           '<div style="background:rgba(255,255,255,0.05);padding:8px;border-radius:6px;margin-bottom:12px;">' +
@@ -92,10 +123,10 @@ export const INSPECTOR = `
             '<div style="font-size:11px;color:#aaa;font-family:monospace">#' + (el.id || '—') + '</div>' +
             '<div style="font-size:11px;color:#aaa;font-family:monospace">.' + (Array.from(el.classList).join('.') || '—') + '</div>' +
           '</div>' +
-          '<div style="margin-bottom:12px;font-weight:bold;color:#eee;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">Layout</div>' +
+          attrsHtml + 
+          stylesHtml +
           '<div class="prop-row"><span class="prop-label">Dimensions</span> <span class="prop-val">' + el.offsetWidth + ' x ' + el.offsetHeight + ' px</span></div>' +
-          '<div class="prop-row"><span class="prop-label">Display</span> <span class="prop-val">' + p('display') + '</span></div>' +
-          '<div class="prop-row"><span class="prop-label">Padding</span> <span class="prop-val">' + p('padding') + '</span></div>';
+          contentHtml;
 
         // Re-attach clicks
         setTimeout(() => {
@@ -107,6 +138,10 @@ export const INSPECTOR = `
     }
 
     function onClick(e) {
+        // Allow clicks inside Atlas Tools
+        const host = document.getElementById('atlas-tools-host');
+        if (host && (e.target === host || host.contains(e.target))) return;
+
         // Stop default action inside iframe
         e.preventDefault();
         e.stopPropagation();
