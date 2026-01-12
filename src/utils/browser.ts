@@ -155,7 +155,18 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     try {
         console.log(`[Atlas] Navigating to https://${domain}...`);
         // Fix: Use domcontentloaded instead of networkidle0 for reliability
-        await page.goto(`https://${domain}`, { waitUntil: 'domcontentloaded' });
+        const isLocal =
+            domain.includes('localhost') ||
+            domain.startsWith('127.') ||
+            domain.endsWith('.local');
+
+        const protocol = isLocal ? 'http' : 'https';
+
+        await page.goto(`${protocol}://${domain}`, {
+            waitUntil: 'domcontentloaded'
+        });
+
+
     } catch (e) {
         console.error("Navigation failed", e);
     }
