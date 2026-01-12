@@ -11,7 +11,7 @@ export const INSPECTOR = `
     function createOverlay(borderColor, backgroundColor) {
         const node = document.createElement('div');
         node.style.position = 'fixed';
-        node.style.border = \`1px solid \${borderColor}\`;
+        node.style.border = '1px solid ' + borderColor;
         node.style.backgroundColor = backgroundColor;
         node.style.pointerEvents = 'none';
         node.style.zIndex = '2147483646';
@@ -56,7 +56,7 @@ export const INSPECTOR = `
         ol.style.display = 'block';
 
         const tt = getTooltip();
-        tt.innerHTML = \`<span style="color:#10b981">\${el.tagName.toLowerCase()}</span><span style="color:#9ca3af">.\${el.className.split(' ')[0] || ''}</span> <span style="color:#aaa;margin-left:4px">\${Math.round(rect.width)}x\${Math.round(rect.height)}</span>\`;
+        tt.innerHTML = '<span style="color:#10b981">' + el.tagName.toLowerCase() + '</span><span style="color:#9ca3af">.' + (el.className.split(' ')[0] || '') + '</span> <span style="color:#aaa;margin-left:4px">' + Math.round(rect.width) + 'x' + Math.round(rect.height) + '</span>';
         let top = rect.top - 30;
         if (top < 0) top = rect.bottom + 10;
         tt.style.top = top + 'px';
@@ -70,34 +70,33 @@ export const INSPECTOR = `
 
         const path = [];
         let curr = el;
-        while (curr && curr !== document.body && path.length < 5) {
+        while (curr && curr.tagName !== 'BODY' && path.length < 5) {
             path.unshift(curr);
             curr = curr.parentElement;
         }
-        if (curr === document.body) path.unshift(document.body);
+        // if (curr === document.body) path.unshift(document.body); // Check simplified
 
         const breadcrumbsHtml = path.map(node =>
-            \`<span class="crumb" style="cursor:pointer;color:\${node === el ? '#fff' : '#888'};margin-right:4px;">
-                \${node.tagName.toLowerCase()}
-                <span style="color:#555">&gt;</span>
-              </span>\`
+            '<span class="crumb" style="cursor:pointer;color:' + (node === el ? '#fff' : '#888') + ';margin-right:4px;">' +
+                node.tagName.toLowerCase() +
+                '<span style="color:#555">&gt;</span>' +
+              '</span>'
         ).join('');
 
         const computed = window.getComputedStyle(el);
         const p = (name) => computed.getPropertyValue(name);
 
-        inspectDetails.innerHTML = \`
-          <div style="font-size:12px;font-family:monospace;margin-bottom:12px;white-space:nowrap;overflow-x:auto;padding-bottom:4px;">\${breadcrumbsHtml}</div>
-          <div style="background:rgba(255,255,255,0.05);padding:8px;border-radius:6px;margin-bottom:12px;">
-            <div style="font-weight:bold;color:#10b981;font-size:14px;margin-bottom:4px">\${el.tagName.toLowerCase()}</div>
-            <div style="font-size:11px;color:#aaa;font-family:monospace">#\${el.id || '—'}</div>
-            <div style="font-size:11px;color:#aaa;font-family:monospace">.\${Array.from(el.classList).join('.') || '—'}</div>
-          </div>
-          <div style="margin-bottom:12px;font-weight:bold;color:#eee;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">Layout</div>
-          <div class="prop-row"><span class="prop-label">Dimensions</span> <span class="prop-val">\${el.offsetWidth} x \${el.offsetHeight} px</span></div>
-          <div class="prop-row"><span class="prop-label">Display</span> <span class="prop-val">\${p('display')}</span></div>
-          <div class="prop-row"><span class="prop-label">Padding</span> <span class="prop-val">\${p('padding')}</span></div>
-        \`;
+        inspectDetails.innerHTML = 
+          '<div style="font-size:12px;font-family:monospace;margin-bottom:12px;white-space:nowrap;overflow-x:auto;padding-bottom:4px;">' + breadcrumbsHtml + '</div>' +
+          '<div style="background:rgba(255,255,255,0.05);padding:8px;border-radius:6px;margin-bottom:12px;">' +
+            '<div style="font-weight:bold;color:#10b981;font-size:14px;margin-bottom:4px">' + el.tagName.toLowerCase() + '</div>' +
+            '<div style="font-size:11px;color:#aaa;font-family:monospace">#' + (el.id || '—') + '</div>' +
+            '<div style="font-size:11px;color:#aaa;font-family:monospace">.' + (Array.from(el.classList).join('.') || '—') + '</div>' +
+          '</div>' +
+          '<div style="margin-bottom:12px;font-weight:bold;color:#eee;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">Layout</div>' +
+          '<div class="prop-row"><span class="prop-label">Dimensions</span> <span class="prop-val">' + el.offsetWidth + ' x ' + el.offsetHeight + ' px</span></div>' +
+          '<div class="prop-row"><span class="prop-label">Display</span> <span class="prop-val">' + p('display') + '</span></div>' +
+          '<div class="prop-row"><span class="prop-label">Padding</span> <span class="prop-val">' + p('padding') + '</span></div>';
 
         // Re-attach clicks
         setTimeout(() => {
@@ -109,13 +108,12 @@ export const INSPECTOR = `
     }
 
     function onClick(e) {
-        if (!isInspecting || (host && host.contains(e.target))) return;
+        // Stop default action inside iframe
         e.preventDefault();
         e.stopPropagation();
     }
 
     function onDblClick(e) {
-        if (!isInspecting || (host && host.contains(e.target))) return;
         e.preventDefault();
         e.stopPropagation();
         selectElement(e.target);
@@ -145,22 +143,44 @@ export const INSPECTOR = `
         toggleBtn.style.textAlign = 'center';
         toggleBtn.style.marginBottom = '10px';
 
+        // --- CHANGED LOGIC START ---
+        const getAppDoc = () => {
+            const frame = document.getElementById('project-view');
+            return frame ? (frame.contentDocument || frame.contentWindow.document) : null;
+        };
+
         toggleBtn.onclick = () => {
             isInspecting = !isInspecting;
+            const appDoc = getAppDoc();
+            
+            if (!appDoc) {
+                alert('Application frame not ready yet.');
+                return;
+            }
+
             if (isInspecting) {
                 toggleBtn.style.border = '1px solid #10b981';
                 toggleBtn.innerText = '🔍 Inspect Mode (Active)';
-                document.addEventListener('click', onClick, true);
-                document.addEventListener('dblclick', onDblClick, true);
+                toggleBtn.style.color = '#10b981';
+                
+                // Target the IFRAME document
+                appDoc.addEventListener('click', onClick, true);
+                appDoc.addEventListener('dblclick', onDblClick, true);
+                appDoc.body.style.cursor = 'crosshair'; 
             } else {
                 toggleBtn.style.border = '1px solid rgba(255,255,255,0.1)';
                 toggleBtn.innerText = '🔍 Inspect Mode (Off)';
-                document.removeEventListener('click', onClick, true);
-                document.removeEventListener('dblclick', onDblClick, true);
+                toggleBtn.style.color = '#ccc';
+                
+                appDoc.removeEventListener('click', onClick, true);
+                appDoc.removeEventListener('dblclick', onDblClick, true);
+                appDoc.body.style.cursor = ''; 
+                
                 if (selectedOverlay) selectedOverlay.style.display = 'none';
                 if (tooltip) tooltip.style.display = 'none';
             }
         };
+        // --- CHANGED LOGIC END ---
 
         const scrollArea = document.createElement('div');
         scrollArea.style.flex = '1';
@@ -168,7 +188,7 @@ export const INSPECTOR = `
 
         inspectDetails = document.createElement('div');
         inspectDetails.className = 'inspector-details';
-        inspectDetails.innerHTML = '<div style="text-align:center;color:#666;margin-top:20px">Double-Click to Inspect</div>';
+        inspectDetails.innerHTML = '<div style="text-align:center;color:#666;margin-top:20px">Double-Click elements in the app to Inspect</div>';
 
         scrollArea.appendChild(inspectDetails);
         container.appendChild(toggleBtn);

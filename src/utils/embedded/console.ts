@@ -3,7 +3,15 @@ export const CONSOLE = `
 // console.js
 (function () {
     const capturedLogs = [];
+    const processedIds = new Set();
     const originalConsole = { log: console.log, warn: console.warn, error: console.error };
+
+    function shouldLog(message) {
+        if (typeof message !== 'string') return true;
+        if (message.includes('[Atlas] Injecting Runtime')) return false;
+        if (message.includes('[Atlas] Initializing')) return false;
+        return true;
+    }
 
     function checkLeaks(message) {
         if (!window.Atlas || !window.Atlas.reportViolation) return;
@@ -55,7 +63,14 @@ export const CONSOLE = `
         // Run Security Checks
         checkLeaks(message);
 
+        if (!shouldLog(message)) return;
+
         const time = new Date().toLocaleTimeString();
+        const id = \`\${time}|\${type}|\${message}\`;
+        
+        if (processedIds.has(id)) return;
+        processedIds.add(id);
+
         capturedLogs.push({ type, message, time });
 
         // Dispatch event to update UI
@@ -147,24 +162,116 @@ export const CONSOLE = `
             .log-entry.warn { color: #fbbf24; }
             .log-entry.error { color: #f87171; }
             .log-time { color: #666; margin-right: 6px; user-select: none; }
+            
+            /* JSON Tree Config */
+            .log-count { background: #555; color: #fff; padding: 1px 4px; border-radius: 4px; font-size: 9px; margin-right: 6px; display: inline-block; vertical-align: middle; }
+            
+            /* JSON Tree Config */
+            .json-tree { font-family: monospace; font-size: 11px; display: inline-block; vertical-align: top; }
+            .json-tree details { margin-left: 0; display: block; }
+            .json-tree summary { cursor: pointer; color: #a5b4fc; outline: none; display: list-item; }
+            .json-tree summary:hover { color: #818cf8; }
+            .json-key { color: #e0e0e0; }
+            .json-val-string { color: #a5d6a7; }
+            .json-val-num { color: #f48fb1; }
+            .json-val-bool { color: #90caf9; }
+            .json-val-null { color: #9e9e9e; }
         \`;
-        mainContainer.appendChild(style); // Fix: Append style to main container so it persists after clear
+        mainContainer.appendChild(style); 
         mainContainer.appendChild(scrollContainer);
 
+        function renderJSON(data) {
+            const type = typeof data;
+            
+            if (data === null) return \`<span class="json-val-null">null</span>\`;
+            if (type === 'string') return \`<span class="json-val-string">"\${data}"</span>\`;
+            if (type === 'number') return \`<span class="json-val-num">\${data}</span>\`;
+            if (type === 'boolean') return \`<span class="json-val-bool">\${data}</span>\`;
+            
+            if (type === 'object') {
+                const isArray = Array.isArray(data);
+                const keys = Object.keys(data);
+                if (keys.length === 0) return isArray ? '[]' : '{}';
+                
+                let html = \`<details><summary>\${isArray ? \`[\${keys.length}]\` : \`{\${keys.length}}\`}</summary>\`;
+                keys.forEach(key => {
+                    html += \`<div style="padding-left:14px;"><span class="json-key">\${key}:</span> \${renderJSON(data[key])}</div>\`;
+                });
+                html += '</details>';
+                return html;
+            }
+            return String(data);
+        }
+
+        let lastLog = null;
+        let lastLogEl = null;
+        let lastLogCount = 1;
+
         function appendLog(log) {
+            // Check for duplicate
+            const isDuplicate = lastLog && lastLog.message === log.message && lastLog.type === log.type;
+            
+            if (isDuplicate && lastLogEl) {
+                lastLogCount++;
+                let countBadge = lastLogEl.querySelector('.log-count');
+                if (!countBadge) {
+                    countBadge = document.createElement('span');
+                    countBadge.className = 'log-count';
+                    // Insert after time, before content
+                    const timeSpan = lastLogEl.querySelector('.log-time');
+                    if (timeSpan) timeSpan.after(countBadge);
+                }
+                countBadge.innerText = lastLogCount;
+                return; // Stop here, updated existing
+            }
+
+            // New Log
+            lastLog = log;
+            lastLogCount = 1;
+
             const entry = document.createElement('div');
             entry.className = \`log-entry \${log.type}\`;
-            entry.innerHTML = \`<span class="log-time">[\${log.time}]</span> \${log.message}\`;
+            lastLogEl = entry;
             
-            entry.onclick = () => {
-                if (selectedLogEntry) selectedLogEntry.classList.remove('selected');
-                selectedLogEntry = entry;
-                entry.classList.add('selected');
+            let content = log.message;
+            
+            // Handle [App] prefix case
+            let prefix = '';
+            let payload = content;
+            if (content.startsWith('[App] ')) {
+                prefix = '<span style="color:#aaa; margin-right:4px;">[App]</span>';
+                payload = content.substring(6);
+            } else if (content.startsWith('[Server] ')) {
+                prefix = '<span style="color:#818cf8; margin-right:4px;">[Server]</span>';
+                payload = content.substring(9);
+            }
+
+            // Attempt smart JSON parsing
+            if (typeof payload === 'string' && (payload.trim().startsWith('{') || payload.trim().startsWith('['))) {
+                try {
+                     const parsed = JSON.parse(payload);
+                     content = \`\${prefix}<div class="json-tree">\${renderJSON(parsed)}</div>\`;
+                } catch (e) {
+                     // fallback to text
+                     content = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                }
+            } else {
+                 content = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+
+            entry.innerHTML = \`<span class="log-time">[\${log.time}]</span> \${content}\`;
+            
+            entry.onclick = (e) => {
+                // Don't select if clicking summary/details
+                if (e.target.tagName !== 'SUMMARY' && e.target.tagName !== 'DETAILS') {
+                    if (selectedLogEntry) selectedLogEntry.classList.remove('selected');
+                    selectedLogEntry = entry;
+                    entry.classList.add('selected');
+                }
             };
 
             scrollContainer.appendChild(entry);
 
-            // Auto-scroll if attached
             if (scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 50) {
                 scrollContainer.scrollTop = scrollContainer.scrollHeight;
             }
@@ -173,26 +280,24 @@ export const CONSOLE = `
         // Load existing logs
         capturedLogs.forEach(l => appendLog(l));
 
+        // Helper to strip ANSI codes
+        function stripAnsi(str) {
+            return str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+        }
+
         // Listen for new logs (Local Shell)
-        const logHandler = (e) => appendLog(e.detail);
+        const logHandler = (e) => {
+             // Strip ANSI from server logs before processing
+             const cleanMsg = stripAnsi(e.detail.message);
+             // Filter noisy build logs
+             if (cleanMsg.includes('[Server] >') || cleanMsg.includes('[Server] transformed') || cleanMsg.includes('[Server] rendering chunks')) return;
+             
+             e.detail.message = cleanMsg;
+             appendLog(e.detail);
+        };
         window.addEventListener('atlas-console-log', logHandler);
 
-        // Listen for Bridge logs (Project Iframe)
-        window.addEventListener('message', (event) => {
-            if (event.data && event.data.type === 'ATLAS_LOG') {
-                 const { level, args } = event.data;
-                 // Synthesize a log entry
-                 const message = args.join(' ');
-                 // Run security checks (on the Shell side too, for double safety)
-                 checkLeaks(message);
-                 
-                 const time = new Date().toLocaleTimeString();
-                 const type = level === 'warn' ? 'warn' : level === 'error' ? 'error' : 'log';
-                 
-                 capturedLogs.push({ type, message, time });
-                 appendLog({ type, message, time });
-            }
-        });
+
         
         // Cleanup listener when tab might be destroyed (not cleanly supported yet in this simple architecture, but good practice)
         // For now, we rely on the fact that these are robust enough.

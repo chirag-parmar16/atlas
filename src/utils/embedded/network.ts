@@ -7,7 +7,6 @@ export const NETWORK = `
     let selectedRow = null;
     const requestDataMap = new Map();
 
-    // Use a table layout for the "Real DevTools" look
     const createRow = (r) => {
         const row = document.createElement('tr');
         row.style.cursor = 'pointer';
@@ -16,11 +15,9 @@ export const NETWORK = `
         row.style.fontFamily = 'Consolas, Monaco, monospace';
         row.style.color = '#ccc';
         
-        // Row Hover
         row.onmouseover = () => { if (selectedRow !== row) row.style.background = '#2a2d3e'; };
         row.onmouseout = () => { if (selectedRow !== row) row.style.background = 'transparent'; };
 
-        // Click Handler
         row.onclick = () => {
             if (selectedRow) selectedRow.style.background = 'transparent';
             selectedRow = row;
@@ -37,7 +34,6 @@ export const NETWORK = `
         else if (r.status >= 400) statusColor = '#f93e3e'; // Red
         else if (r.status === 'ERR') statusColor = '#f93e3e';
 
-        // Violation Check
         if (r.status >= 400) {
             const level = r.status >= 500 ? window.Atlas.Severity.ERROR : window.Atlas.Severity.WARN;
             window.Atlas.reportViolation('Traffic', \`\${r.status} \${r.method} \${name}\`, level);
@@ -64,7 +60,6 @@ export const NETWORK = `
             if (ct.includes('font')) return 'Font';
             if (ct.includes('json')) return 'Fetch';
         }
-        // Fallback to extension
         const u = r.url.toLowerCase();
         if (u.endsWith('.js')) return 'Script';
         if (u.endsWith('.css')) return 'CSS';
@@ -73,100 +68,127 @@ export const NETWORK = `
     };
 
     const addRequest = (data) => {
-        // Prevent dupes if same ID (rare but possible with queue)
-        if (requestDataMap.has(data.id)) {
-            // console.log('[Network] Duplicate ID ignored:', data.id);
-            return;
-        }
+        if (requestDataMap.has(data.id)) return;
         requestDataMap.set(data.id, data);
 
         if (renderList) {
             const tbody = renderList.querySelector('tbody');
             if (tbody) {
                 const newRow = createRow(data);
-                // Prepend or Append? DevTools usually Appends logic (newest at bottom)
-                // usage: appendChild (Standard)
                 tbody.appendChild(newRow);
-                
-                // Auto-scroll to bottom
                 if (renderList.scrollTop + renderList.clientHeight >= renderList.scrollHeight - 50) {
                      renderList.scrollTop = renderList.scrollHeight;
                 }
-            } else {
-                console.warn('[Network] Render failed: tbody not found');
             }
-        } else {
-            console.log('[Network] Cached request (Tab hidden):', data.url);
         }
+    };
+
+    const renderJSON = (data) => {
+        const type = typeof data;
+        if (data === null) return \`<span class="net-val-null">null</span>\`;
+        if (type === 'string') return \`<span class="net-val-string">"\${data}"</span>\`;
+        if (type === 'number') return \`<span class="net-val-num">\${data}</span>\`;
+        if (type === 'boolean') return \`<span class="net-val-bool">\${data}</span>\`;
+        if (type === 'object') {
+            const isArray = Array.isArray(data);
+            const keys = Object.keys(data);
+            if (keys.length === 0) return isArray ? '[]' : '{}';
+            let html = \`<details open><summary>\${isArray ? \`[\${keys.length}]\` : \`{\${keys.length}}\`}</summary>\`;
+            keys.forEach(key => {
+                html += \`<div><span class="net-key">\${key}:</span> \${renderJSON(data[key])}</div>\`;
+            });
+            html += '</details>';
+            return html;
+        }
+        return String(data);
     };
 
     const renderDetails = (r) => {
         if (!detailView) return;
         detailView.innerHTML = '';
-        detailView.style.background = '#222'; // distinct bg
+        detailView.style.background = '#1e1e1e';
+        detailView.style.display = 'flex';
+        detailView.style.flexDirection = 'column';
 
-        const createSection = (title, content) => {
+        // 1. TABS
+        const tabsContainer = document.createElement('div');
+        tabsContainer.className = 'net-tabs';
+        ['Headers', 'Preview', 'Response'].forEach((name, idx) => {
+             const t = document.createElement('div');
+             t.className = \`net-tab \${idx === 0 ? 'active' : ''}\`;
+             t.innerText = name;
+             t.onclick = () => {
+                 tabsContainer.querySelectorAll('.net-tab').forEach(el => el.classList.remove('active'));
+                 t.classList.add('active');
+                 detailView.querySelectorAll('.net-panel').forEach(el => el.classList.remove('active'));
+                 detailView.querySelector(\`#net-panel-\${name}\`).classList.add('active');
+             };
+             tabsContainer.appendChild(t);
+        });
+        detailView.appendChild(tabsContainer);
+
+        // 2. CONTENT CONTAINER
+        const contentContainer = document.createElement('div');
+        contentContainer.style.flex = '1';
+        contentContainer.style.overflow = 'auto'; // Scrollable content
+
+        // --- PANEL: HEADERS ---
+        const pHeaders = document.createElement('div');
+        pHeaders.id = 'net-panel-Headers';
+        pHeaders.className = 'net-panel active';
+        pHeaders.style.padding = '10px';
+
+        const createSection = (title, data) => {
            const div = document.createElement('div');
            div.style.marginBottom = '12px';
-           const h = document.createElement('div');
-           h.innerText = title;
-           h.style.fontWeight = 'bold';
-           h.style.borderBottom = '1px solid #444';
-           h.style.marginBottom = '4px';
-           h.style.color = '#bbb';
-           div.appendChild(h);
+           div.innerHTML = \`<div style="font-weight:bold; color:#ccc; border-bottom:1px solid #333; margin-bottom:4px;">\${title}</div>\`;
            
-           const pre = document.createElement('pre');
-           pre.style.margin = '0';
-           pre.style.whiteSpace = 'pre-wrap';
-           pre.style.wordBreak = 'break-all';
-           pre.style.fontFamily = 'Consolas, monospace';
-           pre.style.fontSize = '11px';
-           pre.style.color = '#ddd';
-           pre.innerText = content;
-           div.appendChild(pre);
+           if (typeof data === 'string') {
+               div.innerHTML += \`<div style="font-family:monospace; color:#aaa;">\${data}</div>\`;
+           } else {
+               const table = document.createElement('table');
+               table.style.width = '100%'; table.style.fontSize = '11px';
+               for (const [k, v] of Object.entries(data)) {
+                   const tr = document.createElement('tr');
+                   tr.innerHTML = \`<td style="vertical-align:top; color:#888; padding-right:8px; white-space:nowrap;">\${k}:</td><td style="color:#ddd; word-break:break-all;">\${v}</td>\`;
+                   table.appendChild(tr);
+               }
+               div.appendChild(table);
+           }
            return div;
         };
-
-        const jsonFormat = (str) => {
-             try { return JSON.stringify(JSON.parse(str), null, 2); } catch (e) { return str; }
-        };
-
-        const container = document.createElement('div');
-        container.style.padding = '10px';
         
-        container.appendChild(createSection('General', \`Request URL: \${r.url}\\nRequest Method: \${r.method}\\nStatus Code: \${r.status}\\nTime: \${r.time}ms\`));
-        container.appendChild(createSection('Response Headers', JSON.stringify(r.resHeaders, null, 2)));
-        container.appendChild(createSection('Request Headers', JSON.stringify(r.reqHeaders, null, 2)));
-        const bodyContent = jsonFormat(r.body);
-        const bodySection = createSection('Response Body', bodyContent);
-        
-        // Add Copy Button to Response Body Header
-        const header = bodySection.querySelector('div'); // The header div created in createSection
-        if (header) {
-            header.style.display = 'flex';
-            header.style.justifyContent = 'space-between';
-            header.style.alignItems = 'center';
+        pHeaders.appendChild(createSection('General', {
+            'Request URL': r.url,
+            'Request Method': r.method,
+            'Status Code': r.status,
+            'Time': r.time + 'ms'
+        }));
+        pHeaders.appendChild(createSection('Response Headers', r.resHeaders));
+        pHeaders.appendChild(createSection('Request Headers', r.reqHeaders));
+        contentContainer.appendChild(pHeaders);
 
-            const copyBtn = document.createElement('span');
-            copyBtn.innerText = 'Copy';
-            copyBtn.style.fontSize = '10px';
-            copyBtn.style.color = '#49cc90';
-            copyBtn.style.cursor = 'pointer';
-            copyBtn.style.marginLeft = '10px';
-            copyBtn.onclick = (e) => {
-                e.stopPropagation();
-                navigator.clipboard.writeText(bodyContent).then(() => {
-                   const original = copyBtn.innerText;
-                   copyBtn.innerText = 'Copied!';
-                   setTimeout(() => copyBtn.innerText = original, 1000);
-                });
-            };
-            header.appendChild(copyBtn);
+        // --- PANEL: PREVIEW ---
+        const pPreview = document.createElement('div');
+        pPreview.id = 'net-panel-Preview';
+        pPreview.className = 'net-panel';
+        
+        try {
+            const parsed = JSON.parse(r.body);
+            pPreview.innerHTML = \`<div class="net-json-tree">\${renderJSON(parsed)}</div>\`;
+        } catch (e) {
+            pPreview.innerHTML = \`<div style="padding:10px; color:#aaa; font-style:italic;">Not a JSON response</div>\`;
         }
-        container.appendChild(bodySection);
+        contentContainer.appendChild(pPreview);
 
-        detailView.appendChild(container);
+        // --- PANEL: RESPONSE ---
+        const pResponse = document.createElement('div');
+        pResponse.id = 'net-panel-Response';
+        pResponse.className = 'net-panel';
+        pResponse.innerHTML = \`<pre style="margin:0; padding:10px; white-space:pre-wrap; word-break:break-all; font-family:Consolas,monospace; font-size:11px; color:#ddd;">\${r.body.replace(/</g,'&lt;')}</pre>\`;
+        contentContainer.appendChild(pResponse);
+
+        detailView.appendChild(contentContainer);
     };
 
     window.Atlas.addTool('Traffic', function () {
@@ -176,7 +198,6 @@ export const NETWORK = `
         container.style.height = '100%';
         container.style.background = '#1e1e1e';
 
-        // Header / Toolbar
         const toolBar = document.createElement('div');
         toolBar.style.padding = '4px 8px';
         toolBar.style.borderBottom = '1px solid #333';
@@ -201,9 +222,9 @@ export const NETWORK = `
             if (tbody) tbody.innerHTML = '';
             detailView.innerHTML = '';
             requestDataMap.clear();
+            if (window.clearNetworkHistory) window.clearNetworkHistory();
         };
 
-        // Throttling Dropdown
         const throttleSelect = document.createElement('select');
         throttleSelect.style.background = '#252526';
         throttleSelect.style.color = '#ccc';
@@ -214,32 +235,23 @@ export const NETWORK = `
         throttleSelect.style.marginRight = '8px';
         throttleSelect.style.outline = 'none';
 
-        const profiles = ['No Throttling', 'Fast 4G', 'Slow 4G', 'Offline'];
-        profiles.forEach(p => {
+        ['No Throttling', 'Fast 4G', 'Slow 4G', 'Offline'].forEach(p => {
             const opt = document.createElement('option');
             opt.value = p;
             opt.innerText = p;
             throttleSelect.appendChild(opt);
         });
 
-        // Restore Selection
         const savedProfile = sessionStorage.getItem('atlas-throttle-profile');
         if (savedProfile) {
             throttleSelect.value = savedProfile;
-            // Re-apply immediately
-            setTimeout(() => {
-                if (window.setThrottling) window.setThrottling(savedProfile);
-            }, 500); // Small delay to ensure bridge is ready
+            setTimeout(() => { if (window.setThrottling) window.setThrottling(savedProfile); }, 500);
         }
 
         throttleSelect.onchange = () => {
              const val = throttleSelect.value;
              sessionStorage.setItem('atlas-throttle-profile', val);
-             if (window.setThrottling) {
-                 window.setThrottling(val);
-             } else {
-                 console.warn("Throttling bridge not found");
-             }
+             if (window.setThrottling) window.setThrottling(val);
         };
 
         const rightControls = document.createElement('div');
@@ -250,23 +262,21 @@ export const NETWORK = `
         toolBar.appendChild(rightControls);
         container.appendChild(toolBar);
 
-        // Split Layout (Top: Table, Bottom: Details)
         const split = document.createElement('div');
         split.style.flex = '1';
         split.style.display = 'flex';
         split.style.flexDirection = 'column';
         split.style.overflow = 'hidden';
 
-        // TABLE
         renderList = document.createElement('div');
-        renderList.style.flex = '1'; // Takes 50% height initially
+        renderList.style.flex = '1'; 
         renderList.style.overflow = 'auto';
         renderList.style.position = 'relative';
 
         const table = document.createElement('table');
         table.style.width = '100%';
         table.style.borderCollapse = 'collapse';
-        table.style.tableLayout = 'fixed'; // Fixed for perf
+        table.style.tableLayout = 'fixed';
 
         const thead = document.createElement('thead');
         thead.innerHTML = \`
@@ -277,6 +287,25 @@ export const NETWORK = `
                 <th style="padding:4px; width:50px; border-bottom:1px solid #333;">Type</th>
                 <th style="padding:4px; width:50px; text-align:right; border-bottom:1px solid #333;">Time</th>
             </tr>
+            <style>
+               /* Shared JSON Tree CSS */
+               .net-json-tree { font-family: monospace; font-size: 11px; padding: 10px; }
+               .net-json-tree details { margin-left: 14px; }
+               .net-json-tree summary { cursor: pointer; color: #a5b4fc; outline: none; }
+               .net-json-tree summary:hover { color: #818cf8; }
+               .net-key { color: #e0e0e0; }
+               .net-val-string { color: #a5d6a7; }
+               .net-val-num { color: #f48fb1; }
+               .net-val-bool { color: #90caf9; }
+               .net-val-null { color: #9e9e9e; }
+               /* Tabs */
+               .net-tabs { display: flex; border-bottom: 1px solid #333; background: #252526; }
+               .net-tab { padding: 6px 12px; cursor: pointer; font-size: 11px; color:#aaa; border-right: 1px solid #333; }
+               .net-tab:hover { background: #333; color: #fff; }
+               .net-tab.active { background: #1e1e1e; color: #10b981; font-weight: bold; border-bottom: 2px solid #10b981; }
+               .net-panel { display: none; padding: 0; }
+               .net-panel.active { display: block; }
+            </style>
         \`;
         
         const tbody = document.createElement('tbody');
@@ -284,15 +313,13 @@ export const NETWORK = `
         table.appendChild(tbody);
         renderList.appendChild(table);
 
-        // RESIZER
         const resizer = document.createElement('div');
         resizer.style.height = '4px';
         resizer.style.background = '#333';
         resizer.style.cursor = 'ns-resize';
 
-        // DETAILS
         detailView = document.createElement('div');
-        detailView.style.height = '200px'; // Initial height
+        detailView.style.height = '200px'; 
         detailView.style.overflow = 'auto';
         detailView.style.borderTop = '1px solid #333';
 
@@ -301,76 +328,61 @@ export const NETWORK = `
         split.appendChild(detailView);
         container.appendChild(split);
 
-        // --- RESTORE DATA ---
-        // Render any requests that were captured while the tab was closed/hidden
         if (requestDataMap.size > 0) {
-            const tbody = renderList.querySelector('tbody');
-            if (tbody) {
-                requestDataMap.forEach(r => {
-                     const row = createRow(r);
-                     tbody.appendChild(row);
-                });
-                // Scroll to bottom
-                setTimeout(() => {
-                     renderList.scrollTop = renderList.scrollHeight;
-                }, 10);
-            }
+            requestDataMap.forEach(r => tbody.appendChild(createRow(r)));
+            setTimeout(() => { renderList.scrollTop = renderList.scrollHeight; }, 10);
         }
 
-        // --- HISTORY RESTORATION & QUEUE FLUSHING ---
-        let historyRestored = false;
-        
-        const restoreHistory = async () => {
+        // [FIX] Improved History Binding with no spam
+        let attempts = 0;
+        let historyLoaded = false;
+
+        const fetchHistory = async () => {
              // @ts-ignore
              if (window.getNetworkHistory) {
-                 try {
-                     // @ts-ignore
-                     const history = await window.getNetworkHistory();
-                     if (history && Array.isArray(history)) {
-                         console.log(\`[Network] Restored \${history.length} requests from history\`);
-                         requestDataMap.clear(); 
-                         history.forEach(d => addRequest(d));
-                         historyRestored = true;
-                         return true;
-                     }
-                 } catch (e) {
-                     console.warn('[Network] History fetch error:', e);
-                 }
-             } else {
-                 console.log('[Network] Waiting for History Binding...');
+                  try {
+                      // @ts-ignore
+                      const hist = await window.getNetworkHistory();
+                      if (hist && hist.length > 0) {
+                          hist.forEach(d => addRequest(d));
+                      }
+                      historyLoaded = true;
+                  } catch (e) {}
              }
-             return false;
         };
 
-        // Poll for both Binding (History) and Queue
-        let attempts = 0;
         const flushQueue = async () => {
-            // Try to restore history if not done yet
-            if (!historyRestored) {
-                await restoreHistory();
-            }
-
+             // 1. Flush Immediate Queue
              // @ts-ignore
              const queue = window.__ATLAS_NETWORK_QUEUE__ || [];
              if (queue.length > 0) {
-                 console.log(\`[Network] Flushing \${queue.length} queued requests\`);
                  queue.forEach(d => addRequest(d));
                  // @ts-ignore
-                 window.__ATLAS_NETWORK_QUEUE__ = []; // clear
+                 window.__ATLAS_NETWORK_QUEUE__ = []; 
              }
              
-             attempts++;
-             // Extend polling to 5 seconds to ensure bindings catch up
-             if (attempts < 20) setTimeout(flushQueue, 250);
+             // 2. Fetch History (Once initially)
+             if (!historyLoaded) await fetchHistory();
+
+             // Continue polling for queue updates (Infinite)
+             setTimeout(flushQueue, 500);
         };
+
+        // Listen for Navigation Changes (User Request: Reload Network on Nav)
+        window.addEventListener('message', (event) => {
+             if (event.data && event.data.type === 'ATLAS_URL_CHANGE') {
+                 // console.log('[Atlas Network] Navigation detected. Syncing history...');
+                 fetchHistory();
+             }
+        });
+        
         setTimeout(flushQueue, 100);
 
         return container;
     });
 
-    // Public API
     window.Atlas.logNetworkRequest = (data) => {
-        console.log('[Network] Live Update Received:', data.url, 'ID:', data.id);
+        // console.log('[Atlas Network] Received Live Log:', data.id);
         addRequest(data);
     };
 })();

@@ -29,8 +29,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         defaultViewport: null
     });
 
-
-
     // Setup Pages
     const pages = await browser.pages();
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
@@ -45,52 +43,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // @ts-ignore
         await targetPage.evaluateOnNewDocument((toolScripts: string[]) => {
             console.log("%c[Atlas] Injecting Runtime...", "color:cyan");
-
-            // Parent Shell Logic
-            if (window.self === window.top) {
-                toolScripts.forEach(script => {
-                    try { new Function(script)(); } catch (e) { console.error(e); }
-                });
-                return;
-            }
-
-            // Child Bridge Logic
-            if (window.parent !== window) {
-                // 1. Console Bridge
-                const originalLog = console.log;
-                console.log = (...args) => {
-                    originalLog.apply(console, args);
-                    // @ts-ignore
-                    window.parent.postMessage({ type: 'ATLAS_LOG', level: 'log', args: args.map(String) }, '*');
-                };
-
-                // 2. URL Sync Bridge (Child -> Parent)
-                const notifyParentOfUrl = () => {
-                    try {
-                        // Strip /__app__ prefix if present to show clean URL
-                        const path = window.location.pathname.replace('/__app__', '') || '/';
-                        const url = path + window.location.search + window.location.hash;
-                        window.parent.postMessage({ type: 'ATLAS_URL_CHANGE', url: url }, '*');
-                    } catch (e) { }
-                };
-
-                // Monkey Patch History API for SPA support
-                const wrapHistory = (type: string) => {
-                    const orig = history[type as keyof History];
-                    return function (this: History, ...args: any[]) {
-                        // @ts-ignore
-                        const rv = orig.apply(this, args);
-                        notifyParentOfUrl();
-                        return rv;
-                    };
-                };
-                history.pushState = wrapHistory('pushState');
-                history.replaceState = wrapHistory('replaceState');
-                window.addEventListener('popstate', notifyParentOfUrl);
-
-                // Initial Sync
-                notifyParentOfUrl();
-            }
+            // Execute Tools
+            toolScripts.forEach(script => {
+                try { new Function(script)(); } catch (e) { console.error(e); }
+            });
         }, tools);
     };
 
@@ -109,7 +65,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         if (target.type() === 'page') {
             const newPage = await target.page();
             if (newPage && newPage !== page) {
-                // Setup new page with same environment
                 try {
                     const originalUrl = target.url();
                     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
@@ -121,22 +76,16 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                         injectTools(newPage)
                     ]);
 
-                    // FORCE RELOAD to Fix Race Condition: 
-                    // The browser often fires the first request before interception is ready, causing SSL errors.
-                    // We simply reload the page through our now-active interceptor.
+                    // FORCE RELOAD to Fix Race Condition
                     if (originalUrl && originalUrl !== 'about:blank') {
-                        // Use load to avoid hanging on networkidle if stream is active
                         await newPage.goto(originalUrl, { waitUntil: 'domcontentloaded' }).catch(() => { });
                     }
-
-
                 } catch (e) {
                     console.error("Failed to setup new page", e);
                 }
             }
         }
     });
-
 
     // 6. Navigation
     try {
@@ -145,7 +94,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     } catch (e) {
         console.error("Navigation failed", e);
     }
-
 
     // 7. Bridge & Cleanup Interface
     const broadcastLog = (msg: string) => {
@@ -163,11 +111,8 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const close = async () => {
         console.log('[Atlas] Shutting down browsers...');
         try {
-            // Generate manual before closing
             await recorder.generateLog();
         } catch (e) { }
-
-
         try { await browser.close(); } catch (e) { }
     };
 
