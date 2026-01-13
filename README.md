@@ -14,7 +14,7 @@ It acts as a "flight simulator" for web developers, letting you fly your app in 
 Atlas is available as a global NPM package.
 
 ```bash
-npm install -g atlas-sendbox
+npm install -g atlas-sandbox
 ```
 
 *Note: You need Node.js v18+ installed on your system.*
