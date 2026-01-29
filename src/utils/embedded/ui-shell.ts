@@ -233,12 +233,11 @@ export const UI_SHELL = `
 
         // Render plugins
         __STATE__.tools.forEach((tool, index) => {
-            // [ROADMAP] Only show non-redundant tools
-            if (tool.name === 'Traffic' || tool.name === 'Logs') return;
+
 
             const btn = document.createElement('button');
             btn.className = 'tab';
-            btn.innerText = tool.name === 'Network' ? 'Audit' : tool.name; // Rename Network to Audit
+            btn.innerText = tool.name;
             btn.onclick = () => switchTab(tool.name);
             tabs.appendChild(btn);
 

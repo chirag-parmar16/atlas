@@ -226,15 +226,12 @@ The "Security Warden" module actively monitors your app for violations:
 
 Atlas injects a **floating pill** into the bottom-right corner of the browser window. Click it to expand the tool belt.
 
-| Tool        | Description                                                              |
-| ----------- | ------------------------------------------------------------------------ |
-| **Utils**   | Quick actions like Force Reload and Clear LocalStorage.                  |
-| **Logs**    | A secure console that traps logs and highlights sensitive data leaks.    |
-| **Audit**   | Inspect DOM elements and view their computed styles and hierarchy.       |
-| **Traffic** | Monitor all network requests (API, Assets, Docs) with timing and status. |
-| **Record**  | Start/Stop video recording.                                              |
-| **Load**    | Simulate multi-user traffic to stress-test your backend.                 |
-| **Chaos**   | Configure and enable error/latency injection.                            |
+| Tool       | Description                                              |
+| ---------- | -------------------------------------------------------- |
+| **Utils**  | Quick actions like Reload Project.                       |
+| **Record** | Start/Stop video recording.                              |
+| **Health** | Real-time security and performance violation monitoring. |
+| **Chaos**  | Configure and enable error/latency injection.            |
 
 ---
 

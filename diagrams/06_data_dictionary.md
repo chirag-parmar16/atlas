@@ -50,34 +50,7 @@ Complete reference of all data types, structures, interfaces, and constants in t
 
 ---
 
-## 3. Network Data Structures
 
-### 3.1 NetworkRequestLog
-
-| Attribute  | Type   | Description           | Example               |
-| ---------- | ------ | --------------------- | --------------------- |
-| id         | string | Unique request ID     | x7k2m9                |
-| url        | string | Full request URL      | https://myapp.com/api |
-| method     | string | HTTP method           | GET, POST             |
-| status     | number | Response status code  | 200, 404              |
-| type       | string | Inferred content type | Doc, API, Script      |
-| time       | number | Duration in ms        | 42                    |
-| reqHeaders | object | Request headers       | Content-Type          |
-| resHeaders | object | Response headers      | X-Forwarded-Proto     |
-| body       | string | Response body         | JSON data             |
-
-### 3.2 Content Type Inference
-
-| Inferred Type | Detection Method             |
-| ------------- | ---------------------------- |
-| Doc           | content-type contains html   |
-| API           | content-type contains json   |
-| Script        | url ends with .js            |
-| CSS           | url ends with .css           |
-| Img           | url ends with .png/.jpg/.svg |
-| Other         | Default fallback             |
-
----
 
 ## 4. Session Event Types
 
@@ -146,7 +119,7 @@ Complete reference of all data types, structures, interfaces, and constants in t
 | addTool           | function | Register new tool panel |
 | reportViolation   | function | Log a violation         |
 | setRecordingState | function | Update UI indicator     |
-| logNetworkRequest | function | Add to Traffic panel    |
+| setRecordingState | function | Update UI indicator     |
 
 ### 6.2 Tool Registration
 

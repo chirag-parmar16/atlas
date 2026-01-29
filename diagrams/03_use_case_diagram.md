@@ -23,17 +23,12 @@ flowchart TB
             UC06["UC06: View in Isolated Environment"]
         end
         
-        subgraph Monitoring["Monitoring & Debugging"]
-            UC07["UC07: Monitor Network Traffic"]
-            UC08["UC08: View Console Logs"]
-            UC09["UC09: Inspect DOM Elements"]
             UC10["UC10: Detect Security Violations"]
         end
         
         subgraph Testing["Testing Tools"]
             UC11["UC11: Simulate Network Conditions"]
             UC12["UC12: Inject Chaos Failures"]
-            UC13["UC13: Generate Multi-User Load"]
         end
         
         subgraph Recording["Session Recording"]
@@ -58,12 +53,10 @@ flowchart TB
     DEV --> UC02
     DEV --> UC04
     DEV --> UC05
-    DEV --> UC07
-    DEV --> UC08
-    DEV --> UC09
+
     DEV --> UC11
     DEV --> UC12
-    DEV --> UC13
+
     DEV --> UC14
     DEV --> UC15
     DEV --> UC19
@@ -103,12 +96,9 @@ flowchart TB
 
 ### Monitoring & Debugging
 
-| UC ID | Use Case                   | Actor     | Description                       | Precondition   | Postcondition       |
-| ----- | -------------------------- | --------- | --------------------------------- | -------------- | ------------------- |
-| UC07  | Monitor Network Traffic    | Developer | View all HTTP requests/responses  | Session active | Traffic logged      |
-| UC08  | View Console Logs          | Developer | See console.log/warn/error output | Session active | Logs displayed      |
-| UC09  | Inspect DOM Elements       | Developer | Analyze page structure and styles | Session active | Element selected    |
-| UC10  | Detect Security Violations | System    | Identify PII leaks, CORS issues   | Session active | Violations reported |
+| UC ID | Use Case                   | Actor  | Description                     | Precondition   | Postcondition       |
+| ----- | -------------------------- | ------ | ------------------------------- | -------------- | ------------------- |
+| UC010 | Detect Security Violations | System | Identify PII leaks, CORS issues | Session active | Violations reported |
 
 ### Testing Tools
 
@@ -116,7 +106,7 @@ flowchart TB
 | ----- | --------------------------- | --------- | ------------------------------ | -------------- | ------------------ |
 | UC11  | Simulate Network Conditions | Developer | Apply throttling (4G, Offline) | Session active | Throttling applied |
 | UC12  | Inject Chaos Failures       | Developer | Add errors, latency, drops     | Session active | Chaos active       |
-| UC13  | Generate Multi-User Load    | Developer | Simulate concurrent requests   | Session active | Load test complete |
+
 
 ### Session Recording
 

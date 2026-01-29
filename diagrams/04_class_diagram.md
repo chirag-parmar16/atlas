@@ -130,7 +130,6 @@ classDiagram
         +addTool(name, render, onShow): void
         +reportViolation(source, msg, level): void
         +setRecordingState(active): void
-        +logNetworkRequest(data): void
     }
     
     class SeverityEnum {
@@ -151,11 +150,7 @@ classDiagram
         <<module>>
         +UI_SHELL: string
         +TOOLS: string
-        +CONSOLE: string
-        +INSPECTOR: string
-        +NETWORK: string
         +RECORDER: string
-        +TRAFFIC: string
         +HEALTH: string
         +CHAOS: string
     }

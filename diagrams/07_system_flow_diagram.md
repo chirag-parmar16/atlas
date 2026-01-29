@@ -169,11 +169,7 @@ flowchart TB
     
     subgraph Tabs["Tool Tabs"]
         T1["Utils"]
-        T2["Logs"]
-        T3["Audit"]
-        T4["Traffic"]
         T5["Record"]
-        T6["Load"]
         T7["Health"]
         T8["Chaos"]
     end
@@ -188,22 +184,12 @@ flowchart TB
     HOST --> MENU
     
     MENU --> T1
-    MENU --> T2
-    MENU --> T3
-    MENU --> T4
     MENU --> T5
-    MENU --> T6
     MENU --> T7
     MENU --> T8
     
     T1 --> A2
-    T2 --> A2
-    T2 --> A3
-    T3 --> A2
-    T4 --> A2
-    T4 --> A3
     T5 --> A1
-    T6 --> A1
     T7 --> A2
     T8 --> A1
 ```

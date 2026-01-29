@@ -81,7 +81,6 @@ sequenceDiagram
         NET->>PUP: exposeFunction(setThrottling)
         NET->>PUP: exposeFunction(setSecurityMode)
         NET->>PUP: exposeFunction(setChaosConfig)
-        NET->>PUP: exposeFunction(startTrafficSim)
     end
     
     NET->>PUP: setRequestInterception(true)
