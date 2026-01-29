@@ -53,93 +53,130 @@ export const CHAOS = `
              toggleBtn.innerHTML = active ? \`<span style="display:flex; align-items:center; justify-content:center; gap:6px;">\${ICONS.FIRE_REAL} CHAOS ACTIVE \${ICONS.FIRE_REAL}</span>\` : 'Enable Chaos';
              
              statusDiv.innerHTML = active 
-                ? \`<span style="color:#ef4444">Injecting failures...</span>\` 
-                : \`<span style="color:#666">System Stable</span>\`;
+                ? '<span style="color:#ef4444">Injecting failures...</span>' 
+                : '<span style="color:#666">System Stable</span>';
 
-             inputs.forEach(i => i.disabled = !active);
+inputs.forEach(i => i.disabled = !active);
         };
 
-        // UI Builder
-        const createSlider = (label, key, max = 100, unit = '%') => {
-            const wrapper = document.createElement('div');
-            
-            const head = document.createElement('div');
-            head.style.display = 'flex';
-            head.style.justifyContent = 'space-between';
-            head.style.fontSize = '11px';
-            head.style.marginBottom = '4px';
+// Scenarios
+const scenariosHeader = document.createElement('div');
+scenariosHeader.innerText = 'PRESET SCENARIOS';
+scenariosHeader.style.fontSize = '10px';
+scenariosHeader.style.color = '#555';
+scenariosHeader.style.marginTop = '5px';
+scenariosHeader.style.borderBottom = '1px solid #222';
+container.appendChild(scenariosHeader);
 
-            const name = document.createElement('span');
-            name.innerText = label;
-            
-            const valDisplay = document.createElement('span');
-            valDisplay.style.color = '#facc15';
-            valDisplay.innerText = '0' + unit;
+const scenariosGrid = document.createElement('div');
+scenariosGrid.style.display = 'grid';
+scenariosGrid.style.gridTemplateColumns = '1fr 1fr';
+scenariosGrid.style.gap = '8px';
+container.appendChild(scenariosGrid);
 
-            head.appendChild(name);
-            head.appendChild(valDisplay);
-
-            const range = document.createElement('input');
-            range.type = 'range';
-            range.min = '0';
-            range.max = max.toString();
-            range.value = '0';
-            range.style.width = '100%';
-            range.disabled = true;
-
-            range.oninput = () => {
-                config[key] = parseInt(range.value);
-                valDisplay.innerText = config[key] + unit;
+        const addScenarioBtn = (name, desc, cfg) => {
+            const btn = document.createElement('button');
+            btn.className = 'action-btn';
+            btn.innerHTML = '<div style="font-weight:bold">' + name + '</div><div style="font-size:10px; opacity:0.6">' + desc + '</div>';
+            btn.onclick = () => {
+                config.enabled = true;
+                Object.assign(config, cfg);
+                // Update Sliders
+                inputs[0].value = config.errorRate;
+                inputs[0].oninput();
+                inputs[1].value = config.latencyRate;
+                inputs[1].oninput();
+                inputs[2].value = config.dropRate;
+                inputs[2].oninput();
                 sync();
             };
-
-            wrapper.appendChild(head);
-            wrapper.appendChild(range);
-            return { el: wrapper, input: range };
+            scenariosGrid.appendChild(btn);
         };
 
-        const inputs = [];
+        addScenarioBtn('Subway Mode', 'High Lag + Drops', { latencyRate: 40, dropRate: 10, errorRate: 0 });
+        addScenarioBtn('Black Friday', '10% API Failure', { errorRate: 15, latencyRate: 20, dropRate: 5 });
 
-        // 1. Error Rate
-        const errorComp = createSlider('Error Rate (500s)', 'errorRate', 50);
-        inputs.push(errorComp.input);
-        container.appendChild(errorComp.el);
+// UI Builder
+const createSlider = (label, key, max = 100, unit = '%') => {
+    const wrapper = document.createElement('div');
 
-        // 2. Latency Spikes
-        const latencyComp = createSlider('Latency Spikes (2s-5s)', 'latencyRate', 50);
-        inputs.push(latencyComp.input);
-        container.appendChild(latencyComp.el);
+    const head = document.createElement('div');
+    head.style.display = 'flex';
+    head.style.justifyContent = 'space-between';
+    head.style.fontSize = '11px';
+    head.style.marginBottom = '4px';
 
-        // 3. Drop Rate
-        const dropComp = createSlider('Packet Loss / Drop', 'dropRate', 20);
-        inputs.push(dropComp.input);
-        container.appendChild(dropComp.el);
+    const name = document.createElement('span');
+    name.innerText = label;
 
-        // Toggle
-        const toggleBtn = document.createElement('button');
-        toggleBtn.style.padding = '8px';
-        toggleBtn.style.border = 'none';
-        toggleBtn.style.borderRadius = '4px';
-        toggleBtn.style.color = 'white';
-        toggleBtn.style.fontWeight = 'bold';
-        toggleBtn.style.cursor = 'pointer';
-        toggleBtn.style.marginTop = '10px';
-        toggleBtn.onclick = () => {
-            config.enabled = !config.enabled;
-            sync();
-        };
-        container.appendChild(toggleBtn);
+    const valDisplay = document.createElement('span');
+    valDisplay.style.color = '#facc15';
+    valDisplay.innerText = '0' + unit;
 
-        // Status
-        const statusDiv = document.createElement('div');
-        statusDiv.style.fontSize = '11px';
-        statusDiv.style.textAlign = 'center';
-        statusDiv.style.marginTop = '5px';
-        container.appendChild(statusDiv);
+    head.appendChild(name);
+    head.appendChild(valDisplay);
 
-        updateStatusParams();
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = '0';
+    range.max = max.toString();
+    range.value = '0';
+    range.style.width = '100%';
+    range.disabled = true;
 
-        return container;
+    range.oninput = () => {
+        config[key] = parseInt(range.value);
+        valDisplay.innerText = config[key] + unit;
+        sync();
+    };
+
+    wrapper.appendChild(head);
+    wrapper.appendChild(range);
+    return { el: wrapper, input: range };
+};
+
+const inputs = [];
+
+// 1. Error Rate
+const errorComp = createSlider('Error Rate (500s)', 'errorRate', 50);
+inputs.push(errorComp.input);
+container.appendChild(errorComp.el);
+
+// 2. Latency Spikes
+const latencyComp = createSlider('Latency Spikes (2s-5s)', 'latencyRate', 50);
+inputs.push(latencyComp.input);
+container.appendChild(latencyComp.el);
+
+// 3. Drop Rate
+const dropComp = createSlider('Packet Loss / Drop', 'dropRate', 20);
+inputs.push(dropComp.input);
+container.appendChild(dropComp.el);
+
+// Toggle
+const toggleBtn = document.createElement('button');
+toggleBtn.style.padding = '8px';
+toggleBtn.style.border = 'none';
+toggleBtn.style.borderRadius = '4px';
+toggleBtn.style.color = 'white';
+toggleBtn.style.fontWeight = 'bold';
+toggleBtn.style.cursor = 'pointer';
+toggleBtn.style.marginTop = '10px';
+toggleBtn.onclick = () => {
+    config.enabled = !config.enabled;
+    sync();
+};
+container.appendChild(toggleBtn);
+
+// Status
+const statusDiv = document.createElement('div');
+statusDiv.style.fontSize = '11px';
+statusDiv.style.textAlign = 'center';
+statusDiv.style.marginTop = '5px';
+container.appendChild(statusDiv);
+
+updateStatusParams();
+
+return container;
     });
-})();
+}) ();
 `;

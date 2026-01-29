@@ -44,7 +44,6 @@ flowchart TB
         
         subgraph Output["Output Generation"]
             UC17["UC17: Generate MP4 Video"]
-            UC18["UC18: Generate Visual Manual"]
         end
         
         subgraph Utilities["Utility Functions"]
@@ -77,13 +76,11 @@ flowchart TB
     SYS --> UC10
     SYS --> UC16
     SYS --> UC17
-    SYS --> UC18
     
     %% Dependencies
     UC01 --> UC03
     UC14 --> UC16
     UC15 --> UC17
-    UC15 --> UC18
 ```
 
 ## Use Case Specifications
@@ -131,10 +128,9 @@ flowchart TB
 
 ### Output Generation
 
-| UC ID | Use Case               | Actor  | Description                   | Precondition   | Postcondition |
-| ----- | ---------------------- | ------ | ----------------------------- | -------------- | ------------- |
-| UC17  | Generate MP4 Video     | System | Save recording to file        | UC15 triggered | MP4 created   |
-| UC18  | Generate Visual Manual | System | Create markdown documentation | UC15 triggered | MD created    |
+| UC ID | Use Case           | Actor  | Description            | Precondition   | Postcondition |
+| ----- | ------------------ | ------ | ---------------------- | -------------- | ------------- |
+| UC17  | Generate MP4 Video | System | Save recording to file | UC15 triggered | MP4 created   |
 
 ### Utility Functions
 

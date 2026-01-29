@@ -17,6 +17,53 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
     // [FIX] History Array to store requests across navigations
     const requestLogHistory: any[] = [];
 
+    // --- PII SCANNER ---
+    const scanForPII = (text: string): { type: string, matches: string[] }[] => {
+        const results: { type: string, matches: string[] }[] = [];
+        const patterns = {
+            Email: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+            CreditCard: /\b(?:\d[ -]*?){13,16}\b/g,
+            AuthToken: /\b(?:Bearer|Token|JWT|AKIA[0-9A-Z]{16})\b/gi
+        };
+
+        for (const [type, regex] of Object.entries(patterns)) {
+            const matches = text.match(regex);
+            if (matches) {
+                // For CC, do a tiny bit more filtering to avoid small decimals/dates
+                const filtered = type === 'CreditCard'
+                    ? matches.filter(m => m.replace(/[ -]/g, '').length >= 13)
+                    : matches;
+
+                if (filtered.length > 0) results.push({ type, matches: filtered });
+            }
+        }
+        return results;
+    };
+
+    // --- PERFORMANCE MONITOR ---
+    const latencyStore: Record<string, number[]> = {};
+    const checkPerformance = (urlPath: string, duration: number) => {
+        // Only track successful (likely stable) Fetch/XHR requests
+        if (!latencyStore[urlPath]) latencyStore[urlPath] = [];
+
+        const history = latencyStore[urlPath];
+        if (history.length >= 3) {
+            const avg = history.reduce((a, b) => a + b, 0) / history.length;
+            // If current duration > 2x average AND > 250ms (ignore tiny blips)
+            if (duration > avg * 2 && duration > 250) {
+                page.evaluate((path, dur, a) => {
+                    const atlas = (window as any).Atlas;
+                    if (atlas) {
+                        atlas.reportViolation('Performance', `Slowness detected on ${path}: ${dur}ms (Avg: ${Math.round(a)}ms)`, 1);
+                    }
+                }, urlPath, duration, avg).catch(() => { });
+            }
+        }
+
+        history.push(duration);
+        if (history.length > 5) history.shift(); // Keep last 5
+    };
+
     // --- EXPOSED FUNCTIONS ---
     const exposeControls = async () => {
         await page.exposeFunction('setThrottling', (profile: string) => {
@@ -125,6 +172,8 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                 const buffer = await response.arrayBuffer();
                 const duration = Date.now() - startTime;
 
+                checkPerformance(url.pathname, duration);
+
                 const resHeaders: any = Object.fromEntries(response.headers.entries());
 
                 // [FIX] Preserve multiple Set-Cookie headers
@@ -161,6 +210,20 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                     if (contentType.includes('json') || contentType.includes('text') || contentType.includes('xml')) {
                         const str = Buffer.from(buffer).toString('utf-8');
                         safeLogData.body = str.length > 8000 ? str.substring(0, 8000) + '... (Truncated)' : str;
+
+                        // --- PII DETECTION ---
+                        const leaks = scanForPII(str);
+                        if (leaks.length > 0 && !page.isClosed()) {
+                            leaks.forEach(leak => {
+                                page.evaluate((lType, lMatches, pUrl) => {
+                                    // @ts-ignore
+                                    const atlas = (window as any).Atlas;
+                                    if (atlas) {
+                                        atlas.reportViolation('Security Warden', `PII Leak (${lType}) detected in ${pUrl}: ${lMatches.join(', ')}`, 2);
+                                    }
+                                }, leak.type, leak.matches, url.pathname).catch(() => { });
+                            });
+                        }
                     } else {
                         safeLogData.body = `[Binary Data: ${contentType}]`;
                     }

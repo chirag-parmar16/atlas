@@ -126,12 +126,10 @@ flowchart LR
     subgraph Output["Output Generation"]
         F["recorder.stop()"]
         G["Write MP4 File"]
-        H["Generate Markdown"]
     end
     
     subgraph Files["Output Files"]
         I["session-*.mp4"]
-        J["visual-manual-*.md"]
     end
     
     A --> B
@@ -152,10 +150,9 @@ flowchart LR
     E5 --> F
     
     F --> G
-    F --> H
+    F --> G
     
     G --> I
-    H --> J
 ```
 
 ---

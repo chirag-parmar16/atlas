@@ -268,6 +268,39 @@ export const NETWORK = `
         toolBar.appendChild(rightControls);
         container.appendChild(toolBar);
 
+        // --- INSIGHTS SUMMARY ---
+        const insightsBar = document.createElement('div');
+        insightsBar.style.display = 'grid';
+        insightsBar.style.gridTemplateColumns = '1fr 1fr 1fr';
+        insightsBar.style.gap = '10px';
+        insightsBar.style.padding = '10px';
+        insightsBar.style.borderBottom = '1px solid #333';
+        insightsBar.style.background = '#1a1a1a';
+        container.appendChild(insightsBar);
+
+        const createInsightCard = (title, color) => {
+            const card = document.createElement('div');
+            card.style.borderLeft = '3px solid ' + color;
+            card.style.paddingLeft = '8px';
+            card.style.fontSize = '10px';
+            card.innerHTML = '<div style="color:#888">' + title + '</div><div class="count" style="font-size:16px; font-weight:bold; color:'+color+'">0</div>';
+            insightsBar.appendChild(card);
+            return card;
+        };
+
+        const secCard = createInsightCard('Security Leaks', '#ef4444');
+        const perfCard = createInsightCard('Perf Issues', '#fca130');
+        const linkCard = createInsightCard('Broken Links', '#fca130');
+
+        const updateInsightCounts = () => {
+            const violations = (window as any).Atlas?.violations || [];
+            secCard.querySelector('.count').innerText = violations.filter(v => v.type === 'Security Warden').length;
+            perfCard.querySelector('.count').innerText = violations.filter(v => v.type === 'Performance').length;
+            linkCard.querySelector('.count').innerText = violations.filter(v => v.type === 'Audit').length;
+        };
+
+        setInterval(updateInsightCounts, 1000);
+
         const split = document.createElement('div');
         split.style.flex = '1';
         split.style.display = 'flex';

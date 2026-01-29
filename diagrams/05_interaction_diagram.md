@@ -154,7 +154,7 @@ sequenceDiagram
     DEV->>PUP: Close browser window
     PUP->>BRW: Browser disconnect event
     BRW->>REC: generateLog()
-    REC->>REC: Write visual-manual.md
+    BRW->>REC: generateLog()
     BRW->>PUP: browser.close()
     BRW->>RUN: Cleanup signal
     RUN->>SRV: cleanup()

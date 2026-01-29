@@ -202,11 +202,4 @@ Complete reference of all data types, structures, interfaces, and constants in t
 | Filename  | session-{timestamp}.mp4 |
 | Location  | Project root            |
 
-### 10.2 Visual Manual
 
-| Attribute | Value                            |
-| --------- | -------------------------------- |
-| Format    | Markdown                         |
-| Filename  | visual-manual-{timestamp}.md     |
-| Location  | Project root                     |
-| Sections  | Header, Video link, Activity Log |

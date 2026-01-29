@@ -4,7 +4,7 @@ import { createNetworkManager } from './network-manager';
 import { attachRecorder } from './session-recorder';
 
 // @ts-ignore
-import { UI_SHELL, TOOLS, CONSOLE, INSPECTOR, NETWORK, RECORDER, TRAFFIC, HEALTH, CHAOS } from './embedded';
+import { UI_SHELL, TOOLS, INSPECTOR, NETWORK, RECORDER, HEALTH, CHAOS, LINKS } from './embedded';
 
 export async function launchBrowser(domain: string, localPort: number, projectPath: string): Promise<{ broadcastLog: (msg: string) => void, close: () => Promise<void>, process: any }> {
     console.log('[Atlas] Launching Browser Orchestrator...');
@@ -75,7 +75,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // Generic Tool Injection
     // @ts-ignore
     const setupPage = async (targetPage: any) => {
-        const tools = [UI_SHELL, TOOLS, CONSOLE, INSPECTOR, NETWORK, RECORDER, TRAFFIC, HEALTH, CHAOS];
+        const tools = [UI_SHELL, TOOLS, INSPECTOR, NETWORK, RECORDER, HEALTH, CHAOS, LINKS];
 
         // 1. Network Manager (Isolated per page)
         const netMgr = createNetworkManager(targetPage, { domain, localPort });
@@ -114,7 +114,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     await recorder.init();
 
     const runToolsNow = async (p: any) => {
-        const tools = [UI_SHELL, TOOLS, CONSOLE, INSPECTOR, NETWORK, RECORDER, TRAFFIC, HEALTH, CHAOS];
+        const tools = [UI_SHELL, TOOLS, INSPECTOR, NETWORK, RECORDER, HEALTH, CHAOS, LINKS];
 
         await p.evaluate((toolScripts: string[]) => {
             toolScripts.forEach(script => {
@@ -187,7 +187,8 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const close = async () => {
         console.log('[Atlas] Shutting down browsers...');
         try {
-            await recorder.generateLog();
+            // REDUNDANT: Manual reports only now
+            // await recorder.generateLog();
         } catch (e) { }
         try { await browser.close(); } catch (e) { }
     };

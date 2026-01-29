@@ -47,7 +47,6 @@ flowchart TB
     %% Output Flows
     BROWSER -->|"10. Testing Interface"| DEV
     RECORDER -->|"11. MP4 Video"| FS
-    RECORDER -->|"12. Markdown Report"| FS
 ```
 
 ## Data Flow Descriptions
@@ -65,14 +64,13 @@ flowchart TB
 | 9   | Domain Masking    | Network Proxy  | Production Domain    | HTTP Requests/Responses     |
 | 10  | Testing Interface | Browser        | Developer            | Floating UI with tools      |
 | 11  | Video Output      | Recorder       | File System          | session-*.mp4               |
-| 12  | Report Output     | Recorder       | File System          | visual-manual-*.md          |
 
 ## Process Descriptions
 
-| Process              | Input            | Output                  | Function                       |
-| -------------------- | ---------------- | ----------------------- | ------------------------------ |
-| CLI                  | Commands, Config | Server/Browser triggers | Parse args, orchestrate flow   |
-| Server Manager       | Project path     | Running server on port  | Install, build, spawn process  |
-| Browser Orchestrator | Domain, Port     | Puppeteer instance      | Launch browser, inject tools   |
-| Network Proxy        | HTTP Requests    | Proxied Responses       | Domain masking, interception   |
-| Session Recorder     | User events      | MP4, Markdown           | Capture video, generate report |
+| Process              | Input            | Output                  | Function                      |
+| -------------------- | ---------------- | ----------------------- | ----------------------------- |
+| CLI                  | Commands, Config | Server/Browser triggers | Parse args, orchestrate flow  |
+| Server Manager       | Project path     | Running server on port  | Install, build, spawn process |
+| Browser Orchestrator | Domain, Port     | Puppeteer instance      | Launch browser, inject tools  |
+| Network Proxy        | HTTP Requests    | Proxied Responses       | Domain masking, interception  |
+| Session Recorder     | User events      | MP4                     | Capture video                 |

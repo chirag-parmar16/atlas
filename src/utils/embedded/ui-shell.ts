@@ -43,6 +43,10 @@ export const UI_SHELL = `
             __STATE__.violations.push(v);
             updateStatusIndicator(); // Defined later
             window.dispatchEvent(new CustomEvent('atlas-violation', { detail: v }));
+        },
+
+        get violations() {
+            return __STATE__.violations;
         }
     };
 
@@ -229,15 +233,18 @@ export const UI_SHELL = `
 
         // Render plugins
         __STATE__.tools.forEach((tool, index) => {
+            // [ROADMAP] Only show non-redundant tools
+            if (tool.name === 'Traffic' || tool.name === 'Logs') return;
+
             const btn = document.createElement('button');
             btn.className = 'tab';
-            btn.innerText = tool.name;
+            btn.innerText = tool.name === 'Network' ? 'Audit' : tool.name; // Rename Network to Audit
             btn.onclick = () => switchTab(tool.name);
             tabs.appendChild(btn);
 
             const panel = document.createElement('div');
             panel.className = 'panel';
-            panel.id = \`panel-\${tool.name}\`;
+            panel.id = 'panel-' + tool.name;
 
             if (tool.renderCallback) {
                 const el = tool.renderCallback();
@@ -245,7 +252,7 @@ export const UI_SHELL = `
             }
             content.appendChild(panel);
 
-            if (index === 0) {
+            if (tabs.children.length === 1) {
                 btn.classList.add('active');
                 panel.classList.add('active');
             }

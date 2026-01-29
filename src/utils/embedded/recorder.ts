@@ -191,6 +191,8 @@ export const RECORDER = `
             }
         };
 
+
+
         const stopRecording = async () => {
              status.innerText = 'Status: ⏳ Stopping...';
              if (window.atlasStopRecording) {
@@ -203,6 +205,7 @@ export const RECORDER = `
                  status.innerText = \`Saved: \${file}\`;
                  status.style.color = '#10b981';
                  sendEvent('ACTION', 'Recording Stopped');
+
              }
         };
 
@@ -227,6 +230,7 @@ export const RECORDER = `
         });
 
         container.appendChild(btn);
+
         container.appendChild(status);
         return container;
     });
