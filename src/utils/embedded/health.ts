@@ -126,13 +126,12 @@ export const HEALTH = `
             msg.innerText = v.message;
             item.appendChild(msg);
 
-            // Prepend functionality? Or append? Usually newest top is better for logs?
-            // Let's stick to append for now, or use list.prepend(item)
-            list.appendChild(item);
+            // NEWEST FIRST (Descending)
+            list.prepend(item);
             
-            // Auto-scroll
+            // Auto-scroll to top to see newest
             if (list.parentElement) {
-                list.scrollTop = list.scrollHeight;
+                list.scrollTop = 0;
             }
         };
 

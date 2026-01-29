@@ -4,6 +4,8 @@ import path from 'path';
 import fs from 'fs';
 import { startServer } from '../utils/server';
 import { launchBrowser } from '../utils/browser';
+import { dashboard } from '../utils/dashboard';
+
 
 export async function run() {
     // Mode: Local atlas run (current directory only)
@@ -11,7 +13,16 @@ export async function run() {
     const projectName = path.basename(projectPath);
 
     console.clear();
-    console.log(`\nStarting Atlas for project: ${projectName}`);
+    // ASCII Header (Matching Dashboard)
+    const C = { RESET: "\x1b[0m", CYAN: "\x1b[36m", BOLD: "\x1b[1m", DIM: "\x1b[2m" };
+    console.log(`${C.CYAN}${C.BOLD}
+    _    _____ _        _    ____  
+   / \\  |_   _| |      / \\  / ___| 
+  / _ \\   | | | |     / _ \\ \\___ \\ 
+ / ___ \\  | | | |___ / ___ \\ ___) |
+/_/   \\_\\ |_| |_____/_/   \\_\\____/ ${C.RESET}${C.DIM}v1.0${C.RESET}
+`);
+    console.log(`Starting Atlas for project: ${projectName}`);
 
     // CHECK: Require atlas.config.json to exist
     const configPath = path.join(projectPath, 'atlas.config.json');
@@ -126,19 +137,27 @@ export async function run() {
 
     // 5. Upgrade Relay
     // Flush pending
-    pendingLogs.forEach(msg => broadcastLog(msg));
+    dashboard.init(finalDomain, serverPort);
+
+    pendingLogs.forEach(msg => dashboard.addLog(msg));
     pendingLogs.length = 0;
 
     // Switch target
-    logTarget = broadcastLog;
+    logTarget = (msg) => {
+        if (msg.includes('Violations')) dashboard.logChaos(); // Heuristic map
+        else if (msg.includes('Fetch')) dashboard.logRequest();
+        dashboard.addLog(msg);
+    };
 
     // 6. Cleanup Hook
     const performCleanup = async () => {
-        console.log('\n[Atlas] Cleaning up...');
+        dashboard.stop();
+        // console.log('\n[Atlas] Cleaning up...');
         // Switch logs back to console so user can see shutdown progress
         logTarget = (msg) => console.log(msg);
 
         if (serverCleanup) await serverCleanup();
+
         await close();
         process.exit();
     };

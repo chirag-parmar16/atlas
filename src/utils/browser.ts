@@ -128,6 +128,15 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     };
     await runToolsNow(page);
 
+    // Initial HUD Update
+    await page.evaluate((d, p) => {
+        // @ts-ignore
+        if (window.Atlas && window.Atlas.updateHUD) window.Atlas.updateHUD(d, p, 'NO LIMIT');
+        // Enable Device Mode by default for "Showcase" feel? Maybe optional.
+        // Let's leave it off by default but enable explicit hazard border.
+    }, domain, localPort);
+
+
     // 3. Navigation Lock & Multi-Tab Support
     browser.on('targetcreated', async (target) => {
         if (target.type() === 'page') {
@@ -142,6 +151,13 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
                     // Inject immediately into current context
                     await runToolsNow(newPage);
+
+                    // Update HUD for new tab
+                    await newPage.evaluate((d, p) => {
+                        // @ts-ignore
+                        if (window.Atlas && window.Atlas.updateHUD) window.Atlas.updateHUD(d, p, 'NO LIMIT');
+                    }, domain, localPort);
+
 
                     // REMOVED: Force Reload (Fixed Double Load)
                 } catch (e) {

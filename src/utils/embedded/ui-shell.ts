@@ -1,6 +1,18 @@
 export const UI_SHELL = `
 (function () {
-    if (window.Atlas) return;
+    // SPA / Redirect Handling:
+    // If Atlas is already defined, it means the window persisted (SPA navigation).
+    // We must check if the DOM was wiped and re-inject if necessary.
+    if (window.Atlas) {
+        // If the UI is missing from DOM, trigger a re-bootstrap
+        if (!document.getElementById('atlas-tools-host')) {
+             console.log('[Atlas] Detected SPA navigation/wipe. Re-injecting UI...');
+             // Continue execution to re-inject...
+        } else {
+             // UI exists and State exists. We are good.
+             return;
+        }
+    }
 
     // Severity Enum
     const SEVERITY = { INFO: 0, WARN: 1, ERROR: 2 };
@@ -29,6 +41,43 @@ export const UI_SHELL = `
         BOLT: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>'
     };
 
+    // Global Styles Injection (Outside Shadow DOM)
+    const globalCss = \`
+        /* HAZARD BORDER: Fixed Overlay Frame */
+        body.atlas-hazard-mode::after {
+            content: ""; pointer-events: none;
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            border: 12px solid #f59e0b;
+            box-sizing: border-box;
+            background: linear-gradient(135deg, #f59e0b 25%, transparent 25%) -50px 0,
+                        linear-gradient(225deg, #f59e0b 25%, transparent 25%) -50px 0,
+                        linear-gradient(315deg, #f59e0b 25%, transparent 25%),
+                        linear-gradient(45deg, #f59e0b 25%, transparent 25%);
+            background-size: 100px 100px;
+            background-color: transparent;
+            mask-image: linear-gradient(to bottom, black 12px, transparent 12px calc(100% - 12px), black calc(100% - 12px));
+            -webkit-mask-image: linear-gradient(to bottom, black 12px, transparent 12px calc(100% - 12px), black calc(100% - 12px));
+            /* Fallback: Just a thick border if masks fail */
+            border: 12px solid #f59e0b;
+            z-index: 2147483645;
+            opacity: 0.8;
+        }
+        
+        /* DEVICE FRAME (The "Phone" Look) */
+        body.atlas-device-mode {
+            transform: scale(0.85);
+            transform-origin: top center;
+            border: 12px solid #18181b !important;
+            border-radius: 24px !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+            margin: 60px auto !important;
+            max-width: 390px !important; /* iPhone Pro width */
+            min-height: 844px !important;
+            height: auto !important;
+            overflow-y: auto !important;
+            background: #fff;
+        }
+    \`;
 
     // Public Controlled API
     const AtlasAPI = {
@@ -204,10 +253,137 @@ export const UI_SHELL = `
         });
         observer.observe(document.body, { childList: true, subtree: false });
 
+        // Resilience Heartbeat (Fix for Framework Router/Hydration wiping body)
+        // Run frequently (200ms) to catch React/Next.js hydration wipes instantly
+        setInterval(() => {
+            // 1. Re-inject Host if missing
+            if (document.body && !document.body.contains(host)) {
+                try {
+                     // console.log('[Atlas] Re-attaching UI to body...');
+                     document.body.appendChild(host);
+                } catch(e) {}
+            }
+            
+            // 2. Re-apply Hazard Mode if lost
+            const isDevice = document.body.classList.contains('atlas-device-mode');
+            const isHazard = document.body.classList.contains('atlas-hazard-mode');
+            
+            if (!isDevice && !isHazard) {
+                 document.body.classList.add('atlas-hazard-mode');
+            }
+        }, 200);
+
         const shadow = host.attachShadow({ mode: 'open' });
         const style = document.createElement('style');
         style.textContent = css;
         shadow.appendChild(style);
+
+                // --- HUD BAR CSS ---
+        // Enhanced UI styling for the Top Bar
+        const hudStyle = document.createElement('style');
+        hudStyle.textContent = \`
+            .hud-bar {
+                position: fixed; top: 0; left: 0; width: 100%; height: 48px;
+                background: #09090b; border-bottom: 1px solid #27272a;
+                color: #e4e4e7; z-index: 2147483646;
+                display: flex; align-items: center; justify-content: space-between;
+                padding: 0 24px;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                font-size: 13px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+                transform: translateY(-100%); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            .hud-bar.visible { transform: translateY(0); }
+
+            .hud-item { display: flex; align-items: center; gap: 12px; }
+            .hud-item.left { width: 200px; }
+            .hud-item.right { width: 200px; justify-content: flex-end; }
+            .hud-center { flex: 1; display: flex; justify-content: center; }
+
+            .hud-live { 
+                width: 8px; height: 8px; background: #10b981; 
+                border-radius: 50%; box-shadow: 0 0 10px #10b981; 
+                animation: pulse-live 2s infinite; 
+            }
+            .hud-label { font-weight: 700; color: #fff; letter-spacing: 0.5px; }
+            .hud-status { background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+
+            .route-pill {
+                display: flex; align-items: center; gap: 12px;
+                background: #18181b; padding: 6px 16px; border-radius: 8px;
+                border: 1px solid #27272a;
+            }
+            .host-fake { color: #fff; font-weight: 500; }
+            .arrow { color: #52525b; font-size: 10px; }
+            .host-real { color: #a1a1aa; font-family: monospace; }
+            
+            .hud-tag { 
+                display: inline-block; padding: 4px 10px; 
+                background: #27272a; color: #a1a1aa; 
+                border-radius: 6px; font-size: 11px; font-weight: 500; 
+            }
+
+            @keyframes pulse-live { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+        \`;
+        shadow.appendChild(hudStyle);
+
+        // Inject Global CSS
+        if (!document.getElementById('atlas-global-style')) {
+            const gStyle = document.createElement('style');
+            gStyle.id = 'atlas-global-style';
+            gStyle.textContent = globalCss;
+            document.head.appendChild(gStyle);
+        }
+
+       // --- HUD BAR ---
+        const hud = document.createElement('div');
+        hud.className = 'hud-bar visible';
+        // Use a cleaner, tech-font design
+        hud.innerHTML = \`
+            <div class="hud-item left">
+                <div class="hud-live"></div>
+                <span class="hud-label">ATLAS PROXY</span>
+                <span class="hud-status">ACTIVE</span>
+            </div>
+            
+            <div class="hud-center">
+                <div class="route-pill">
+                    <span class="host-fake" id="hud-fake-domain">...</span>
+                    <span class="arrow">→</span>
+                    <span class="host-real" id="hud-real-port">...</span>
+                </div>
+            </div>
+
+            <div class="hud-item right">
+                <span class="hud-tag" id="hud-throttle">NO LIMIT</span>
+            </div>
+        \`;
+        shadow.appendChild(hud);
+
+        // Expose HUD control
+        window.Atlas.updateHUD = (fakeDomain, realPort, throttle) => {
+            const fd = shadow.querySelector('#hud-fake-domain');
+            const rp = shadow.querySelector('#hud-real-port');
+            const th = shadow.querySelector('#hud-throttle');
+            if (fd) fd.textContent = fakeDomain;
+            if (rp) rp.textContent = ':' + realPort;
+            if (th) th.textContent = throttle || 'NO LIMIT';
+        };
+
+        // Expose Device Mode Toggle
+        window.Atlas.toggleDeviceMode = (enabled) => {
+            if (enabled) {
+                document.documentElement.classList.add('atlas-device-wrapper');
+                document.body.classList.add('atlas-device-mode');
+            } else {
+                document.documentElement.classList.remove('atlas-device-wrapper');
+                document.body.classList.remove('atlas-device-mode');
+            }
+        };
+
+        // Default: Enable Hazard Border
+        document.body.classList.add('atlas-hazard-mode');
+
 
         const container = document.createElement('div');
         container.className = 'container';

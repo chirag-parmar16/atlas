@@ -69,6 +69,12 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         await page.exposeFunction('setThrottling', (profile: string) => {
             // console.log(`[Proxy] Throttling set to: ${profile}`);
             currentThrottlingProfile = profile;
+
+            // Sync HUD
+            page.evaluate((prof) => {
+                const tag = document.querySelector('#atlas-tools-host')?.shadowRoot?.querySelector('#hud-throttle');
+                if (tag) tag.textContent = prof;
+            }, profile).catch(() => { });
         });
 
         await page.exposeFunction('setSecurityMode', (mode: string) => {
