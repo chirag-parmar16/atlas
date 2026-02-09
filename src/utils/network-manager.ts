@@ -10,11 +10,10 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
     const { domain, localPort } = config;
 
     // --- STATE ---
-    let currentThrottlingProfile = 'No Throttling';
     let currentSecurityMode = 'Standard';
     let chaosConfig = { enabled: false, errorRate: 0, latencyRate: 0, dropRate: 0 };
 
-    // [FIX] History Array to store requests across navigations
+    // History Array to store requests across navigations
     const requestLogHistory: any[] = [];
 
     // --- PII SCANNER ---
@@ -66,35 +65,21 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
     // --- EXPOSED FUNCTIONS ---
     const exposeControls = async () => {
-        await page.exposeFunction('setThrottling', (profile: string) => {
-            // console.log(`[Proxy] Throttling set to: ${profile}`);
-            currentThrottlingProfile = profile;
-
-            // Sync HUD
-            page.evaluate((prof) => {
-                const tag = document.querySelector('#atlas-tools-host')?.shadowRoot?.querySelector('#hud-throttle');
-                if (tag) tag.textContent = prof;
-            }, profile).catch(() => { });
-        });
 
         await page.exposeFunction('setSecurityMode', (mode: string) => {
-            // console.log(`[Proxy] Security Mode set to: ${mode}`);
             currentSecurityMode = mode;
         });
 
         await page.exposeFunction('setChaosConfig', (config: any) => {
-            // console.log(`[Proxy] Chaos Config updated:`, config);
             chaosConfig = config;
         });
 
-        // [FIX] Expose History Getter so new pages can retrieve old logs
         await page.exposeFunction('getNetworkHistory', () => {
             return requestLogHistory;
         });
 
         await page.exposeFunction('clearNetworkHistory', () => {
             requestLogHistory.length = 0;
-            // console.log('[Proxy] Network history cleared');
         });
     };
 
@@ -105,10 +90,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         const isMainFrame = request.frame() === targetPage.mainFrame();
 
         // 1. Throttling & Chaos Check
-        if (currentThrottlingProfile === 'Offline') {
-            await request.abort('failed');
-            return;
-        }
+        // 1. Throttling & Chaos Check
 
         if (chaosConfig.enabled) {
             if (chaosConfig.dropRate > 0 && Math.random() * 100 < chaosConfig.dropRate) {
@@ -116,7 +98,15 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                 return;
             }
             if (chaosConfig.errorRate > 0 && Math.random() * 100 < chaosConfig.errorRate) {
-                await request.respond({ status: 500, contentType: 'text/html', body: '<h1>500 Internal Server Error (Atlas Chaos Injection)</h1>' });
+                const failMsg = '[Atlas Chaos] 🎲 Request randomly failed (500) due to Error Rate setting.';
+                await page.evaluate((m) => console.warn(m), failMsg).catch(() => { });
+
+                // [HEALTH] Report Chaos 500
+                await page.evaluate((u) => {
+                    try { (window as any).Atlas.reportViolation('Chaos', `Random 500 Error Injection on ${u}`, 2); } catch (e) { }
+                }, url.pathname).catch(() => { });
+
+                await request.respond({ status: 500, contentType: 'text/html', body: '<h1>500 Internal Server Error (Atlas Chaos Injection)</h1><p>This error was intentionally injected by the Atlas Chaos Engine.</p>' });
                 return;
             }
             if (chaosConfig.latencyRate > 0 && Math.random() * 100 < chaosConfig.latencyRate) {
@@ -126,12 +116,6 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         }
 
         let latency = 0;
-        if (currentThrottlingProfile === 'Slow 4G') latency = 100;
-        else if (currentThrottlingProfile === 'Fast 4G') latency = 20;
-
-        if (latency > 0) {
-            await new Promise(r => setTimeout(r, latency));
-        }
 
         // 2. Protocols to Ignore (Pass-through)
         if (url.protocol === 'about:' || url.protocol === 'chrome:' || url.protocol === 'data:' || url.protocol === 'file:') {
@@ -141,10 +125,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
         // 3. TARGET PROXY (If hostname matches domain, proxy to localhost)
         if (url.hostname === domain) {
-            // [FIX] WebSocket / HMR Bypass
-            // Fetch cannot handle WebSockets, so we must redirect these directly to localhost
-            // [FIX] WebSocket / HMR Bypass
-            // Fetch cannot handle WebSockets, so we must redirect these directly to localhost
+            // WebSocket / HMR Bypass
             if (request.resourceType() === 'websocket' || request.headers()['upgrade'] === 'websocket') {
                 const targetPath = url.pathname;
 
@@ -152,10 +133,8 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                 if (wsProxyPort > 0) {
                     const originalTarget = `ws://localhost:${localPort}${targetPath}${url.search}`;
                     const proxyUrl = `ws://localhost:${wsProxyPort}${targetPath}?__target=${encodeURIComponent(originalTarget)}`;
-                    // console.log(`[Proxy] Intercepting WebSocket: ${url.href} -> ${proxyUrl}`);
                     await request.continue({ url: proxyUrl });
                 } else {
-                    // Fallback (Shouldn't happen if init waits)
                     const localUrl = `ws://localhost:${localPort}${targetPath}${url.search}`;
                     await request.continue({ url: localUrl });
                 }
@@ -164,6 +143,11 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
             const targetPath = url.pathname;
             const localUrl = `http://localhost:${localPort}${targetPath}${url.search}`;
+
+            // [UI] Start Loading Bar
+            if (request.isNavigationRequest() || request.resourceType() === 'xhr' || request.resourceType() === 'fetch') {
+                if (!page.isClosed()) page.evaluate(() => { try { (window as any).Atlas.startLoading(); } catch (e) { } }).catch(() => { });
+            }
 
             try {
                 const startTime = Date.now();
@@ -182,8 +166,6 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
                 const resHeaders: any = Object.fromEntries(response.headers.entries());
 
-                // [FIX] Preserve multiple Set-Cookie headers
-                // Node 18+ fetch (Undici) merges duplicate headers in .entries(), but supports getSetCookie()
                 if (typeof (response.headers as any).getSetCookie === 'function') {
                     const cookies = (response.headers as any).getSetCookie();
                     if (cookies && cookies.length > 0) {
@@ -193,7 +175,6 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
                 delete resHeaders['x-frame-options'];
                 delete resHeaders['content-security-policy'];
-                // Fix: Remove content-length/encoding mismatch (Node fetch decompresses, but header might be compressed size)
                 delete resHeaders['content-length'];
                 delete resHeaders['content-encoding'];
                 delete resHeaders['transfer-encoding'];
@@ -211,24 +192,42 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                     body: ''
                 };
 
+                // [HEALTH] Report HTTP Errors (4xx, 5xx)
+                if (response.status >= 400 && !page.isClosed()) {
+                    page.evaluate((s, u) => {
+                        try {
+                            const level = s >= 500 ? 2 : 1; // 500 = Error, 400 = Warn
+                            // @ts-ignore
+                            window.Atlas.reportViolation('Network', `HTTP ${s} on ${u}`, level);
+                        } catch (e) { }
+                    }, response.status, url.pathname).catch(() => { });
+                }
+
                 try {
                     const contentType = response.headers.get('content-type') || '';
                     if (contentType.includes('json') || contentType.includes('text') || contentType.includes('xml')) {
                         const str = Buffer.from(buffer).toString('utf-8');
-                        safeLogData.body = str.length > 8000 ? str.substring(0, 8000) + '... (Truncated)' : str;
 
-                        // --- PII DETECTION ---
-                        const leaks = scanForPII(str);
-                        if (leaks.length > 0 && !page.isClosed()) {
-                            leaks.forEach(leak => {
-                                page.evaluate((lType, lMatches, pUrl) => {
-                                    // @ts-ignore
-                                    const atlas = (window as any).Atlas;
-                                    if (atlas) {
-                                        atlas.reportViolation('Security Warden', `PII Leak (${lType}) detected in ${pUrl}: ${lMatches.join(', ')}`, 2);
-                                    }
-                                }, leak.type, leak.matches, url.pathname).catch(() => { });
-                            });
+                        // Performance Optimization: Skip PII scan for large files (>50KB)
+                        if (str.length > 50000) {
+                            safeLogData.body = str.substring(0, 1000) + '... (Truncated Large File)';
+                            // Skip leaks check
+                        } else {
+                            safeLogData.body = str.length > 8000 ? str.substring(0, 8000) + '... (Truncated)' : str;
+
+                            // --- PII DETECTION ---
+                            const leaks = scanForPII(str);
+                            if (leaks.length > 0 && !page.isClosed()) {
+                                leaks.forEach(leak => {
+                                    page.evaluate((lType, lMatches, pUrl) => {
+                                        // @ts-ignore
+                                        const atlas = (window as any).Atlas;
+                                        if (atlas) {
+                                            atlas.reportViolation('Security Warden', `PII Leak(${lType}) detected in ${pUrl}: ${lMatches.join(', ')}`, 2);
+                                        }
+                                    }, leak.type, leak.matches, url.pathname).catch(() => { });
+                                });
+                            }
                         }
                     } else {
                         safeLogData.body = `[Binary Data: ${contentType}]`;
@@ -260,7 +259,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                             page.evaluate((u) => {
                                 try {
                                     // @ts-ignore
-                                    if (window.Atlas) window.Atlas.reportViolation('Security Warden', `Blocked insecure CORS wildcard (*) on ${u}`, 2);
+                                    if (window.Atlas) window.Atlas.reportViolation('Security Warden', `Blocked insecure CORS wildcard(*) on ${u}`, 2);
                                 } catch (e) { }
                             }, url.pathname).catch(() => { });
                         }
@@ -274,10 +273,12 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                     body: Buffer.from(buffer)
                 });
 
-            } catch (error) {
-                // [FIXED BLOCK] Instead of aborting (which hides UI), respond with a custom Error Page.
-                // This keeps the DOM alive so the Immortal Pill can render.
+                // [UI] Stop Loading Bar
+                if (request.isNavigationRequest() || request.resourceType() === 'xhr' || request.resourceType() === 'fetch') {
+                    if (!page.isClosed()) page.evaluate(() => { try { (window as any).Atlas.stopLoading(); } catch (e) { } }).catch(() => { });
+                }
 
+            } catch (error) {
                 const errorMsg = (error as any).message || 'Unknown Error';
                 const errorHtml = `
                     <html>
@@ -312,9 +313,15 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         }
 
         // 4. Block Other External Navigation on Main Frame
-        if (isMainFrame && url.hostname !== domain && !url.hostname.includes('localhost')) {
-            // console.log(`[Atlas] Blocking external navigation to: ${url.hostname}`);
+        if (isMainFrame && request.isNavigationRequest() && url.hostname !== domain && !url.hostname.includes('localhost')) {
             await request.abort('blockedbyclient');
+            return;
+        }
+
+        // 5. Allow other resources (CDNs, Images, Media, Scripts)
+        // Explicitly ensure images/media are never blocked even if they look weird
+        if (request.resourceType() === 'image' || request.resourceType() === 'media' || request.resourceType() === 'font') {
+            await request.continue();
             return;
         }
 
@@ -329,14 +336,6 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
     };
 
     // --- WEBSOCKET PROXY ---
-    // We need a separate WebSocket server because Puppeteer's request interception doesn't fully support message-level control for WS.
-    // This proxy server intercepts WebSocket connections, forwards them to the real target, and injects chaos/throttling on messages.
-    // Architecture:
-    //   Browser WS Client -> Proxy Server (this) -> Real Local Server
-    // All messages pass through this proxy, allowing us to:
-    //   1. Apply network throttling (Slow 4G, Fast 4G)
-    //   2. Inject chaos (packet drops, latency spikes)
-    //   3. Simulate offline mode (close connections)
     let wsProxyServer: any;
     let wsProxyPort = 0;
 
@@ -348,13 +347,10 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
             wsProxyServer.on('listening', () => {
                 wsProxyPort = (wsProxyServer.address() as any).port;
-                // console.log(`[Proxy] WS Interceptor running on port ${wsProxyPort}`);
                 resolve();
             });
 
             wsProxyServer.on('connection', (clientWs: any, req: any) => {
-                // Parse original target from URL (passed by our interceptor)
-                // Format: ws://localhost:PROXY_PORT/path?__target=ENCODED_TARGET_URL
                 const reqUrl = new URL(req.url, 'http://localhost');
                 const targetUrlEncoded = reqUrl.searchParams.get('__target');
 
@@ -365,44 +361,29 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
                 const targetUrl = decodeURIComponent(targetUrlEncoded);
 
-                // --- OFFLINE CHECK (On Connect) ---
-                if (currentThrottlingProfile === 'Offline' || currentSecurityMode === 'Offline') {
-                    clientWs.close(); // Simulate connection failure
+                if (currentSecurityMode === 'Offline') {
+                    clientWs.close();
                     return;
                 }
 
-                // Connect to real target
                 const targetWs = new WebSocket(targetUrl);
 
-                // Open
-                targetWs.on('open', () => {
-                    // Send buffered messages if any? (Usually none at this point)
-                });
-
-                // Error
                 targetWs.on('error', (e: any) => {
-                    // console.error('[Proxy] WS Target Error:', e.message);
                     clientWs.close();
                 });
 
                 clientWs.on('error', (e: any) => {
-                    // console.error('[Proxy] WS Client Error:', e.message);
                     targetWs.close();
                 });
 
-                // Close
                 targetWs.on('close', () => clientWs.close());
                 clientWs.on('close', () => targetWs.close());
 
-                // --- MESSAGE HANDLING (With Latency) ---
                 const sendMessage = (ws: any, data: any, isBinary: boolean) => {
                     let latency = 0;
-                    if (currentThrottlingProfile === 'Slow 4G') latency = 100;
-                    else if (currentThrottlingProfile === 'Fast 4G') latency = 20;
 
-                    // Chaos
                     if (chaosConfig.enabled) {
-                        if (chaosConfig.dropRate > 0 && Math.random() * 100 < chaosConfig.dropRate) return; // Drop frame
+                        if (chaosConfig.dropRate > 0 && Math.random() * 100 < chaosConfig.dropRate) return;
                         if (chaosConfig.latencyRate > 0 && Math.random() * 100 < chaosConfig.latencyRate) {
                             latency += (2000 + Math.random() * 3000);
                         }
@@ -425,17 +406,13 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
     // Initialize
     const init = async () => {
-        // Init WS Proxy
         await initWsProxy();
 
         // --- TRAFFIC SIMULATION ---
         await page.exposeFunction('startTrafficSim', async (targetUrl: string, count: number) => {
             const http = await import('http');
-
-            // console.log(`[Node] Starting traffic sim: ${count} users -> ${targetUrl}`);
             const agent = new http.Agent({ keepAlive: true, maxSockets: 1000 });
 
-            // Rewrite URL to local server
             const urlObj = new URL(targetUrl);
             const realUrl = `http://localhost:${localPort}${urlObj.pathname}${urlObj.search}`;
 
@@ -445,9 +422,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
             const updateBrowserContext = async () => {
                 try {
-                    if (page.isClosed()) {
-                        return;
-                    }
+                    if (page.isClosed()) return;
                     await page.evaluate((s, f, c, t) => {
                         window.dispatchEvent(new CustomEvent('atlas-traffic-update', {
                             detail: { s, f, c, total: t }
@@ -459,7 +434,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
             const hitSite = () => {
                 return new Promise<void>((resolve) => {
                     const req = http.get(realUrl, { agent }, (res) => {
-                        res.on('data', () => { }); // Consume
+                        res.on('data', () => { });
                         res.on('end', () => {
                             if (res.statusCode && res.statusCode < 400) success++; else fail++;
                             completed++;

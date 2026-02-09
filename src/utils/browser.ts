@@ -174,7 +174,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         const isLocal =
             domain.includes('localhost') ||
             domain.startsWith('127.') ||
-            domain.endsWith('.local');
+            domain.endsWith('.local') ||
+            domain.endsWith('.test') ||
+            !domain.includes('.'); // Single word like 'test', 'dev'
 
         const protocol = isLocal ? 'http://' : 'https://';
 

@@ -12,18 +12,27 @@ export async function init() {
         return;
     }
 
-    // Create default config
-    const defaultConfig = {
+    // Detect Project Type
+    const projectType = detectProjectType(projectPath);
+    console.log(`[Atlas] Detected Project Type: \x1b[36m${projectType}\x1b[0m`);
+
+    // Create config based on type
+    const config = {
+        projectType: projectType,
         startupTimeout: 30000,
         recordingEnabled: true,
-        debugMode: false
+        debugMode: false,
+        // Add specific presets if needed
+        ...(projectType === 'laravel' ? { phpServer: true } : {}),
+        ...(projectType === 'nextjs' ? { nextLinkOptimization: true } : {})
     };
 
     try {
-        fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2) + '\n');
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
         console.log('\n\x1b[32m✓ Successfully initialized Atlas!\x1b[0m');
         console.log(`\nCreated: \x1b[36m${configPath}\x1b[0m`);
-        console.log('\nDefault configuration:');
+        console.log('\nConfiguration:');
+        console.log(`  • Type: ${projectType}`);
         console.log('  • Startup timeout: 30 seconds');
         console.log('  • Recording: Enabled');
         console.log('  • Debug mode: Disabled');
@@ -32,4 +41,30 @@ export async function init() {
         console.error('\n\x1b[31m[Error] Failed to create atlas.config.json:\x1b[0m', (error as Error).message);
         process.exit(1);
     }
+}
+
+function detectProjectType(cwd: string): string {
+    if (fs.existsSync(path.join(cwd, 'composer.json'))) {
+        const composer = JSON.parse(fs.readFileSync(path.join(cwd, 'composer.json'), 'utf-8'));
+        if (composer.require && composer.require['laravel/framework']) return 'laravel';
+        return 'php';
+    }
+
+    if (fs.existsSync(path.join(cwd, 'package.json'))) {
+        const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf-8'));
+        const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+
+        if (deps['next']) return 'nextjs';
+        if (deps['react']) return 'react';
+        if (deps['vue']) return 'vue';
+        if (deps['@angular/core']) return 'angular';
+        if (deps['express']) return 'node-express';
+
+        return 'node';
+    }
+
+    if (fs.existsSync(path.join(cwd, 'index.html'))) return 'static';
+    if (fs.existsSync(path.join(cwd, 'index.php'))) return 'php';
+
+    return 'unknown';
 }

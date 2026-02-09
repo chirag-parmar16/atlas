@@ -185,6 +185,12 @@ export function attachRecorder(page: Page, config: RecorderConfig) {
                 }
             });
 
+            // 5. UX: Auto-Open Report Folder (Windows)
+            try {
+                const fullPath = path.resolve(targetDir);
+                require('child_process').exec(`start "" "${fullPath}"`);
+            } catch (e) { }
+
             return reportId; // Return the folder name or relative path
         });
     };
