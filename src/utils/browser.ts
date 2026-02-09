@@ -204,10 +204,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     const close = async () => {
         console.log('[Atlas] Shutting down browsers...');
-        try {
-            // REDUNDANT: Manual reports only now
-            // await recorder.generateLog();
-        } catch (e) { }
         try { await browser.close(); } catch (e) { }
     };
 

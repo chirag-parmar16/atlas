@@ -408,58 +408,6 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
     const init = async () => {
         await initWsProxy();
 
-        // --- TRAFFIC SIMULATION ---
-        await page.exposeFunction('startTrafficSim', async (targetUrl: string, count: number) => {
-            const http = await import('http');
-            const agent = new http.Agent({ keepAlive: true, maxSockets: 1000 });
-
-            const urlObj = new URL(targetUrl);
-            const realUrl = `http://localhost:${localPort}${urlObj.pathname}${urlObj.search}`;
-
-            let success = 0;
-            let fail = 0;
-            let completed = 0;
-
-            const updateBrowserContext = async () => {
-                try {
-                    if (page.isClosed()) return;
-                    await page.evaluate((s, f, c, t) => {
-                        window.dispatchEvent(new CustomEvent('atlas-traffic-update', {
-                            detail: { s, f, c, total: t }
-                        }));
-                    }, success, fail, completed, count);
-                } catch (e) { }
-            };
-
-            const hitSite = () => {
-                return new Promise<void>((resolve) => {
-                    const req = http.get(realUrl, { agent }, (res) => {
-                        res.on('data', () => { });
-                        res.on('end', () => {
-                            if (res.statusCode && res.statusCode < 400) success++; else fail++;
-                            completed++;
-                            updateBrowserContext();
-                            resolve();
-                        });
-                    });
-                    req.on('error', () => {
-                        fail++; completed++; updateBrowserContext(); resolve();
-                    });
-                    req.setTimeout(5000, () => {
-                        req.destroy();
-                        fail++; completed++; updateBrowserContext(); resolve();
-                    });
-                });
-            };
-
-            const tasks = [];
-            for (let i = 0; i < count; i++) {
-                tasks.push(hitSite());
-            }
-            await Promise.all(tasks);
-            return { success, fail };
-        });
-
         await exposeControls();
         await attach(page);
     };
