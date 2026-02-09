@@ -15,7 +15,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     recorder: { generateLog: (targetDir: string, sessionData: any) => Promise<string | null>, getSession: () => any }
 }> {
     console.log('[Atlas] Launching Browser Orchestrator...');
-    const reportManager = new ReportManager(projectPath);
+    const reportManager = new ReportManager(projectPath, `localhost:${localPort}`);
     let recorderInstance: any = null;
 
     // 1. Resolve Chrome Path
@@ -118,8 +118,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
         // 4. Navigation Tracker
         let lastUrl = '';
-        const logNav = async () => {
-            const currentUrl = targetPage.url();
+        const logNav = async (url?: string) => {
+            const currentUrl = url || targetPage.url();
+            if (!currentUrl || currentUrl === 'about:blank') return;
             if (currentUrl === lastUrl) return;
             lastUrl = currentUrl;
             await reportManager.logNavigation(currentUrl);
@@ -127,28 +128,40 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
         targetPage.on('framenavigated', async (frame: any) => {
             if (frame === targetPage.mainFrame()) {
-                await logNav();
+                await logNav(targetPage.url());
             }
         });
 
-        // Catch SPA transitions (Fragment/Hash changes)
+        // Catch SPA transitions (Back, Forward, Fragment, History)
         await targetPage.evaluateOnNewDocument(() => {
-            window.addEventListener('hashchange', () => {
+            const log = () => {
                 // @ts-ignore
                 if (window.atlasLogNavigation) window.atlasLogNavigation(window.location.href);
-            });
+            };
+            window.addEventListener('hashchange', log);
+            window.addEventListener('popstate', log);
+
             const originalPushState = history.pushState;
             history.pushState = function () {
                 // @ts-ignore
                 originalPushState.apply(this, arguments);
+                log();
+            };
+
+            const originalReplaceState = history.replaceState;
+            history.replaceState = function () {
                 // @ts-ignore
-                if (window.atlasLogNavigation) window.atlasLogNavigation(window.location.href);
+                originalReplaceState.apply(this, arguments);
+                log();
             };
         });
 
-        await targetPage.exposeFunction('atlasLogNavigation', async (url: string) => {
-            await logNav();
+        await targetPage.exposeFunction('atlasLogNavigation', async (url?: string) => {
+            await logNav(url);
         });
+
+        // 5. Initial Log for this page
+        await logNav();
     };
 
     // 4. Attach Modules (Initial Page)
@@ -211,8 +224,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     // 6. Navigation
     try {
-        console.log(`[Atlas] Navigating to https://${domain}...`);
-        // Fix: Use domcontentloaded instead of networkidle0 for reliability
         const isLocal =
             domain.includes('localhost') ||
             domain.startsWith('127.') ||
@@ -226,7 +237,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             waitUntil: 'domcontentloaded'
         });
 
-        // Log initial navigation
+        // Explicitly log the starting page to ensure it's ALWAYS Step 1
         await reportManager.logNavigation(page.url());
 
     } catch (e) {
