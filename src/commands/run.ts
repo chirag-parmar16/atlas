@@ -133,7 +133,7 @@ export async function run() {
     console.log(`Launching isolated browser...`);
 
     // 4. Launch Browser
-    const { broadcastLog, close, process: browserProcess } = await launchBrowser(finalDomain, serverPort, projectPath);
+    const { broadcastLog, close, process: browserProcess, reportManager } = await launchBrowser(finalDomain, serverPort, projectPath);
 
     // 5. Upgrade Relay
     // Flush pending
@@ -144,7 +144,7 @@ export async function run() {
 
     // Switch target
     logTarget = (msg) => {
-        if (msg.includes('Violations')) dashboard.logChaos(); // Heuristic map
+        if (msg.includes('Violations')) dashboard.logStress(); // Heuristic map
         else if (msg.includes('Fetch')) dashboard.logRequest();
         dashboard.addLog(msg);
     };
@@ -152,6 +152,11 @@ export async function run() {
     // 6. Cleanup Hook
     const performCleanup = async () => {
         dashboard.stop();
+        // Generate Final Results
+        if (reportManager) {
+            await reportManager.generateMarkdownReport();
+        }
+
         // console.log('\n[Atlas] Cleaning up...');
         // Switch logs back to console so user can see shutdown progress
         logTarget = (msg) => console.log(msg);

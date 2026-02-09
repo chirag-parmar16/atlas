@@ -3,8 +3,6 @@ import path from 'path';
 import fs from 'fs/promises';
 import { exec } from 'child_process';
 import util from 'util';
-import { generateAtlasReport } from './report-generator';
-
 const { PuppeteerScreenRecorder } = require('puppeteer-screen-recorder');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const execPromise = util.promisify(exec);
@@ -155,44 +153,6 @@ export function attachRecorder(page: Page, config: RecorderConfig) {
             sessionEvents.push(event);
         });
 
-        await page.exposeFunction('atlasSubmitReport', async (violations: any[]) => {
-            const info = currentSession || lastSessionInfo;
-            if (!info) return null;
-
-            // 1. Create Subfolder for this specific report
-            const reportId = `report_${info.id}`;
-            const targetDir = path.join(projectPath, 'atlas_reports', reportId);
-            if (!require('fs').existsSync(targetDir)) require('fs').mkdirSync(targetDir, { recursive: true });
-
-            // 2. Finalize recording (Merge only now)
-            const videoPath = await generateLog(targetDir, info);
-
-            // 3. Format Metadata
-            const ua = await page.evaluate(() => navigator.userAgent);
-
-            // 4. Generate the Audit Report
-            const report = generateAtlasReport(targetDir, {
-                timestamp: info.id,
-                domain: await page.evaluate(() => window.location.hostname),
-                duration: info === currentSession
-                    ? `${Math.round((Date.now() - info.startTime) / 1000)}s`
-                    : `${Math.round(((lastSessionInfo as any).endTime - info.startTime) / 1000)}s`,
-                violations: violations,
-                videoPath: videoPath || undefined,
-                metadata: {
-                    userAgent: ua,
-                    platform: process.platform
-                }
-            });
-
-            // 5. UX: Auto-Open Report Folder (Windows)
-            try {
-                const fullPath = path.resolve(targetDir);
-                require('child_process').exec(`start "" "${fullPath}"`);
-            } catch (e) { }
-
-            return reportId; // Return the folder name or relative path
-        });
     };
 
     // Helper

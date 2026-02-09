@@ -11,7 +11,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
     // --- STATE ---
     let currentSecurityMode = 'Standard';
-    let chaosConfig = { enabled: false, errorRate: 0, latencyRate: 0, dropRate: 0 };
+    let stressConfig = { enabled: false, errorRate: 0, latencyRate: 0, dropRate: 0 };
 
     // History Array to store requests across navigations
     const requestLogHistory: any[] = [];
@@ -70,8 +70,8 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
             currentSecurityMode = mode;
         });
 
-        await page.exposeFunction('setChaosConfig', (config: any) => {
-            chaosConfig = config;
+        await page.exposeFunction('setStressConfig', (config: any) => {
+            stressConfig = config;
         });
 
         await page.exposeFunction('getNetworkHistory', () => {
@@ -92,24 +92,24 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         // 1. Throttling & Chaos Check
         // 1. Throttling & Chaos Check
 
-        if (chaosConfig.enabled) {
-            if (chaosConfig.dropRate > 0 && Math.random() * 100 < chaosConfig.dropRate) {
+        if (stressConfig.enabled) {
+            if (stressConfig.dropRate > 0 && Math.random() * 100 < stressConfig.dropRate) {
                 await request.abort('failed');
                 return;
             }
-            if (chaosConfig.errorRate > 0 && Math.random() * 100 < chaosConfig.errorRate) {
-                const failMsg = '[Atlas Chaos] 🎲 Request randomly failed (500) due to Error Rate setting.';
+            if (stressConfig.errorRate > 0 && Math.random() * 100 < stressConfig.errorRate) {
+                const failMsg = '[Atlas Stress] 🎲 Request randomly failed (500) due to Stress Rate setting.';
                 await page.evaluate((m) => console.warn(m), failMsg).catch(() => { });
 
-                // [HEALTH] Report Chaos 500
+                // [HEALTH] Report Stress 500
                 await page.evaluate((u) => {
-                    try { (window as any).Atlas.reportViolation('Chaos', `Random 500 Error Injection on ${u}`, 2); } catch (e) { }
+                    try { (window as any).Atlas.reportViolation('Stress Testing', `Stress 500 Error Injection on ${u}`, 2); } catch (e) { }
                 }, url.pathname).catch(() => { });
 
-                await request.respond({ status: 500, contentType: 'text/html', body: '<h1>500 Internal Server Error (Atlas Chaos Injection)</h1><p>This error was intentionally injected by the Atlas Chaos Engine.</p>' });
+                await request.respond({ status: 500, contentType: 'text/html', body: '<h1>500 Internal Server Error (Atlas Stress Injection)</h1><p>This error was intentionally injected by the Atlas Stress Engine.</p>' });
                 return;
             }
-            if (chaosConfig.latencyRate > 0 && Math.random() * 100 < chaosConfig.latencyRate) {
+            if (stressConfig.latencyRate > 0 && Math.random() * 100 < stressConfig.latencyRate) {
                 const delay = 2000 + Math.random() * 3000;
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
@@ -382,9 +382,9 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                 const sendMessage = (ws: any, data: any, isBinary: boolean) => {
                     let latency = 0;
 
-                    if (chaosConfig.enabled) {
-                        if (chaosConfig.dropRate > 0 && Math.random() * 100 < chaosConfig.dropRate) return;
-                        if (chaosConfig.latencyRate > 0 && Math.random() * 100 < chaosConfig.latencyRate) {
+                    if (stressConfig.enabled) {
+                        if (stressConfig.dropRate > 0 && Math.random() * 100 < stressConfig.dropRate) return;
+                        if (stressConfig.latencyRate > 0 && Math.random() * 100 < stressConfig.latencyRate) {
                             latency += (2000 + Math.random() * 3000);
                         }
                     }

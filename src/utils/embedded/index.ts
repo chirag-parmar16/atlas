@@ -1,7 +1,8 @@
 export * from './ui-shell';
-export * from './tools';
-
 export * from './recorder';
-export * from './health';
-export * from './chaos';
 export * from './links';
+
+// New Architecture
+export * from './stability';
+export * from './security-monitor';
+export * from './extras';

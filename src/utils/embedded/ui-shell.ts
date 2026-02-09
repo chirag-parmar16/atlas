@@ -12,16 +12,9 @@ export const UI_SHELL = `
 
     const SEVERITY = { INFO: 0, WARN: 1, ERROR: 2 };
 
-    // Load persisted state
-    let savedViolations = [];
-    try {
-        const s = sessionStorage.getItem('atlas-violations');
-        if (s) savedViolations = JSON.parse(s);
-    } catch (e) { }
-
     const __STATE__ = {
         tools: [],
-        violations: savedViolations
+        violations: [] // ALWAYS START EMPTY ON NEW PAGE
     };
 
     Object.defineProperty(window, '__ATLAS__', {
@@ -89,10 +82,22 @@ export const UI_SHELL = `
         addTool: function (name, renderCallback, onShow) {
             __STATE__.tools.push({ name, renderCallback, onShow });
         },
-        reportViolation: function (source, message, level) {
-            const v = { source, message, level, timestamp: Date.now() };
+        reportViolation: function (source, message, level, metadata = {}) {
+            const v = { 
+                source, 
+                message, 
+                level, 
+                timestamp: Date.now(),
+                url: window.location.href,
+                metadata
+            };
             __STATE__.violations.push(v);
-            try { sessionStorage.setItem('atlas-violations', JSON.stringify(__STATE__.violations)); } catch (e) { }
+            
+            // Send to persistent backend store
+            if (window.atlasLogViolation) {
+                window.atlasLogViolation(v).catch(() => {});
+            }
+
             updateStatusIndicator();
             window.dispatchEvent(new CustomEvent('atlas-violation', { detail: v }));
         },

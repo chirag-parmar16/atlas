@@ -2,12 +2,14 @@ import puppeteer from 'puppeteer-core';
 import { Launcher } from 'chrome-launcher';
 import { createNetworkManager } from './network-manager';
 import { attachRecorder } from './session-recorder';
+import { ReportManager } from './report-manager';
 
 // @ts-ignore
-import { UI_SHELL, TOOLS, RECORDER, HEALTH, CHAOS, LINKS } from './embedded';
+import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS } from './embedded';
 
-export async function launchBrowser(domain: string, localPort: number, projectPath: string): Promise<{ broadcastLog: (msg: string) => void, close: () => Promise<void>, process: any }> {
+export async function launchBrowser(domain: string, localPort: number, projectPath: string): Promise<{ broadcastLog: (msg: string) => void, close: () => Promise<void>, process: any, reportManager: ReportManager }> {
     console.log('[Atlas] Launching Browser Orchestrator...');
+    const reportManager = new ReportManager(projectPath);
 
     // 1. Resolve Chrome Path
     let chromePath = '';
@@ -75,13 +77,18 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // Generic Tool Injection
     // @ts-ignore
     const setupPage = async (targetPage: any) => {
-        const tools = [UI_SHELL, TOOLS, RECORDER, HEALTH, CHAOS, LINKS];
+        const tools = [UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS];
 
         // 1. Network Manager (Isolated per page)
         const netMgr = createNetworkManager(targetPage, { domain, localPort });
         await netMgr.init();
 
-        // 2. Inject Tools
+        // 2. Report Manager Binding
+        await targetPage.exposeFunction('atlasLogViolation', async (violation: any) => {
+            await reportManager.logViolation(violation);
+        });
+
+        // 3. Inject Tools
         // @ts-ignore
         await targetPage.evaluateOnNewDocument((toolScripts: string[]) => {
             console.log("%c[Atlas] Injecting Runtime...", "color:cyan");
@@ -100,10 +107,39 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // Actually, recorder.ts is designed to attach only once. Let's keep recorder on Main Page only for now or re-evaluate.
         // The original code passed 'recorder' log generation to 'close'.
         // Let's only attach recorder to the initial page to avoid conflict, or if needed we can attach to all. 
-        // Given visual-manual is likely single-session, let's attach to all but they might overwrite properties. 
-        // Safe bet: Attach to all.
-        // const rec = attachRecorder(targetPage, { projectPath });
-        // await rec.init();
+        // 4. Navigation Tracker
+        let lastUrl = '';
+        const logNav = async () => {
+            const currentUrl = targetPage.url();
+            if (currentUrl === lastUrl) return;
+            lastUrl = currentUrl;
+            await reportManager.logNavigation(currentUrl);
+        };
+
+        targetPage.on('framenavigated', async (frame: any) => {
+            if (frame === targetPage.mainFrame()) {
+                await logNav();
+            }
+        });
+
+        // Catch SPA transitions (Fragment/Hash changes)
+        await targetPage.evaluateOnNewDocument(() => {
+            window.addEventListener('hashchange', () => {
+                // @ts-ignore
+                if (window.atlasLogNavigation) window.atlasLogNavigation(window.location.href);
+            });
+            const originalPushState = history.pushState;
+            history.pushState = function () {
+                // @ts-ignore
+                originalPushState.apply(this, arguments);
+                // @ts-ignore
+                if (window.atlasLogNavigation) window.atlasLogNavigation(window.location.href);
+            };
+        });
+
+        await targetPage.exposeFunction('atlasLogNavigation', async (url: string) => {
+            await logNav();
+        });
     };
 
     // 4. Attach Modules (Initial Page)
@@ -114,7 +150,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     await recorder.init();
 
     const runToolsNow = async (p: any) => {
-        const tools = [UI_SHELL, TOOLS, RECORDER, HEALTH, CHAOS, LINKS];
+        const tools = [UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS];
 
         await p.evaluate((toolScripts: string[]) => {
             toolScripts.forEach(script => {
@@ -184,6 +220,8 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             waitUntil: 'domcontentloaded'
         });
 
+        // Log initial navigation
+        await reportManager.logNavigation(page.url());
 
     } catch (e) {
         console.error("Navigation failed", e);
@@ -210,6 +248,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     return {
         broadcastLog,
         close,
-        process: browser.process()
+        process: browser.process(),
+        reportManager
     };
 }

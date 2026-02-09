@@ -39,7 +39,7 @@ export class Dashboard {
         this.requestCount++;
     }
 
-    public logChaos() {
+    public logStress() {
         this.chaosEvents++;
     }
 
