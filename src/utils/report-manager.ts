@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import { existsSync, mkdirSync } from 'fs';
 import path from 'path';
 
 export interface Violation {
@@ -14,12 +15,38 @@ export interface Violation {
 export class ReportManager {
     private reportPath: string;
     private mdReportPath: string;
+    private videoDir: string;
+    private videoPath: string;
 
     constructor(projectPath: string) {
         const resolvedPath = path.resolve(projectPath);
-        this.reportPath = path.join(resolvedPath, 'atlas-report.json');
-        this.mdReportPath = path.join(resolvedPath, 'atlas-audit-report.md');
-        console.log(`[Atlas] Reporting to: ${this.reportPath}`);
+        const reportBase = path.join(resolvedPath, 'atlas-reports');
+        const jsonDir = path.join(reportBase, 'json');
+        const mdDir = path.join(reportBase, 'markdown');
+        this.videoDir = path.join(reportBase, 'videos');
+
+        // Ensure directories exist
+        if (!existsSync(reportBase)) mkdirSync(reportBase, { recursive: true });
+        if (!existsSync(jsonDir)) mkdirSync(jsonDir, { recursive: true });
+        if (!existsSync(mdDir)) mkdirSync(mdDir, { recursive: true });
+
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19); // Simplified timestamp
+
+        this.reportPath = path.join(jsonDir, `report-${timestamp}.json`);
+        this.mdReportPath = path.join(mdDir, `audit-${timestamp}.md`);
+        this.videoPath = path.join(this.videoDir, `recording-${timestamp}.mp4`);
+
+        console.log(`[Atlas] Structured reports will be saved in: atlas-reports/`);
+    }
+
+    public getReportPaths() {
+        return {
+            json: this.reportPath,
+            markdown: this.mdReportPath,
+            video: this.videoPath,
+            videoDir: this.videoDir
+        };
     }
 
     private async getReports(): Promise<Violation[]> {

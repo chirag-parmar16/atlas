@@ -133,7 +133,8 @@ export async function run() {
     console.log(`Launching isolated browser...`);
 
     // 4. Launch Browser
-    const { broadcastLog, close, process: browserProcess, reportManager } = await launchBrowser(finalDomain, serverPort, projectPath);
+    const { broadcastLog, close, process: browserProcess, reportManager, recorder } = await launchBrowser(finalDomain, serverPort, projectPath);
+
 
     // 5. Upgrade Relay
     // Flush pending
@@ -155,6 +156,9 @@ export async function run() {
         // Generate Final Results
         if (reportManager) {
             await reportManager.generateMarkdownReport();
+            if (recorder && recorder.getSession()) {
+                await recorder.generateLog(projectPath, recorder.getSession());
+            }
         }
 
         // console.log('\n[Atlas] Cleaning up...');

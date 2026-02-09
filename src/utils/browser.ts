@@ -7,9 +7,16 @@ import { ReportManager } from './report-manager';
 // @ts-ignore
 import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS } from './embedded';
 
-export async function launchBrowser(domain: string, localPort: number, projectPath: string): Promise<{ broadcastLog: (msg: string) => void, close: () => Promise<void>, process: any, reportManager: ReportManager }> {
+export async function launchBrowser(domain: string, localPort: number, projectPath: string): Promise<{
+    broadcastLog: (msg: string) => void,
+    close: () => Promise<void>,
+    process: any,
+    reportManager: ReportManager,
+    recorder: { generateLog: (targetDir: string, sessionData: any) => Promise<string | null>, getSession: () => any }
+}> {
     console.log('[Atlas] Launching Browser Orchestrator...');
     const reportManager = new ReportManager(projectPath);
+    let recorderInstance: any = null;
 
     // 1. Resolve Chrome Path
     let chromePath = '';
@@ -104,9 +111,11 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // 3. Recorder (Single instance attached to main page? Or per page?)
         // Recorder typically records the *tab* it was attached to. 
         // For now, let's keep it simple: Attach recorder to every page but only the user controls one? 
-        // Actually, recorder.ts is designed to attach only once. Let's keep recorder on Main Page only for now or re-evaluate.
-        // The original code passed 'recorder' log generation to 'close'.
-        // Let's only attach recorder to the initial page to avoid conflict, or if needed we can attach to all. 
+        // 3. Attach Recorder
+        const rec = attachRecorder(targetPage, reportManager);
+        await rec.init();
+        if (!recorderInstance) recorderInstance = rec; // Track the first one as primary
+
         // 4. Navigation Tracker
         let lastUrl = '';
         const logNav = async () => {
@@ -145,9 +154,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // 4. Attach Modules (Initial Page)
     await setupPage(page);
 
-    // Attach Recorder specifically to the main page (Controller)
-    const recorder = attachRecorder(page, { projectPath });
-    await recorder.init();
 
     const runToolsNow = async (p: any) => {
         const tools = [UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS];
@@ -249,6 +255,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         broadcastLog,
         close,
         process: browser.process(),
-        reportManager
+        reportManager,
+        recorder: recorderInstance
     };
 }

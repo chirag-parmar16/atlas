@@ -7,12 +7,10 @@ const { PuppeteerScreenRecorder } = require('puppeteer-screen-recorder');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const execPromise = util.promisify(exec);
 
-export interface RecorderConfig {
-    projectPath: string;
-}
+import { ReportManager } from './report-manager';
 
-export function attachRecorder(page: Page, config: RecorderConfig) {
-    const { projectPath } = config;
+export function attachRecorder(page: Page, reportManager: ReportManager) {
+    const projectPath = process.cwd();
     const sessionEvents: any[] = [];
 
     // Session State
@@ -155,14 +153,17 @@ export function attachRecorder(page: Page, config: RecorderConfig) {
 
     };
 
-    // Helper
-    const relativePath = (p: string) => path.relative(projectPath, p);
+    const getSession = () => currentSession || lastSessionInfo;
 
-    const generateLog = async (targetDir: string, sessionData: any) => {
+    const generateLog = async (_targetDir: string, sessionData: any) => {
         if (!sessionData || sessionData.parts.length === 0) return null;
 
+        const { video: finalVideoPath, videoDir } = reportManager.getReportPaths();
+
+        // Ensure video dir exists only when we actually have a video to save
+        if (!require('fs').existsSync(videoDir)) require('fs').mkdirSync(videoDir, { recursive: true });
+
         const timestamp = sessionData.id;
-        const finalVideoPath = path.join(targetDir, `session-recording.mp4`);
 
         // --- MERGE VIDEO PARTS ---
         if (sessionData.parts.length === 1) {
@@ -171,8 +172,8 @@ export function attachRecorder(page: Page, config: RecorderConfig) {
                 await fs.copyFile(part, finalVideoPath);
             } catch (e) { return null; }
         } else {
-            console.log(`[Atlas] ⏳ Merging ${sessionData.parts.length} video parts...`);
-            const listFile = path.join(targetDir, `merge-${timestamp}.txt`);
+            console.log(`[Atlas] ⏳ Merging ${sessionData.parts.length} video parts into: ${path.basename(finalVideoPath)}`);
+            const listFile = path.join(videoDir, `merge-${timestamp}.txt`);
 
             try {
                 const fileListContent = sessionData.parts.map((p: string) => `file '${p.replace(/\\/g, '/')}'`).join('\n');
@@ -188,5 +189,5 @@ export function attachRecorder(page: Page, config: RecorderConfig) {
         return finalVideoPath;
     };
 
-    return { init, generateLog };
+    return { init, generateLog, getSession };
 }
