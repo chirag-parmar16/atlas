@@ -7,7 +7,7 @@ export interface NetworkConfig {
     localPort: number;
 }
 
-export function createNetworkManager(page: Page, config: NetworkConfig, reportManager?: ReportManager) {
+export function createNetworkManager(page: Page, config: NetworkConfig, reportManager?: ReportManager, logger: (msg: string) => void = console.log) {
     const { domain, localPort } = config;
 
     // --- STATE ---
@@ -18,6 +18,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
     const requestLogHistory: any[] = [];
     const violationHistory: any[] = [];       // Permanent — for JSON report
     const currentPageViolations: any[] = [];  // Cleared on navigation — for browser sync
+    let lastNavPathname: string = '';          // Track pathname for hash-change detection
 
     // --- PII SCANNER ---
     const scanForPII = (text: string): { type: string, matches: string[] }[] => {
@@ -109,9 +110,23 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
         const url = new URL(urlString);
         const isMainFrame = request.frame() === targetPage.mainFrame();
 
-        // Clear current page violations on new navigation (new page = fresh violations)
+        // Clear current page violations only when pathname actually changes (not hash-only navigation)
+        let isNewPage = false;
         if (request.isNavigationRequest() && isMainFrame) {
-            currentPageViolations.length = 0;
+            // Normalize: treat /, /index.html, /index.htm as the same page
+            const normalizePath = (p: string) => p.replace(/\/(index\.html?)?$/, '/');
+            const newPathname = normalizePath(url.pathname);
+            if (newPathname !== normalizePath(lastNavPathname)) {
+                currentPageViolations.length = 0;
+                isNewPage = true;
+            }
+            lastNavPathname = url.pathname;
+            // Log navigation BEFORE proxy fetch — ensures it appears before any violations
+            // from the response (PII scan etc). reportManager.logNavigation deduplicates,
+            // so the later call from browser.ts framenavigated will be safely skipped.
+            if (reportManager) {
+                reportManager.logNavigation(urlString);
+            }
         }
 
         // 1. Throttling & Chaos Check
@@ -228,13 +243,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
                     violationHistory.push(netViolation);
                     currentPageViolations.push(netViolation);
                     if (reportManager) reportManager.logViolation(netViolation).catch(() => { });
-                    page.evaluate((s, u) => {
-                        try {
-                            const level = s >= 500 ? 2 : 1;
-                            // @ts-ignore
-                            window.Atlas.reportViolation('Network', `HTTP ${s} on ${u}`, level);
-                        } catch (e) { }
-                    }, response.status, url.pathname).catch(() => { });
+                    // No page.evaluate — sync engine will pick up from currentPageViolations
                 }
 
                 try {
@@ -249,13 +258,14 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
                         } else {
                             safeLogData.body = str.length > 100000 ? str.substring(0, 100000) + '... (Truncated)' : str;
 
-                            // --- PII DETECTION ---
-                            const leaks = scanForPII(str);
+                            // --- PII DETECTION (skip on same-page hash navigation) ---
+                            const isSamePageNav = request.isNavigationRequest() && isMainFrame && !isNewPage;
+                            const leaks = isSamePageNav ? [] : scanForPII(str);
 
                             // Only log when actual leaks are found
                             if (leaks.length > 0) {
                                 const contentType = response.headers.get('content-type') || 'unknown';
-                                console.log(`[Atlas Security] 🎯 Found ${leaks.length} PII leaks in ${url.pathname} (${contentType})`);
+                                logger(`[Atlas Security] 🎯 Found ${leaks.length} PII leaks in ${url.pathname} (${contentType})`);
                             }
 
                             // Store violations in server-side history IMMEDIATELY
@@ -273,32 +283,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
                                     if (reportManager) reportManager.logViolation(secViolation).catch(() => { });
                                 });
                             }
-
-                            // Also send to browser for immediate display
-                            if (!page.isClosed()) {
-                                page.evaluate((allLeaks: any[], pUrl: string) => {
-                                    try {
-                                        allLeaks.forEach((leak: any) => {
-                                            // @ts-ignore
-                                            const atlas = (window as any).Atlas;
-                                            if (atlas) {
-                                                atlas.reportViolation('Security Warden', `PII Leak(${leak.type}) detected in ${pUrl}: ${leak.matches.join(', ')}`, 2);
-                                            } else {
-                                                // @ts-ignore
-                                                window.__ATLAS_VIOLATION_QUEUE__ = window.__ATLAS_VIOLATION_QUEUE__ || [];
-                                                // @ts-ignore
-                                                window.__ATLAS_VIOLATION_QUEUE__.push({
-                                                    source: 'Security Warden',
-                                                    message: `PII Leak(${leak.type}) detected in ${pUrl}: ${leak.matches.join(', ')}`,
-                                                    level: 2,
-                                                    timestamp: Date.now(),
-                                                    url: window.location.href
-                                                });
-                                            }
-                                        });
-                                    } catch (e) { }
-                                }, leaks, url.pathname).catch(() => { });
-                            }
+                            // No page.evaluate — sync engine will pick up from currentPageViolations
                         }
                     } else {
                         safeLogData.body = `[Binary Data: ${contentType}]`;

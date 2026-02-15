@@ -2,188 +2,216 @@
 import inquirer from 'inquirer';
 import path from 'path';
 import fs from 'fs';
+import chalk from 'chalk';
 import { startServer } from '../utils/server';
 import { launchBrowser } from '../utils/browser';
-import { dashboard } from '../utils/dashboard';
 
+// --- CONFIG & THEME ---
+const NEON_GREEN = chalk.hex('#39ff14');
+const CYAN = chalk.hex('#00f0ff');
+const YELLOW = chalk.hex('#fcee0a');
+const GRAY = chalk.gray;
 
+// --- STATE ---
+let startTime = Date.now();
+let requestCount = 0;
+let violationCount = 0;
+let chaosEvents = 0;
+let isLive = false;
+
+// --- HELPERS ---
+function getUptime(): string {
+    const diff = Math.floor((Date.now() - startTime) / 1000);
+    const m = Math.floor(diff / 60);
+    const s = diff % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function isViolation(msg: string): boolean {
+    const m = msg.toLowerCase();
+    return m.includes('violation') || m.includes('security') || m.includes('pii') ||
+        m.includes('leak') || m.includes('err') || m.includes('failed');
+}
+
+function isRequest(msg: string): boolean {
+    const m = msg.toLowerCase();
+    return m.includes('fetch') || m.includes('200 ok') || m.includes('request');
+}
+
+function getPrefix(): string {
+    const time = GRAY(getUptime());
+    const reqs = CYAN(`${requestCount}↗`);
+    const viols = violationCount > 0
+        ? chalk.redBright(`${violationCount}⚠`)
+        : NEON_GREEN(`0✓`);
+    return `${GRAY('[')}${time} ${GRAY('│')} ${reqs} ${GRAY('│')} ${viols}${GRAY(']')}`;
+}
+
+function colorizeLog(msg: string): string {
+    let icon = GRAY('▪');
+    let color = chalk.white;
+
+    if (msg.includes('PII') || msg.includes('Leak') || msg.includes('Security')) {
+        icon = chalk.red('█'); color = chalk.redBright;
+    } else if (msg.includes('Error') || msg.includes('Failed') || msg.includes('[ERR]')) {
+        icon = chalk.red('▪'); color = chalk.red;
+    } else if (msg.includes('Violation') || msg.includes('Chaos')) {
+        icon = chalk.yellow('▪'); color = chalk.yellow;
+    } else if (msg.includes('Fetch') || msg.includes('OK')) {
+        icon = chalk.green('▪'); color = chalk.green;
+    } else if (msg.includes('[Atlas]')) {
+        icon = chalk.cyan('▪'); color = chalk.cyan;
+    }
+
+    return `${icon} ${color(msg)}`;
+}
+
+// --- MAIN COMMAND ---
 export async function run() {
-    // Mode: Local atlas run (current directory only)
     const projectPath = process.cwd();
     const projectName = path.basename(projectPath);
 
     console.clear();
-    // ASCII Header (Matching Dashboard)
-    const C = { RESET: "\x1b[0m", CYAN: "\x1b[36m", BOLD: "\x1b[1m", DIM: "\x1b[2m" };
-    console.log(`${C.CYAN}${C.BOLD}
-    _    _____ _        _    ____  
-   / \\  |_   _| |      / \\  / ___| 
-  / _ \\   | | | |     / _ \\ \\___ \\ 
- / ___ \\  | | | |___ / ___ \\ ___) |
-/_/   \\_\\ |_| |_____/_/   \\_\\____/ ${C.RESET}${C.DIM}v1.0${C.RESET}
-`);
-    console.log(`Starting Atlas for project: ${projectName}`);
 
-    // CHECK: Require atlas.config.json to exist
+    // 1. Startup Header
+    console.log('');
+    console.log(NEON_GREEN.bold(`    ___  _____ __    ___   ____`));
+    console.log(NEON_GREEN.bold(`   /   |/_  __/ /   /   | / __/`));
+    console.log(NEON_GREEN.bold(`  / /| | / / / /   / /| | \\ \\  `));
+    console.log(NEON_GREEN.bold(` / ___ |/ / / /___/ ___ |__/ / `));
+    console.log(NEON_GREEN.bold(`/_/  |_/_/ /_____/_/  |_|___/  `) + GRAY(' v1.0'));
+    console.log(GRAY('   ────────────────────────────────────────────────────────'));
+    console.log(`   ${CYAN('Project:')} ${projectName} ${GRAY(`(${projectPath})`)}`);
+    console.log(GRAY('   ────────────────────────────────────────────────────────'));
+    console.log('');
+
     const configPath = path.join(projectPath, 'atlas.config.json');
     if (!fs.existsSync(configPath)) {
-        console.error('\n\x1b[31m[Error] Atlas is not initialized in this project.\x1b[0m\n');
-        console.error('Please run: \x1b[36matlas init\x1b[0m first to create the configuration file.\n');
-        console.error('Workflow:');
-        console.error('  1. \x1b[36matlas init\x1b[0m   - Initialize Atlas configuration');
-        console.error('  2. \x1b[36matlas run\x1b[0m    - Run your project in Atlas\n');
+        console.log(`   ${chalk.red.bold('ERROR')} ${chalk.white('Atlas is not initialized.')}`);
         process.exit(1);
     }
 
-    if (!fs.existsSync(projectPath)) {
-        console.error(`Project not found at ${projectPath}`);
-        process.exit(1);
-    }
-
-    // 1. Log Relay System & Buffering
     const pendingLogs: string[] = [];
-    let logTarget: (msg: string) => void = (msg) => {
-        pendingLogs.push(msg);
+    const logToTerminal = (message: string) => {
+        const lines = String(message).split('\n');
+        for (const msg of lines) {
+            const trimmed = msg.trim();
+            if (!trimmed) continue;
+
+            if (isViolation(trimmed)) violationCount++;
+            else if (isRequest(trimmed)) requestCount++;
+            if (trimmed.includes('Stress') || trimmed.includes('Chaos')) chaosEvents++;
+
+            if (!isLive) {
+                pendingLogs.push(trimmed);
+                continue;
+            }
+
+            console.log(`${getPrefix()} ${colorizeLog(trimmed)}`);
+        }
     };
 
-    const onServerLog = (msg: string) => {
-        logTarget(msg);
-    };
+    const onServerLog = (msg: string) => logToTerminal(msg);
 
-    // 2. SERVER STRATEGY
+    // --- SETUP PHASE ---
     let serverPort: number = 0;
-    let serverChild: any = null;
     let serverCleanup: any = null;
+    let finalDomain: string = '';
 
     const hasPackageJson = fs.existsSync(path.join(projectPath, 'package.json'));
 
-    if (hasPackageJson) {
-        // --- AUTOMATED NODE MODE ---
-        console.log("Initializing local server...");
-        // Start server in background
-        const serverPromise = startServer(projectPath, onServerLog)
-            .catch(err => {
-                console.error("\n\n[Fatal] Server failed to start:", err.message);
-                process.exit(1);
-            });
+    try {
+        if (hasPackageJson) {
+            console.log(YELLOW('   MODE AUTO') + GRAY(' • package.json detected'));
+            console.log('');
 
-        process.stdout.write('\n');
-        const domainPrompt = inquirer.prompt([
-            {
-                type: 'input',
-                name: 'domain',
-                message: 'Enter Live Server Domain (e.g., example.com):',
-                filter: (input: string) => input.trim(),
-                validate: (input: string) => input.length > 0 ? true : 'Domain cannot be empty'
-            }
-        ]);
+            const serverPromise = startServer(projectPath, onServerLog);
+            const domainPrompt = inquirer.prompt([{
+                type: 'input', name: 'domain', message: 'Enter domain to mask as:',
+                filter: (i: string) => i.trim(), validate: (i: string) => i.length > 0
+            }]);
 
-        const [serverResult, answers] = await Promise.all([serverPromise, domainPrompt]);
-        serverPort = serverResult.port;
-        serverChild = serverResult.child;
-        serverCleanup = serverResult.cleanup;
-        var finalDomain = answers.domain;
-
-    } else {
-        // --- MANUAL PORT MODE (Python, Go, Static, etc.) ---
-        console.log("\n[Atlas] No package.json found. Running in Manual Mode.");
-
-        const answers = await inquirer.prompt([
-            {
-                type: 'input',
-                name: 'domain',
-                message: 'Enter Live Server Domain (e.g., example.com):',
-                filter: (input: string) => input.trim(),
-                validate: (input: string) => input.length > 0 ? true : 'Domain cannot be empty'
-            },
-            {
-                type: 'number',
-                name: 'port',
-                message: 'Enter the Localhost Port your project is running on:',
-                validate: (input: number) => input > 0 && input < 65536 ? true : 'Invalid Port'
-            }
-        ]);
-
-        serverPort = answers.port;
-        finalDomain = answers.domain;
-        console.log(`[Atlas] Connecting to http://localhost:${serverPort}...`);
-
-        // PRE-FLIGHT CHECK
-        try {
-            // dynamic import to avoid hoisting issues if any, or just use http
-            const http = await import('http');
-            await new Promise<void>((resolve, reject) => {
-                const req = http.get(`http://localhost:${serverPort}`, (res) => {
-                    resolve();
-                });
-                req.on('error', (err) => reject(err));
-                req.end();
-            });
-            console.log("[OK] Connection verified.");
-        } catch (e) {
-            console.error(`\n[Error] Could not connect to localhost:${serverPort}.`);
-            console.error(`Please ensure your server is RUNNING (e.g. 'python server.py') and using port ${serverPort}.`);
-            console.error(`Detailed Error: ${(e as any).message}`);
-            process.exit(1);
+            const [serverResult, answers] = await Promise.all([serverPromise, domainPrompt]);
+            serverPort = serverResult.port;
+            serverCleanup = serverResult.cleanup;
+            finalDomain = answers.domain;
+        } else {
+            console.log(YELLOW('   MODE MANUAL') + GRAY(' • No package.json detected'));
+            console.log('');
+            const answers = await inquirer.prompt([
+                { type: 'input', name: 'domain', message: 'Enter domain to mask as:' },
+                { type: 'number', name: 'port', message: 'Enter localhost port:' }
+            ]);
+            serverPort = answers.port;
+            finalDomain = answers.domain;
         }
+    } catch (err: any) {
+        if (err?.name === 'ExitPromptError') process.exit(0);
+        throw err;
     }
 
-    // Server Ready + User Input Ready
-    console.log(`\nMasking localhost:${serverPort} as ${finalDomain}`);
-    console.log(`Launching isolated browser...`);
+    // --- LIVE PHASE ---
+    console.clear();
+    startTime = Date.now();
+    isLive = true;
 
-    // 4. Launch Browser
-    const { broadcastLog, close, process: browserProcess, reportManager, recorder } = await launchBrowser(finalDomain, serverPort, projectPath);
+    // BIG NEON GREEN HEADER
+    console.log('');
+    console.log(NEON_GREEN.bold(`    ___  _____ __    ___   ____`));
+    console.log(NEON_GREEN.bold(`   /   |/_  __/ /   /   | / __/`));
+    console.log(NEON_GREEN.bold(`  / /| | / / / /   / /| | \\ \\  `));
+    console.log(NEON_GREEN.bold(` / ___ |/ / / /___/ ___ |__/ / `));
+    console.log(NEON_GREEN.bold(`/_/  |_/_/ /_____/_/  |_|___/  `) + GRAY(' v1.0'));
+    console.log('');
 
+    // Info & Matrix Badges (Static Block)
+    console.log(`   ${NEON_GREEN('●')} ${chalk.white.bold('LIVE SESSION')}  ${GRAY('│')}  ${CYAN(finalDomain)} ${GRAY('→')} ${YELLOW(`localhost:${serverPort}`)}`);
+    console.log(GRAY('   ' + '═'.repeat(60)));
 
-    // 5. Upgrade Relay
-    // Flush pending
-    dashboard.init(finalDomain, serverPort);
+    const reqBadge = chalk.bgHex('#00f0ff').black.bold(` ↗ ${requestCount} REQS `);
+    const violBadge = violationCount > 0
+        ? chalk.bgRed.white.bold(` ⚠ ${violationCount} ISSUES `)
+        : chalk.bgHex('#39ff14').black.bold(` ✓ CLEAN `);
+    const chaosBadge = chalk.bgYellow.black.bold(` ⚡ ${chaosEvents} CHAOS `);
+    console.log(`   ${reqBadge}   ${violBadge}   ${chaosBadge}`);
 
-    pendingLogs.forEach(msg => dashboard.addLog(msg));
+    console.log(GRAY('   ' + '═'.repeat(60)));
+    console.log(`   ${GRAY('Press')} ${chalk.white.bold('Ctrl+C')} ${GRAY('to land (stop session)')}`);
+    console.log(GRAY('   ' + '═'.repeat(60)));
+    console.log('');
+
+    // Flush pending logs
+    pendingLogs.forEach(msg => console.log(`${getPrefix()} ${colorizeLog(msg)}`));
     pendingLogs.length = 0;
 
-    // Switch target
-    logTarget = (msg) => {
-        if (msg.includes('Violations')) dashboard.logStress(); // Heuristic map
-        else if (msg.includes('Fetch')) dashboard.logRequest();
-        dashboard.addLog(msg);
-    };
+    // Launch Browser
+    const { close, reportManager, recorder } = await launchBrowser(finalDomain, serverPort, projectPath, (msg) => logToTerminal(msg));
 
-    // 6. Cleanup Hook
     const performCleanup = async () => {
-        dashboard.stop();
-        // Generate Final Results
+        isLive = false;
+        console.log('');
+        const hr = GRAY('═'.repeat(60));
+        console.log(`   ${hr}`);
+        console.log(`   ${chalk.white.bold('SESSION SUMMARY')}`);
+        console.log(`   ${hr}`);
+        console.log(`   ${GRAY('Duration     :')} ${getUptime()}`);
+        console.log(`   ${GRAY('Requests     :')} ${CYAN(String(requestCount))}`);
+        console.log(`   ${GRAY('Violations   :')} ${violationCount > 0 ? chalk.redBright(String(violationCount)) : NEON_GREEN('0')}`);
+        console.log(`   ${hr}`);
+
         if (reportManager) {
+            await reportManager.flushToDisk();
             await reportManager.generateMarkdownReport();
-            if (recorder && recorder.getSession()) {
-                await recorder.generateLog(projectPath, recorder.getSession());
-            }
+            if (recorder && recorder.getSession()) await recorder.generateLog(projectPath, recorder.getSession());
         }
 
-        // console.log('\n[Atlas] Cleaning up...');
-        // Switch logs back to console so user can see shutdown progress
-        logTarget = (msg) => console.log(msg);
+        console.log(`   ${NEON_GREEN('✓')} ${chalk.white('Reports saved to')} ${CYAN('atlas-reports/')}`);
+        console.log('');
 
         if (serverCleanup) await serverCleanup();
-
         await close();
         process.exit();
     };
 
     process.on('SIGINT', performCleanup);
-
-    // Auto-Exit if Browser Window is closed by user
-    if (browserProcess) {
-        browserProcess.on('close', () => {
-            console.log('\n[Atlas] Browser closed. Generating report and exiting...');
-            performCleanup();
-        });
-    }
-
-    // Safety Force Kill if main process exits
-    process.on('exit', () => {
-        try { serverChild?.kill(); } catch (e) { }
-        try { browserProcess?.kill(); } catch (e) { }
-    });
 }

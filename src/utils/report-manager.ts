@@ -51,53 +51,193 @@ export class ReportManager {
         };
     }
 
+    // In-memory log — prevents race conditions from concurrent read-modify-write
+    private entries: Violation[] = [];
+    private flushTimer: any = null;
+
     private async getReports(): Promise<Violation[]> {
+        // If we have in-memory entries, return those (source of truth)
+        if (this.entries.length > 0) return this.entries;
+        // Otherwise read from disk (cold start)
         try {
             const content = await fs.readFile(this.reportPath, 'utf-8');
-            return JSON.parse(content);
+            const parsed = JSON.parse(content);
+            // Handle tree format (new) — reconstruct flat entries
+            if (parsed.journey && Array.isArray(parsed.journey)) {
+                const flat: Violation[] = [];
+                parsed.journey.forEach((page: any) => {
+                    flat.push({ type: 'navigation', source: 'Browser', message: `Visited: ${page.url}`, timestamp: page.timestamp, url: page.url });
+                    page.violations?.forEach((v: any) => {
+                        flat.push({ type: 'violation', source: v.source, message: v.message, level: v.level, timestamp: v.timestamp, url: v.resourceUrl || page.url, metadata: v.metadata });
+                    });
+                    page.subPages?.forEach((sp: any) => {
+                        flat.push({ type: 'navigation', source: 'Browser', message: `Visited: ${sp.url}`, timestamp: sp.timestamp, url: sp.url });
+                    });
+                });
+                this.entries = flat;
+            } else if (Array.isArray(parsed)) {
+                // Handle flat format (legacy)
+                this.entries = parsed;
+            }
+            return this.entries;
         } catch (e) {
-            return [];
+            return this.entries;
         }
     }
 
     async logNavigation(url: string) {
-        const reports = await this.getReports();
-        const lastEntry = reports.length > 0 ? reports[reports.length - 1] : null;
+        const lastEntry = this.entries.length > 0 ? this.entries[this.entries.length - 1] : null;
 
         // Skip if same URL as last entry to avoid noise
         if (lastEntry && lastEntry.type === 'navigation' && lastEntry.url === url) return;
 
-        await this.log({
+        this.entries.push({
             type: 'navigation',
             source: 'Browser',
             message: `Visited: ${url}`,
             timestamp: Date.now(),
             url
         });
+        this.scheduleFlush();
     }
 
     async logViolation(violation: Omit<Violation, 'type'>) {
-        await this.log({ ...violation, type: 'violation' });
+        this.entries.push({ ...violation, type: 'violation' });
+        this.scheduleFlush();
+    }
+
+    private scheduleFlush() {
+        if (this.flushTimer) return; // Already scheduled
+        this.flushTimer = setTimeout(() => {
+            this.flushTimer = null;
+            this.flushToDisk().catch(() => { });
+        }, 2000);
+    }
+
+    async flushToDisk() {
+        try {
+            const structured = this.buildTreeReport();
+            await fs.writeFile(this.reportPath, JSON.stringify(structured, null, 2), 'utf-8');
+        } catch (error) {
+            console.error('[Atlas] Failed to flush log to disk:', error);
+        }
+    }
+
+    private normalizePath(urlStr: string): string {
+        try {
+            const u = new URL(urlStr);
+            return u.pathname.replace(/\/(index\.html?)?$/, '/');
+        } catch { return urlStr; }
+    }
+
+    private buildTreeReport() {
+        const navigations = this.entries.filter(e => e.type === 'navigation');
+        const firstTs = this.entries.length > 0 ? this.entries[0].timestamp : Date.now();
+        const lastTs = this.entries.length > 0 ? this.entries[this.entries.length - 1].timestamp : Date.now();
+
+        // Build journey: group entries by navigation steps
+        const pages: {
+            step: number;
+            url: string;
+            localUrl: string;
+            timestamp: number;
+            time: string;
+            violations: any[];
+            subPages: { url: string; timestamp: number; time: string }[];
+        }[] = [];
+
+        // Track which normalized paths we've already created a page for
+        const pathToPageIndex = new Map<string, number>();
+
+        this.entries.forEach(entry => {
+            if (entry.type === 'navigation') {
+                const norm = this.normalizePath(entry.url);
+                const existingIndex = pathToPageIndex.get(norm);
+
+                if (existingIndex !== undefined) {
+                    // Same page (hash navigation) — add as sub-page
+                    const parentPage = pages[existingIndex];
+                    // Only add if URL is different from parent
+                    if (parentPage.url !== entry.url) {
+                        const alreadyListed = parentPage.subPages.some(sp => sp.url === entry.url);
+                        if (!alreadyListed) {
+                            parentPage.subPages.push({
+                                url: entry.url,
+                                timestamp: entry.timestamp,
+                                time: new Date(entry.timestamp).toLocaleTimeString()
+                            });
+                        }
+                    }
+                } else {
+                    // New page
+                    const pageObj = {
+                        step: pages.length + 1,
+                        url: entry.url,
+                        localUrl: this.getLocalUrl(entry.url),
+                        timestamp: entry.timestamp,
+                        time: new Date(entry.timestamp).toLocaleTimeString(),
+                        violations: [],
+                        subPages: []
+                    };
+                    pathToPageIndex.set(norm, pages.length);
+                    pages.push(pageObj);
+                }
+            } else if (entry.type === 'violation') {
+                // Find which page this violation belongs to
+                const violationNorm = this.normalizePath(entry.url);
+                const pageIndex = pathToPageIndex.get(violationNorm);
+
+                const violation = {
+                    source: entry.source,
+                    message: entry.message,
+                    level: entry.level,
+                    severity: entry.level === 2 ? 'critical' : 'warning',
+                    timestamp: entry.timestamp,
+                    time: new Date(entry.timestamp).toLocaleTimeString(),
+                    resourceUrl: entry.url,
+                    ...(entry.metadata && Object.keys(entry.metadata).length > 0 ? { metadata: entry.metadata } : {})
+                };
+
+                if (pageIndex !== undefined) {
+                    pages[pageIndex].violations.push(violation);
+                } else if (pages.length > 0) {
+                    // Assign to last known page
+                    pages[pages.length - 1].violations.push(violation);
+                }
+            }
+        });
+
+        // Build summary counts
+        const allViolations = this.entries.filter(e => e.type === 'violation');
+        const criticalCount = allViolations.filter(v => v.level === 2).length;
+        const warningCount = allViolations.filter(v => v.level !== 2).length;
+
+        return {
+            session: {
+                id: path.basename(this.reportPath, '.json'),
+                startTime: new Date(firstTs).toISOString(),
+                endTime: new Date(lastTs).toISOString(),
+                date: new Date().toLocaleString(),
+                totalPages: pages.length,
+                totalSteps: navigations.length
+            },
+            summary: {
+                health: criticalCount > 0 ? 'attention_required' : (warningCount > 0 ? 'stable' : 'perfect'),
+                critical: criticalCount,
+                warnings: warningCount,
+                total: allViolations.length
+            },
+            journey: pages
+        };
     }
 
     private getLocalUrl(maskedUrl: string) {
         if (!this.localSource) return maskedUrl;
         try {
             const url = new URL(maskedUrl);
-            // Replace the masked domain with localhost source
             return `${url.protocol}//${this.localSource}${url.pathname}${url.search}${url.hash}`;
         } catch (e) {
             return maskedUrl;
-        }
-    }
-
-    private async log(entry: Violation) {
-        try {
-            const reports = await this.getReports();
-            reports.push(entry);
-            await fs.writeFile(this.reportPath, JSON.stringify(reports, null, 2), 'utf-8');
-        } catch (error) {
-            console.error('[Atlas] Failed to log to JSON:', error);
         }
     }
 
@@ -178,6 +318,14 @@ export class ReportManager {
                 }
             });
 
+            // Helper: normalize URL path to detect same-page hash navigations
+            const normalizePath = (urlStr: string) => {
+                try {
+                    const u = new URL(urlStr);
+                    return u.pathname.replace(/\/(index\.html?)?$/, '/');
+                } catch { return urlStr; }
+            };
+
             md += `## 🗺️ User Journey Analysis\n\n`;
             journey.forEach((step, index) => {
                 const stepTitle = step.url === 'http://test/' ? 'Home Page' : step.url;
@@ -189,7 +337,22 @@ export class ReportManager {
                 md += `⏱️ *Time: ${new Date(step.timestamp).toLocaleTimeString()}*\n\n`;
 
                 if (step.violations.length === 0) {
-                    md += `> **Status:** ✅ *No critical issues detected on this page.*\n\n`;
+                    // Check if this is same page as a previous step that had violations
+                    const currentNorm = normalizePath(step.url);
+                    const parentStep = journey.find((s, i) => i < index && normalizePath(s.url) === currentNorm && s.violations.length > 0);
+
+                    if (parentStep) {
+                        const parentIndex = journey.indexOf(parentStep) + 1;
+                        const parentTitle = parentStep.url === 'http://test/' ? '/' : new URL(parentStep.url).pathname;
+                        const criticals = parentStep.violations.filter(v => v.level === 2).length;
+                        const warnings = parentStep.violations.filter(v => v.level !== 2).length;
+                        const countParts: string[] = [];
+                        if (criticals > 0) countParts.push(`🔴 ${criticals} critical`);
+                        if (warnings > 0) countParts.push(`🟡 ${warnings} warnings`);
+                        md += `> **Status:** ↪️ *Same page as Step ${parentIndex} (${parentTitle}) — ${countParts.join(', ')} found there.*\n\n`;
+                    } else {
+                        md += `> **Status:** ✅ *No critical issues detected on this page.*\n\n`;
+                    }
                 } else {
                     // Deduplicate violations per step
                     const uniqueViolations = new Map<string, { v: Violation, count: number }>();

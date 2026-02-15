@@ -7,7 +7,7 @@ import { ReportManager } from './report-manager';
 // @ts-ignore
 import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS } from './embedded';
 
-export async function launchBrowser(domain: string, localPort: number, projectPath: string): Promise<{
+export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log): Promise<{
     broadcastLog: (msg: string) => void,
     close: () => Promise<void>,
     process: any,
@@ -87,7 +87,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         const tools = [UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS];
 
         // 1. Network Manager (Isolated per page)
-        const netMgr = createNetworkManager(targetPage, { domain, localPort }, reportManager);
+        const netMgr = createNetworkManager(targetPage, { domain, localPort }, reportManager, logger);
         await netMgr.init();
 
         // 2. Report Manager Binding
