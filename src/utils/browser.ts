@@ -66,7 +66,11 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // @ts-ignore
         ignoreHTTPSErrors: true,
         ignoreDefaultArgs: ['--enable-automation'],
-        args: ['--start-fullscreen'],
+        args: [
+            '--kiosk',                                  // True fullscreen — no chrome UI, no ESC exit
+            '--disable-pinch',                          // Prevent pinch zoom
+            '--overscroll-history-navigation=disabled'   // Prevent swipe navigation
+        ],
         defaultViewport: null
     });
 

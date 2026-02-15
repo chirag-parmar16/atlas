@@ -38,14 +38,15 @@ export const UI_SHELL = `
         
         /* 1. Static Content Push (The Base) */
         body {
-            padding-top: 48px !important;
+            padding-top: 52px !important;
+            margin-top: 0 !important;
             position: relative;
             box-sizing: border-box;
         }
 
         body.atlas-hazard-mode::after {
             content: ""; pointer-events: none;
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            position: fixed; top: 52px; left: 0; width: 100%; height: calc(100% - 52px);
             border: 12px solid #f59e0b;
             box-sizing: border-box;
             background: linear-gradient(135deg, #f59e0b 25%, transparent 25%) -50px 0,
@@ -54,8 +55,8 @@ export const UI_SHELL = `
                         linear-gradient(45deg, #f59e0b 25%, transparent 25%);
             background-size: 100px 100px;
             background-color: transparent;
-            mask-image: linear-gradient(to bottom, black 12px, transparent 12px calc(100% - 12px), black calc(100% - 12px));
-            -webkit-mask-image: linear-gradient(to bottom, black 12px, transparent 12px calc(100% - 12px), black calc(100% - 12px));
+            mask-image: linear-gradient(to bottom, transparent 12px, transparent 12px calc(100% - 12px), black calc(100% - 12px));
+            -webkit-mask-image: linear-gradient(to bottom, transparent 12px, transparent 12px calc(100% - 12px), black calc(100% - 12px));
             border: 12px solid #f59e0b;
             z-index: 2147483645;
             opacity: 0.8;
@@ -391,7 +392,7 @@ export const UI_SHELL = `
         const hudStyle = document.createElement('style');
         hudStyle.textContent = \`
             .hud-bar {
-                position: fixed; top: 0; left: 0; width: 100%; height: 44px;
+                position: fixed; top: 0; left: 0; width: 100%; height: 52px;
                 background: #0a0a0a; border-bottom: 1px solid #1f1f23;
                 color: #e4e4e7; z-index: 2147483646;
                 display: flex; align-items: center; gap: 0;
@@ -420,18 +421,18 @@ export const UI_SHELL = `
             .hud-url-bar {
                 flex: 1; display: flex; align-items: center; gap: 8px;
                 background: #18181b; border: 1px solid #27272a; border-radius: 22px;
-                padding: 0 14px; height: 30px; min-width: 0;
+                padding: 0 14px; height: 34px; min-width: 0;
                 transition: border-color 0.2s;
             }
-            .hud-url-bar:hover { border-color: #3f3f46; }
+            .hud-url-bar:hover, .hud-url-bar:focus-within { border-color: #3f3f46; }
             .hud-url-lock { color: #10b981; font-size: 12px; flex-shrink: 0; }
-            .hud-url-text {
-                flex: 1; color: #a1a1aa; font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
-                font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-                user-select: all;
+            .hud-url-input {
+                flex: 1; background: transparent; border: none; outline: none;
+                color: #d4d4d8; font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+                font-size: 13px; width: 100%;
             }
-            .hud-url-text .url-domain { color: #e4e4e7; font-weight: 500; }
-            .hud-url-text .url-path { color: #71717a; }
+            .hud-url-input::placeholder { color: #52525b; }
+            .hud-url-input::selection { background: #3b82f633; }
             .hud-route-tag {
                 display: flex; align-items: center; gap: 6px; flex-shrink: 0;
                 background: #1c1c1f; padding: 4px 10px; border-radius: 6px;
@@ -476,10 +477,8 @@ export const UI_SHELL = `
                 <span class="hud-label">ATLAS</span>
             </div>
             <div class="hud-url-bar">
-                <span class="hud-url-lock">🔒</span>
-                <span class="hud-url-text" id="hud-url-text">
-                    <span class="url-domain">\${fakeDomain}</span><span class="url-path">/</span>
-                </span>
+                <svg class="hud-url-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                <input type="text" class="hud-url-input" id="hud-url-input" spellcheck="false" autocomplete="off" value="" />
             </div>
             <div class="hud-route-tag">
                 <span class="tag-domain">\${fakeDomain}</span>
@@ -492,32 +491,76 @@ export const UI_SHELL = `
         \`;
         shadow.appendChild(hud);
 
-        // --- URL Bar Live Update ---
-        const urlTextEl = shadow.querySelector('#hud-url-text');
+        // --- Helper: strip file extensions for clean URL display ---
+        const cleanPath = (p) => {
+            return p.replace(/\\.(html?|php|aspx?|jsp)$/i, '');
+        };
+
+        // --- URL Bar: Live Update + Editable ---
+        const urlInput = shadow.querySelector('#hud-url-input');
+        let isEditing = false;
+
         const updateUrlBar = () => {
-            if (!urlTextEl) return;
+            if (!urlInput || isEditing) return;
             try {
                 const url = new URL(window.location.href);
+                const protocol = url.protocol + '//';
                 const domain = url.hostname;
-                const pathAndQuery = url.pathname + url.search + url.hash;
-                urlTextEl.innerHTML = '<span class="url-domain">' + domain + '</span><span class="url-path">' + pathAndQuery + '</span>';
+                const rawPath = url.pathname + url.search + url.hash;
+                const cleanedPath = cleanPath(rawPath);
+                urlInput.value = protocol + domain + cleanedPath;
             } catch(e) {
-                urlTextEl.textContent = window.location.href;
+                urlInput.value = window.location.href;
             }
         };
         updateUrlBar();
+        // Also update after page fully loads and with delay for navigation events
+        window.addEventListener('load', updateUrlBar);
+        setTimeout(updateUrlBar, 500);
+        setTimeout(updateUrlBar, 1500);
+
+        // Track editing state
+        if (urlInput) {
+            urlInput.addEventListener('focus', () => { isEditing = true; });
+            urlInput.addEventListener('blur', () => { isEditing = false; updateUrlBar(); });
+
+            // Navigate on Enter
+            urlInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const val = urlInput.value.trim();
+                    if (!val) return;
+
+                    let targetUrl = val;
+                    // If user types just a path (no protocol), build full URL
+                    if (!val.startsWith('http://') && !val.startsWith('https://')) {
+                        // If starts with domain, add protocol
+                        if (val.startsWith(fakeDomain)) {
+                            targetUrl = window.location.protocol + '//' + val;
+                        } else if (val.startsWith('/')) {
+                            // Absolute path
+                            targetUrl = window.location.origin + val;
+                        } else {
+                            // Relative path — navigate on same origin
+                            targetUrl = window.location.origin + '/' + val;
+                        }
+                    }
+                    window.location.href = targetUrl;
+                    urlInput.blur();
+                }
+            });
+        }
+
         window.addEventListener('hashchange', updateUrlBar);
         window.addEventListener('popstate', updateUrlBar);
         // Observe SPA pushState changes
         const origPush = history.pushState;
         history.pushState = function() {
-            // @ts-ignore
             origPush.apply(this, arguments);
             setTimeout(updateUrlBar, 50);
         };
         const origReplace = history.replaceState;
         history.replaceState = function() {
-            // @ts-ignore
             origReplace.apply(this, arguments);
             setTimeout(updateUrlBar, 50);
         };
@@ -532,8 +575,18 @@ export const UI_SHELL = `
         }
         const backBtn = shadow.querySelector('#hud-back-btn');
         const fwdBtn = shadow.querySelector('#hud-fwd-btn');
-        if (backBtn) backBtn.addEventListener('click', () => { if (window.atlasGoBack) window.atlasGoBack(); else history.back(); });
-        if (fwdBtn) fwdBtn.addEventListener('click', () => { if (window.atlasGoForward) window.atlasGoForward(); else history.forward(); });
+        if (backBtn) backBtn.addEventListener('click', () => {
+            if (window.atlasGoBack) window.atlasGoBack();
+            else history.back();
+            setTimeout(updateUrlBar, 300);
+            setTimeout(updateUrlBar, 1000);
+        });
+        if (fwdBtn) fwdBtn.addEventListener('click', () => {
+            if (window.atlasGoForward) window.atlasGoForward();
+            else history.forward();
+            setTimeout(updateUrlBar, 300);
+            setTimeout(updateUrlBar, 1000);
+        });
 
         // UpdateHUD still available for manual override
         window.Atlas.updateHUD = (fd, rp) => {
@@ -543,8 +596,7 @@ export const UI_SHELL = `
             if (tagPort) tagPort.textContent = ':' + rp;
         };
 
-        // --- Fullscreen Lock ---
-        // Prevent ESC and F11 from exiting fullscreen
+        // --- Fullscreen Enforcement (secondary lock — kiosk mode is primary) ---
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' || e.key === 'F11') {
                 e.preventDefault();
@@ -554,16 +606,12 @@ export const UI_SHELL = `
                 if (!toast) {
                     toast = document.createElement('div');
                     toast.className = 'atlas-fs-toast';
-                    toast.style.cssText = 'position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#1c1917;color:#fbbf24;padding:8px 20px;border-radius:8px;font-size:12px;font-family:Inter,sans-serif;border:1px solid #422006;z-index:2147483647;opacity:0;transition:opacity 0.3s;pointer-events:none;';
+                        toast.style.cssText = 'position:fixed;top:64px;left:50%;transform:translateX(-50%);background:#1c1917;color:#fbbf24;padding:8px 20px;border-radius:8px;font-size:12px;font-family:Inter,sans-serif;border:1px solid #422006;z-index:2147483647;opacity:0;transition:opacity 0.3s;pointer-events:none;';
                     shadow.appendChild(toast);
                 }
-                toast.textContent = '⚠ Fullscreen mode is locked during Atlas session';
+                toast.textContent = '⚠ Sandbox mode — fullscreen is locked. Use ✕ to stop session.';
                 toast.style.opacity = '1';
                 setTimeout(() => { toast.style.opacity = '0'; }, 2500);
-                // Re-enter fullscreen if exited
-                if (!document.fullscreenElement) {
-                    document.documentElement.requestFullscreen().catch(() => {});
-                }
                 return false;
             }
         }, true);
