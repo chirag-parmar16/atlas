@@ -88,7 +88,7 @@ export const UI_SHELL = `
                 message, 
                 level, 
                 timestamp: Date.now(),
-                url: window.location.href,
+                url: (metadata && metadata.pageUrl) || window.location.href,
                 metadata
             };
             __STATE__.violations.push(v);
@@ -98,7 +98,7 @@ export const UI_SHELL = `
                 window.atlasLogViolation(v).catch(() => {});
             }
 
-            updateStatusIndicator();
+            updateStatusIndicator(true);
             window.dispatchEvent(new CustomEvent('atlas-violation', { detail: v }));
         },
         get violations() { return __STATE__.violations; }
@@ -142,10 +142,20 @@ export const UI_SHELL = `
     });
 
     let statusBtn = null;
-    function updateStatusIndicator() {
+    function updateStatusIndicator(shouldPulse = false) {
         if (!statusBtn) return;
+        
+        // Deduplicate (source+message)
+        const seen = new Set();
+        const uniqueViolations = __STATE__.violations.filter(v => {
+            const key = v.source + '|' + v.message;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+        
         const counts = { [SEVERITY.INFO]: 0, [SEVERITY.WARN]: 0, [SEVERITY.ERROR]: 0 };
-        __STATE__.violations.forEach(v => counts[v.level] = (counts[v.level] || 0) + 1);
+        uniqueViolations.forEach(v => counts[v.level] = (counts[v.level] || 0) + 1);
         let color = '#10b981'; 
         let icon = ICONS.CHECK;
         if (counts[SEVERITY.ERROR] > 0) { color = '#ef4444'; icon = ICONS.ALERT; } 
@@ -157,8 +167,10 @@ export const UI_SHELL = `
              iconEl.innerHTML = icon;
              countEl.innerText = counts[SEVERITY.ERROR] + counts[SEVERITY.WARN];
         }
-        statusBtn.classList.add('pulse');
-        setTimeout(() => statusBtn.classList.remove('pulse'), 500);
+        if (shouldPulse) {
+            statusBtn.classList.add('pulse');
+            setTimeout(() => statusBtn.classList.remove('pulse'), 500);
+        }
     }
 
     const css = \`
@@ -710,11 +722,74 @@ mainBtn.innerHTML = \`<span style="margin-right:6px; color:#10b981; display:flex
         });
     };
     
+    // --- VIOLATION SYNC ENGINE ---
+    let __lastSyncedUrl__ = window.location.href;
+    const syncViolationsFromBackend = async () => {
+        try {
+            // Clear violations on SPA navigation (URL changed)
+            const currentUrl = window.location.href;
+            if (currentUrl !== __lastSyncedUrl__) {
+                __STATE__.violations.length = 0;
+                __lastSyncedUrl__ = currentUrl;
+            }
+
+            const prevCount = __STATE__.violations.length;
+
+            // 1. Process queued violations (from before Atlas was ready)
+            if (window.__ATLAS_VIOLATION_QUEUE__ && window.__ATLAS_VIOLATION_QUEUE__.length > 0) {
+                window.__ATLAS_VIOLATION_QUEUE__.forEach(v => {
+                    const exists = __STATE__.violations.some(ex => 
+                        ex.source === v.source && ex.message === v.message && ex.timestamp === v.timestamp
+                    );
+                    if (!exists) {
+                        __STATE__.violations.push(v);
+                    }
+                });
+                window.__ATLAS_VIOLATION_QUEUE__ = [];
+            }
+
+            // 2. Sync from backend violation history (survives page navigations)
+            if (window.getFullViolationHistory) {
+                const history = await window.getFullViolationHistory();
+                if (history && history.length > 0) {
+                    history.forEach(v => {
+                        const exists = __STATE__.violations.some(ex => 
+                            ex.source === v.source && ex.message === v.message && ex.timestamp === v.timestamp
+                        );
+                        if (!exists) {
+                            __STATE__.violations.push(v);
+                        }
+                    });
+                }
+            }
+
+            // 3. Process network queue
+            if (window.__ATLAS_NETWORK_QUEUE__ && window.__ATLAS_NETWORK_QUEUE__.length > 0) {
+                window.__ATLAS_NETWORK_QUEUE__.forEach(d => {
+                    if (window.Atlas && window.Atlas.logNetworkRequest) window.Atlas.logNetworkRequest(d);
+                });
+                window.__ATLAS_NETWORK_QUEUE__ = [];
+            }
+
+            // Only update UI if violations changed
+            if (__STATE__.violations.length !== prevCount) {
+                updateStatusIndicator(true);
+                window.dispatchEvent(new CustomEvent('atlas-violation'));
+            }
+        } catch(e) {
+            // Sync failed silently - will retry
+        }
+    };
+
     try {
         console.log('[Atlas] 🚀 Bootstrapping UI Shell...');
         const bootstrap = () => {
             if (document.body) {
                 initShell();
+                // Initial sync after 500ms (wait for exposed functions)
+                setTimeout(syncViolationsFromBackend, 500);
+                // Periodic sync to keep pill count accurate
+                setInterval(syncViolationsFromBackend, 3000);
             } else {
                 requestAnimationFrame(bootstrap);
             }

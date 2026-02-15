@@ -1,12 +1,13 @@
 import { Page, HTTPRequest } from 'puppeteer-core';
 import { URL } from 'url';
+import { ReportManager } from './report-manager';
 
 export interface NetworkConfig {
     domain: string;
     localPort: number;
 }
 
-export function createNetworkManager(page: Page, config: NetworkConfig) {
+export function createNetworkManager(page: Page, config: NetworkConfig, reportManager?: ReportManager) {
     const { domain, localPort } = config;
 
     // --- STATE ---
@@ -15,6 +16,8 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
     // History Array to store requests across navigations
     const requestLogHistory: any[] = [];
+    const violationHistory: any[] = [];       // Permanent — for JSON report
+    const currentPageViolations: any[] = [];  // Cleared on navigation — for browser sync
 
     // --- PII SCANNER ---
     const scanForPII = (text: string): { type: string, matches: string[] }[] => {
@@ -48,12 +51,16 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         const history = latencyStore[urlPath];
         if (history.length >= 3) {
             const avg = history.reduce((a, b) => a + b, 0) / history.length;
-            // If current duration > 2x average AND > 250ms (ignore tiny blips)
             if (duration > avg * 2 && duration > 250) {
-                page.evaluate((path, dur, a) => {
+                const message = `Slowness detected on ${urlPath}: ${duration}ms (Avg: ${Math.round(avg)}ms)`;
+                const perfViolation = { source: 'Performance', message, level: 1, timestamp: Date.now(), url: page.url() };
+                violationHistory.push(perfViolation);
+                currentPageViolations.push(perfViolation);
+                if (reportManager) reportManager.logViolation(perfViolation).catch(() => { });
+                page.evaluate((uPath, dur, a) => {
                     const atlas = (window as any).Atlas;
                     if (atlas) {
-                        atlas.reportViolation('Performance', `Slowness detected on ${path}: ${dur}ms (Avg: ${Math.round(a)}ms)`, 1);
+                        atlas.reportViolation('Performance', `Slowness detected on ${uPath}: ${dur}ms (Avg: ${Math.round(a)}ms)`, 1);
                     }
                 }, urlPath, duration, avg).catch(() => { });
             }
@@ -70,6 +77,11 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
             currentSecurityMode = mode;
         });
 
+        await page.exposeFunction('atlasRecordViolationSrv', (violation: any) => {
+            violationHistory.push(violation);
+            currentPageViolations.push(violation);
+        });
+
         await page.exposeFunction('setStressConfig', (config: any) => {
             stressConfig = config;
         });
@@ -81,6 +93,14 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         await page.exposeFunction('clearNetworkHistory', () => {
             requestLogHistory.length = 0;
         });
+
+        await page.exposeFunction('getFullViolationHistory', () => {
+            return currentPageViolations;
+        });
+
+        await page.exposeFunction('clearViolationHistory', () => {
+            currentPageViolations.length = 0;
+        });
     };
 
     // --- THE IMMORTAL PILL PROXY ---
@@ -88,6 +108,11 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
         const urlString = request.url();
         const url = new URL(urlString);
         const isMainFrame = request.frame() === targetPage.mainFrame();
+
+        // Clear current page violations on new navigation (new page = fresh violations)
+        if (request.isNavigationRequest() && isMainFrame) {
+            currentPageViolations.length = 0;
+        }
 
         // 1. Throttling & Chaos Check
         // 1. Throttling & Chaos Check
@@ -102,6 +127,10 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                 await page.evaluate((m) => console.warn(m), failMsg).catch(() => { });
 
                 // [HEALTH] Report Stress 500
+                const stressViolation = { source: 'Stress Testing', message: `Stress 500 Error Injection on ${url.pathname}`, level: 2, timestamp: Date.now(), url: urlString };
+                violationHistory.push(stressViolation);
+                currentPageViolations.push(stressViolation);
+                if (reportManager) reportManager.logViolation(stressViolation).catch(() => { });
                 await page.evaluate((u) => {
                     try { (window as any).Atlas.reportViolation('Stress Testing', `Stress 500 Error Injection on ${u}`, 2); } catch (e) { }
                 }, url.pathname).catch(() => { });
@@ -194,9 +223,14 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
 
                 // [HEALTH] Report HTTP Errors (4xx, 5xx)
                 if (response.status >= 400 && !page.isClosed()) {
+                    const level = response.status >= 500 ? 2 : 1;
+                    const netViolation = { source: 'Network', message: `HTTP ${response.status} on ${url.pathname}`, level, timestamp: Date.now(), url: urlString };
+                    violationHistory.push(netViolation);
+                    currentPageViolations.push(netViolation);
+                    if (reportManager) reportManager.logViolation(netViolation).catch(() => { });
                     page.evaluate((s, u) => {
                         try {
-                            const level = s >= 500 ? 2 : 1; // 500 = Error, 400 = Warn
+                            const level = s >= 500 ? 2 : 1;
                             // @ts-ignore
                             window.Atlas.reportViolation('Network', `HTTP ${s} on ${u}`, level);
                         } catch (e) { }
@@ -208,25 +242,62 @@ export function createNetworkManager(page: Page, config: NetworkConfig) {
                     if (contentType.includes('json') || contentType.includes('text') || contentType.includes('xml')) {
                         const str = Buffer.from(buffer).toString('utf-8');
 
-                        // Performance Optimization: Skip PII scan for large files (>50KB)
-                        if (str.length > 50000) {
+                        // Performance Optimization: Skip PII scan for extremely large files (>200KB)
+                        if (str.length > 200000) {
                             safeLogData.body = str.substring(0, 1000) + '... (Truncated Large File)';
                             // Skip leaks check
                         } else {
-                            safeLogData.body = str.length > 8000 ? str.substring(0, 8000) + '... (Truncated)' : str;
+                            safeLogData.body = str.length > 100000 ? str.substring(0, 100000) + '... (Truncated)' : str;
 
                             // --- PII DETECTION ---
                             const leaks = scanForPII(str);
-                            if (leaks.length > 0 && !page.isClosed()) {
+
+                            // Only log when actual leaks are found
+                            if (leaks.length > 0) {
+                                const contentType = response.headers.get('content-type') || 'unknown';
+                                console.log(`[Atlas Security] 🎯 Found ${leaks.length} PII leaks in ${url.pathname} (${contentType})`);
+                            }
+
+                            // Store violations in server-side history IMMEDIATELY
+                            if (leaks.length > 0) {
                                 leaks.forEach(leak => {
-                                    page.evaluate((lType, lMatches, pUrl) => {
-                                        // @ts-ignore
-                                        const atlas = (window as any).Atlas;
-                                        if (atlas) {
-                                            atlas.reportViolation('Security Warden', `PII Leak(${lType}) detected in ${pUrl}: ${lMatches.join(', ')}`, 2);
-                                        }
-                                    }, leak.type, leak.matches, url.pathname).catch(() => { });
+                                    const secViolation = {
+                                        source: 'Security Warden',
+                                        message: `PII Leak(${leak.type}) detected in ${url.pathname}: ${leak.matches.join(', ')}`,
+                                        level: 2,
+                                        timestamp: Date.now(),
+                                        url: urlString
+                                    };
+                                    violationHistory.push(secViolation);
+                                    currentPageViolations.push(secViolation);
+                                    if (reportManager) reportManager.logViolation(secViolation).catch(() => { });
                                 });
+                            }
+
+                            // Also send to browser for immediate display
+                            if (!page.isClosed()) {
+                                page.evaluate((allLeaks: any[], pUrl: string) => {
+                                    try {
+                                        allLeaks.forEach((leak: any) => {
+                                            // @ts-ignore
+                                            const atlas = (window as any).Atlas;
+                                            if (atlas) {
+                                                atlas.reportViolation('Security Warden', `PII Leak(${leak.type}) detected in ${pUrl}: ${leak.matches.join(', ')}`, 2);
+                                            } else {
+                                                // @ts-ignore
+                                                window.__ATLAS_VIOLATION_QUEUE__ = window.__ATLAS_VIOLATION_QUEUE__ || [];
+                                                // @ts-ignore
+                                                window.__ATLAS_VIOLATION_QUEUE__.push({
+                                                    source: 'Security Warden',
+                                                    message: `PII Leak(${leak.type}) detected in ${pUrl}: ${leak.matches.join(', ')}`,
+                                                    level: 2,
+                                                    timestamp: Date.now(),
+                                                    url: window.location.href
+                                                });
+                                            }
+                                        });
+                                    } catch (e) { }
+                                }, leaks, url.pathname).catch(() => { });
                             }
                         }
                     } else {

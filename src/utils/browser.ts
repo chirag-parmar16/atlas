@@ -87,7 +87,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         const tools = [UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS];
 
         // 1. Network Manager (Isolated per page)
-        const netMgr = createNetworkManager(targetPage, { domain, localPort });
+        const netMgr = createNetworkManager(targetPage, { domain, localPort }, reportManager);
         await netMgr.init();
 
         // 2. Report Manager Binding

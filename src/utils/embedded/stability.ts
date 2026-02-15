@@ -119,22 +119,46 @@ export const STABILITY = `
 
         const renderLogs = () => {
             list.innerHTML = '';
-            // Show everything except Security-specific logs (which have their own tab)
-            const logs = window.Atlas.violations.filter(v => 
-                v.source !== 'Security Warden' && 
-                v.source !== 'CORS'
-            );
-            if (logs.length === 0) { list.innerHTML = '<div style="color:#71717a; text-align:center; padding-top:40px; font-style:italic">Waiting for stability events...</div>'; return; }
-            
-            logs.reverse().forEach(v => {
+
+            // Show all stability events (non-security)
+            const rawLogs = window.Atlas.violations.filter(v => {
+                if (v.source === 'Security Warden' || v.source === 'CORS') return false;
+                return true;
+            });
+
+            if (rawLogs.length === 0) { 
+                list.innerHTML = '<div style="color:#71717a; text-align:center; padding-top:40px; font-style:italic">No stability events detected.</div>'; 
+                return; 
+            }
+
+            // Deduplicate
+            const grouped = new Map();
+            rawLogs.forEach(v => {
+                const key = v.source + '|' + v.message + '|' + v.url;
+                if (grouped.has(key)) {
+                    const existing = grouped.get(key);
+                    existing.count++;
+                    existing.timestamp = v.timestamp; // Use latest
+                } else {
+                    grouped.set(key, { ...v, count: 1 });
+                }
+            });
+
+            Array.from(grouped.values()).reverse().forEach(v => {
                 const item = document.createElement('div');
                 item.style.padding = '8px'; item.style.background = 'rgba(255,255,255,0.03)'; item.style.borderRadius = '4px';
                 item.style.borderLeft = '2px solid #ef4444';
                 item.style.cursor = 'pointer';
+                item.style.position = 'relative';
                 item.style.transition = 'background 0.2s';
                 
+                const countBadge = v.count > 1 ? '<span style="background:#ef4444; color:#fff; font-size:9px; padding:1px 4px; border-radius:10px; margin-left:6px;">' + v.count + 'x</span>' : '';
+
                 const main = document.createElement('div');
-                main.innerHTML = \`<div style="color:#ef4444; font-weight:bold; font-size:10px; margin-bottom:2px;">\${v.source} <span style="font-weight:normal; color:#666; float:right;">\${new Date(v.timestamp).toLocaleTimeString()}</span></div><div style="color:#d4d4d8;">\${v.message}</div>\`;
+                main.innerHTML = '<div style="color:#ef4444; font-weight:bold; font-size:10px; margin-bottom:2px; display:flex; justify-content:space-between; align-items:center;">' +
+                    '<span>' + v.source + countBadge + '</span>' +
+                    '<span style="font-weight:normal; color:#666;">' + new Date(v.timestamp).toLocaleTimeString() + '</span>' +
+                '</div><div style="color:#d4d4d8;">' + v.message + '</div>';
                 item.appendChild(main);
 
                 const details = document.createElement('pre');
@@ -162,6 +186,16 @@ export const STABILITY = `
 
         window.addEventListener('atlas-violation', renderLogs);
         renderLogs();
+
+        // Re-render on URL change (SPA navigation)
+        let lastRenderedPath = window.location.pathname;
+        setInterval(() => {
+            if (window.location.pathname !== lastRenderedPath) {
+                lastRenderedPath = window.location.pathname;
+                renderLogs();
+            }
+        }, 1000);
+
         contentBlock.appendChild(monitorPanel);
 
         updateStatusParams();

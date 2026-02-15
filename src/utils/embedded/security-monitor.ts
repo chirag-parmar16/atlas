@@ -71,59 +71,84 @@ export const SECURITY_MONITOR = `
 
         const renderLogs = () => {
             list.innerHTML = '';
-            // Filter only Security related logs from the global store
-            const secLogs = window.Atlas.violations.filter(v => v.source === 'Security Warden' || v.source === 'CORS');
             
-            if (secLogs.length === 0) {
-                 list.innerHTML = '<div style="color:#666; text-align:center; margin-top:20px; font-style:italic">No Security Violations Detected.</div>';
+            // Filter Security violations only (per-page isolation handled by backend)
+            const rawLogs = window.Atlas.violations.filter(v => {
+                return v.source === 'Security Warden' || v.source === 'CORS';
+            });
+            
+            if (rawLogs.length === 0) {
+                 list.innerHTML = '<div style="color:#666; text-align:center; margin-top:20px; font-style:italic">No Security Violations detected.</div>';
                  return;
             }
 
-            secLogs.reverse().forEach(v => {
+            // Deduplicate
+            const grouped = new Map();
+            rawLogs.forEach(v => {
+                const key = v.source + '|' + v.message + '|' + v.url;
+                if (grouped.has(key)) {
+                    const existing = grouped.get(key);
+                    existing.count++;
+                    existing.timestamp = v.timestamp;
+                } else {
+                    grouped.set(key, { ...v, count: 1 });
+                }
+            });
+
+            Array.from(grouped.values()).reverse().forEach(v => {
                 const item = document.createElement('div');
                 item.style.borderLeft = '3px solid #f59e0b';
                 item.style.padding = '6px';
                 item.style.background = 'rgba(245, 158, 11, 0.1)';
                 item.style.cursor = 'pointer';
                 item.style.transition = 'background 0.2s';
+                
+                const countBadge = v.count > 1 ? '<span style="background:#f59e0b; color:#000; font-size:11px; padding:2px 6px; border-radius:10px; margin-left:8px; font-weight:bold;">x' + v.count + '</span>' : '';
 
                 const main = document.createElement('div');
-                main.innerHTML = \`
-                    <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                        <span style="color:#f59e0b; font-weight:bold">\${ICONS.WARN} \${v.source}</span>
-                        <span style="color:#666; font-size:10px">\${new Date(v.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                    <div style="color:#ccc; word-break:break-all;">\${v.message}</div>
-                \`;
+                main.innerHTML = '<div style="display:flex; justify-content:space-between; margin-bottom:4px; align-items:center;">' +
+                        '<span style="color:#f59e0b; font-weight:bold">' + ICONS.WARN + ' ' + v.source + countBadge + '</span>' +
+                        '<span style="color:#666; font-size:10px">' + new Date(v.timestamp).toLocaleTimeString() + '</span>' +
+                    '</div>' +
+                    '<div style="color:#ccc; word-break:break-all;">' + v.message + '</div>';
                 item.appendChild(main);
 
-                const details = document.createElement('pre');
-                details.style.display = 'none';
-                details.style.marginTop = '8px';
-                details.style.padding = '8px';
-                details.style.background = '#000';
-                details.style.fontSize = '9px';
-                details.style.color = '#f59e0b';
-                details.style.overflowX = 'auto';
-                details.style.borderRadius = '3px';
-                details.style.border = '1px solid rgba(245, 158, 11, 0.2)';
-                details.innerText = JSON.stringify(v, null, 2);
-                item.appendChild(details);
+const details = document.createElement('pre');
+details.style.display = 'none';
+details.style.marginTop = '8px';
+details.style.padding = '8px';
+details.style.background = '#000';
+details.style.fontSize = '9px';
+details.style.color = '#f59e0b';
+details.style.overflowX = 'auto';
+details.style.borderRadius = '3px';
+details.style.border = '1px solid rgba(245, 158, 11, 0.2)';
+details.innerText = JSON.stringify(v, null, 2);
+item.appendChild(details);
 
-                item.onclick = () => {
-                    const isVisible = details.style.display === 'block';
-                    details.style.display = isVisible ? 'none' : 'block';
-                    item.style.background = isVisible ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.15)';
-                };
+item.onclick = () => {
+    const isVisible = details.style.display === 'block';
+    details.style.display = isVisible ? 'none' : 'block';
+    item.style.background = isVisible ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.15)';
+};
 
-                list.appendChild(item);
+list.appendChild(item);
             });
         };
 
-        renderLogs();
-        window.addEventListener('atlas-violation', renderLogs);
+renderLogs();
+window.addEventListener('atlas-violation', renderLogs);
 
-        return container;
+// Re-render on URL change (SPA navigation)
+let lastRenderedPath = window.location.pathname;
+setInterval(() => {
+    if (window.location.pathname !== lastRenderedPath) {
+        lastRenderedPath = window.location.pathname;
+        renderLogs();
+    }
+}, 1000);
+
+return container;
     });
 }) ();
 `;
