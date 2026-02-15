@@ -184,10 +184,15 @@ export async function run() {
     pendingLogs.forEach(msg => console.log(`${getPrefix()} ${colorizeLog(msg)}`));
     pendingLogs.length = 0;
 
-    // Launch Browser
-    const { close, reportManager, recorder } = await launchBrowser(finalDomain, serverPort, projectPath, (msg) => logToTerminal(msg));
+    // Launch Browser (pass performCleanup as onBrowserClose for graceful shutdown)
+    let performCleanup: () => Promise<void>;
+    let cleaningUp = false; // Guard against double cleanup
 
-    const performCleanup = async () => {
+    const { close, reportManager, recorder } = await launchBrowser(finalDomain, serverPort, projectPath, (msg) => logToTerminal(msg), () => { performCleanup(); });
+
+    performCleanup = async () => {
+        if (cleaningUp) return; // Prevent double execution
+        cleaningUp = true;
         isLive = false;
         console.log('');
         const hr = GRAY('═'.repeat(60));
@@ -209,7 +214,7 @@ export async function run() {
         console.log('');
 
         if (serverCleanup) await serverCleanup();
-        await close();
+        try { await close(); } catch (e) { /* Browser may already be closed */ }
         process.exit();
     };
 

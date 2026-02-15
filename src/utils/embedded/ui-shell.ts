@@ -391,41 +391,63 @@ export const UI_SHELL = `
         const hudStyle = document.createElement('style');
         hudStyle.textContent = \`
             .hud-bar {
-                position: fixed; top: 0; left: 0; width: 100%; height: 48px;
-                background: #09090b; border-bottom: 1px solid #27272a;
+                position: fixed; top: 0; left: 0; width: 100%; height: 44px;
+                background: #0a0a0a; border-bottom: 1px solid #1f1f23;
                 color: #e4e4e7; z-index: 2147483646;
-                display: flex; align-items: center; justify-content: space-between;
-                padding: 0 24px;
+                display: flex; align-items: center; gap: 0;
+                padding: 0 12px;
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 font-size: 13px;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+                box-shadow: 0 2px 16px rgba(0,0,0,0.6);
                 transform: translateY(-100%); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
             }
             .hud-bar.visible { transform: translateY(0); }
-            .hud-item { display: flex; align-items: center; gap: 12px; }
-            .hud-item.left { width: 200px; }
-            .hud-item.right { width: 200px; justify-content: flex-end; }
-            .hud-center { flex: 1; display: flex; justify-content: center; }
+            .hud-left { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-right: 12px; }
             .hud-live { 
                 width: 8px; height: 8px; background: #10b981; 
-                border-radius: 50%; box-shadow: 0 0 10px #10b981; 
+                border-radius: 50%; box-shadow: 0 0 8px #10b981; 
                 animation: pulse-live 2s infinite; 
             }
-            .hud-label { font-weight: 700; color: #fff; letter-spacing: 0.5px; }
-            .hud-status { background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
-            .route-pill {
-                display: flex; align-items: center; gap: 12px;
-                background: #18181b; padding: 6px 16px; border-radius: 8px;
-                border: 1px solid #27272a;
+            .hud-label { font-weight: 700; color: #fff; letter-spacing: 0.5px; font-size: 13px; }
+            .hud-nav-btns { display: flex; gap: 2px; }
+            .hud-nav-btn {
+                background: transparent; border: none; color: #71717a;
+                width: 28px; height: 28px; border-radius: 6px; cursor: pointer;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 16px; font-weight: bold; line-height: 1; transition: all 0.15s;
             }
-            .host-fake { color: #fff; font-weight: 500; }
-            .arrow { color: #52525b; font-size: 10px; }
-            .host-real { color: #a1a1aa; font-family: monospace; }
-            .hud-tag { 
-                display: inline-block; padding: 4px 10px; 
-                background: #27272a; color: #a1a1aa; 
-                border-radius: 6px; font-size: 11px; font-weight: 500; 
+            .hud-nav-btn:hover { background: #27272a; color: #fff; }
+            .hud-url-bar {
+                flex: 1; display: flex; align-items: center; gap: 8px;
+                background: #18181b; border: 1px solid #27272a; border-radius: 22px;
+                padding: 0 14px; height: 30px; min-width: 0;
+                transition: border-color 0.2s;
             }
+            .hud-url-bar:hover { border-color: #3f3f46; }
+            .hud-url-lock { color: #10b981; font-size: 12px; flex-shrink: 0; }
+            .hud-url-text {
+                flex: 1; color: #a1a1aa; font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+                font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                user-select: all;
+            }
+            .hud-url-text .url-domain { color: #e4e4e7; font-weight: 500; }
+            .hud-url-text .url-path { color: #71717a; }
+            .hud-route-tag {
+                display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+                background: #1c1c1f; padding: 4px 10px; border-radius: 6px;
+                border: 1px solid #27272a; font-size: 11px; margin-left: 8px;
+            }
+            .hud-route-tag .tag-domain { color: #3b82f6; font-weight: 600; font-family: monospace; }
+            .hud-route-tag .tag-arrow { color: #52525b; }
+            .hud-route-tag .tag-port { color: #f59e0b; font-weight: 600; font-family: monospace; }
+            .hud-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-left: 12px; }
+            .hud-close-btn {
+                background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2);
+                color: #ef4444; width: 28px; height: 28px; border-radius: 6px;
+                cursor: pointer; display: flex; align-items: center; justify-content: center;
+                font-size: 14px; font-weight: bold; line-height: 1; transition: all 0.15s;
+            }
+            .hud-close-btn:hover { background: #ef4444; color: #fff; transform: scale(1.05); }
             @keyframes pulse-live { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
         \`;
         shadow.appendChild(hudStyle);
@@ -437,33 +459,114 @@ export const UI_SHELL = `
             document.head.appendChild(gStyle);
         }
 
+        // Read persisted config from evaluateOnNewDocument
+        const config = window.__ATLAS_CONFIG__ || {};
+        const fakeDomain = config.domain || '...';
+        const realPort = config.port || '...';
+
         const hud = document.createElement('div');
         hud.className = 'hud-bar visible';
         hud.innerHTML = \`
-            <div class="hud-item left">
-                <div class="hud-live"></div>
-                <span class="hud-label">ATLAS PROXY</span>
-                <span class="hud-status">ACTIVE</span>
-            </div>
-            <div class="hud-center">
-                <div class="route-pill">
-                    <span class="host-fake" id="hud-fake-domain">...</span>
-                    <span class="arrow">→</span>
-                    <span class="host-real" id="hud-real-port">...</span>
+            <div class="hud-left">
+                <div class="hud-nav-btns">
+                    <button class="hud-nav-btn" id="hud-back-btn" title="Go Back">‹</button>
+                    <button class="hud-nav-btn" id="hud-fwd-btn" title="Go Forward">›</button>
                 </div>
+                <div class="hud-live"></div>
+                <span class="hud-label">ATLAS</span>
             </div>
-            <div class="hud-item right">
-                <!-- Throttling Removed -->
+            <div class="hud-url-bar">
+                <span class="hud-url-lock">🔒</span>
+                <span class="hud-url-text" id="hud-url-text">
+                    <span class="url-domain">\${fakeDomain}</span><span class="url-path">/</span>
+                </span>
+            </div>
+            <div class="hud-route-tag">
+                <span class="tag-domain">\${fakeDomain}</span>
+                <span class="tag-arrow">→</span>
+                <span class="tag-port">:\${realPort}</span>
+            </div>
+            <div class="hud-right">
+                <button class="hud-close-btn" id="hud-close-btn" title="Stop Atlas Session">✕</button>
             </div>
         \`;
-shadow.appendChild(hud);
+        shadow.appendChild(hud);
 
-window.Atlas.updateHUD = (fakeDomain, realPort) => {
-    const fd = shadow.querySelector('#hud-fake-domain');
-    const rp = shadow.querySelector('#hud-real-port');
-    if (fd) fd.textContent = fakeDomain;
-    if (rp) rp.textContent = ':' + realPort;
-};
+        // --- URL Bar Live Update ---
+        const urlTextEl = shadow.querySelector('#hud-url-text');
+        const updateUrlBar = () => {
+            if (!urlTextEl) return;
+            try {
+                const url = new URL(window.location.href);
+                const domain = url.hostname;
+                const pathAndQuery = url.pathname + url.search + url.hash;
+                urlTextEl.innerHTML = '<span class="url-domain">' + domain + '</span><span class="url-path">' + pathAndQuery + '</span>';
+            } catch(e) {
+                urlTextEl.textContent = window.location.href;
+            }
+        };
+        updateUrlBar();
+        window.addEventListener('hashchange', updateUrlBar);
+        window.addEventListener('popstate', updateUrlBar);
+        // Observe SPA pushState changes
+        const origPush = history.pushState;
+        history.pushState = function() {
+            // @ts-ignore
+            origPush.apply(this, arguments);
+            setTimeout(updateUrlBar, 50);
+        };
+        const origReplace = history.replaceState;
+        history.replaceState = function() {
+            // @ts-ignore
+            origReplace.apply(this, arguments);
+            setTimeout(updateUrlBar, 50);
+        };
+
+        // --- Button Handlers ---
+        const closeBtn = shadow.querySelector('#hud-close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                if (window.atlasCloseBrowser) window.atlasCloseBrowser();
+                else window.close();
+            });
+        }
+        const backBtn = shadow.querySelector('#hud-back-btn');
+        const fwdBtn = shadow.querySelector('#hud-fwd-btn');
+        if (backBtn) backBtn.addEventListener('click', () => { if (window.atlasGoBack) window.atlasGoBack(); else history.back(); });
+        if (fwdBtn) fwdBtn.addEventListener('click', () => { if (window.atlasGoForward) window.atlasGoForward(); else history.forward(); });
+
+        // UpdateHUD still available for manual override
+        window.Atlas.updateHUD = (fd, rp) => {
+            const tagDomain = shadow.querySelector('.tag-domain');
+            const tagPort = shadow.querySelector('.tag-port');
+            if (tagDomain) tagDomain.textContent = fd;
+            if (tagPort) tagPort.textContent = ':' + rp;
+        };
+
+        // --- Fullscreen Lock ---
+        // Prevent ESC and F11 from exiting fullscreen
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' || e.key === 'F11') {
+                e.preventDefault();
+                e.stopPropagation();
+                // Show warning toast
+                let toast = shadow.querySelector('.atlas-fs-toast');
+                if (!toast) {
+                    toast = document.createElement('div');
+                    toast.className = 'atlas-fs-toast';
+                    toast.style.cssText = 'position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#1c1917;color:#fbbf24;padding:8px 20px;border-radius:8px;font-size:12px;font-family:Inter,sans-serif;border:1px solid #422006;z-index:2147483647;opacity:0;transition:opacity 0.3s;pointer-events:none;';
+                    shadow.appendChild(toast);
+                }
+                toast.textContent = '⚠ Fullscreen mode is locked during Atlas session';
+                toast.style.opacity = '1';
+                setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+                // Re-enter fullscreen if exited
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                }
+                return false;
+            }
+        }, true);
 
 window.Atlas.toggleDeviceMode = (enabled) => {
     if (enabled) {

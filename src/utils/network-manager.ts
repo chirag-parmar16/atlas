@@ -21,16 +21,27 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
     let lastNavPathname: string = '';          // Track pathname for hash-change detection
 
     // --- PII SCANNER ---
-    const scanForPII = (text: string): { type: string, matches: string[] }[] => {
+    const scanForPII = (text: string, isHtmlPage: boolean = false): { type: string, matches: string[] }[] => {
         const results: { type: string, matches: string[] }[] = [];
-        const patterns = {
-            Email: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+        const patterns: Record<string, RegExp> = {
             CreditCard: /\b(?:\d[ -]*?){13,16}\b/g,
             AuthToken: /\b(?:Bearer|Token|JWT|AKIA[0-9A-Z]{16})\b/gi
         };
 
+        // Only scan for emails on non-HTML responses (API data).
+        // HTML pages commonly display contact emails — those are intentional, not leaks.
+        if (!isHtmlPage) {
+            patterns.Email = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+        }
+
+        // Strip URLs and HTML attributes to prevent false positives from number sequences
+        // in URLs (e.g., Unsplash photo IDs like "photo-1581578731548-c64695cc6952")
+        let cleanText = text
+            .replace(/https?:\/\/[^\s"'<>]+/g, '')      // Remove full URLs
+            .replace(/(?:src|href|action|data-[\w-]+)\s*=\s*["'][^"']*["']/gi, ''); // Remove HTML attributes with URLs
+
         for (const [type, regex] of Object.entries(patterns)) {
-            const matches = text.match(regex);
+            const matches = cleanText.match(regex);
             if (matches) {
                 // For CC, do a tiny bit more filtering to avoid small decimals/dates
                 const filtered = type === 'CreditCard'
@@ -258,9 +269,12 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
                         } else {
                             safeLogData.body = str.length > 100000 ? str.substring(0, 100000) + '... (Truncated)' : str;
 
-                            // --- PII DETECTION (skip on same-page hash navigation) ---
+                            // --- PII DETECTION ---
+                            // Skip emails on HTML pages (visible contact info is not a leak).
+                            // Always detect Credit Cards & Auth Tokens — they should NEVER appear in page source.
                             const isSamePageNav = request.isNavigationRequest() && isMainFrame && !isNewPage;
-                            const leaks = isSamePageNav ? [] : scanForPII(str);
+                            const isHtmlPage = contentType.includes('html');
+                            const leaks = isSamePageNav ? [] : scanForPII(str, isHtmlPage);
 
                             // Only log when actual leaks are found
                             if (leaks.length > 0) {

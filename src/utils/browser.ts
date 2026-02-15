@@ -7,7 +7,7 @@ import { ReportManager } from './report-manager';
 // @ts-ignore
 import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS } from './embedded';
 
-export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log): Promise<{
+export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void): Promise<{
     broadcastLog: (msg: string) => void,
     close: () => Promise<void>,
     process: any,
@@ -66,7 +66,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // @ts-ignore
         ignoreHTTPSErrors: true,
         ignoreDefaultArgs: ['--enable-automation'],
-        args: ['--start-maximized'],
+        args: ['--start-fullscreen'],
         defaultViewport: null
     });
 
@@ -95,9 +95,11 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             await reportManager.logViolation(violation);
         });
 
-        // 3. Inject Tools
+        // 3. Inject Tools + Persist Config
         // @ts-ignore
-        await targetPage.evaluateOnNewDocument((toolScripts: string[]) => {
+        await targetPage.evaluateOnNewDocument((toolScripts: string[], config: any) => {
+            // Persist domain/port so the UI shell can auto-read them after navigation
+            (window as any).__ATLAS_CONFIG__ = config;
             console.log("%c[Atlas] Injecting Runtime...", "color:cyan");
             toolScripts.forEach(script => {
                 try {
@@ -106,7 +108,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                     console.error('[Atlas Runtime Error]', e.message, e.stack);
                 }
             });
-        }, tools);
+        }, tools, { domain, port: localPort });
 
         // 3. Recorder (Single instance attached to main page? Or per page?)
         // Recorder typically records the *tab* it was attached to. 
@@ -162,6 +164,20 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
         // 5. Initial Log for this page
         await logNav();
+
+        // 6. Browser Bridge Functions (Close + Navigation)
+        const bridgeFunctions: Record<string, Function> = {
+            atlasCloseBrowser: async () => {
+                console.log('[Atlas] Close requested from Browser HUD.');
+                if (onBrowserClose) onBrowserClose();
+                else { await close(); process.exit(0); }
+            },
+            atlasGoBack: async () => { try { await targetPage.goBack(); } catch (e) { } },
+            atlasGoForward: async () => { try { await targetPage.goForward(); } catch (e) { } }
+        };
+        for (const [name, fn] of Object.entries(bridgeFunctions)) {
+            try { await targetPage.exposeFunction(name, fn); } catch (e) { /* Already exposed */ }
+        }
     };
 
     // 4. Attach Modules (Initial Page)
@@ -183,14 +199,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     };
     await runToolsNow(page);
 
-    // Initial HUD Update
-    await page.evaluate((d, p) => {
-        // @ts-ignore
-        if (window.Atlas && window.Atlas.updateHUD) window.Atlas.updateHUD(d, p, 'NO LIMIT');
-        // Enable Device Mode by default for "Showcase" feel? Maybe optional.
-        // Let's leave it off by default but enable explicit hazard border.
-    }, domain, localPort);
-
 
     // 3. Navigation Lock & Multi-Tab Support
     browser.on('targetcreated', async (target) => {
@@ -206,12 +214,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
                     // Inject immediately into current context
                     await runToolsNow(newPage);
-
-                    // Update HUD for new tab
-                    await newPage.evaluate((d, p) => {
-                        // @ts-ignore
-                        if (window.Atlas && window.Atlas.updateHUD) window.Atlas.updateHUD(d, p, 'NO LIMIT');
-                    }, domain, localPort);
 
 
                     // REMOVED: Force Reload (Fixed Double Load)
@@ -244,7 +246,14 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         console.error("Navigation failed", e);
     }
 
-    // 7. Bridge & Cleanup Interface
+    // 7. Browser Disconnect Handler — graceful cleanup when browser is closed manually
+    browser.on('disconnected', () => {
+        console.log('\n[Atlas] Browser was closed. Ending session...');
+        if (onBrowserClose) onBrowserClose();
+        else process.exit(0);
+    });
+
+    // 8. Bridge & Cleanup Interface
     const broadcastLog = (msg: string) => {
         try {
             if (!page.isClosed()) {
