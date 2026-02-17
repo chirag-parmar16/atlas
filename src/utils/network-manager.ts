@@ -244,7 +244,8 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
                     time: duration,
                     reqHeaders: JSON.parse(JSON.stringify(request.headers())),
                     resHeaders: JSON.parse(JSON.stringify(resHeaders)),
-                    body: ''
+                    body: '',
+                    _page: lastNavPathname || '/'
                 };
 
                 // [HEALTH] Report HTTP Errors (4xx, 5xx)

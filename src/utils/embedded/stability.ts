@@ -2,7 +2,7 @@
 export const STABILITY = `
 // stability.js
 (function () {
-    window.Atlas.addTool('Stability', function () {
+    window.Atlas.addTool('Scalability', function () {
         const container = document.createElement('div');
         container.style.display = 'flex';
         container.style.flexDirection = 'column';

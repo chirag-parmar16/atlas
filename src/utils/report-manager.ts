@@ -256,7 +256,7 @@ export class ReportManager {
             title = `Missing ${type}: ${v.message.split(': ')[1] || 'Unknown'}`;
             impact = `Visual ${type} is missing, resulting in a broken or unprofessional layout.`;
             recommendation = "Check if the file exists on the server or if the path is correct.";
-        } else if (v.source === 'Stability' && v.message.includes('Console Error')) {
+        } else if (v.source === 'Scalability' && v.message.includes('Console Error')) {
             title = "Script Runtime Error";
             impact = "Certain page features or interactions might be completely broken.";
             recommendation = "Inspect the browser console to debug the JavaScript execution.";

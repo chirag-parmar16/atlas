@@ -6,3 +6,9 @@ export * from './links';
 export * from './stability';
 export * from './security-monitor';
 export * from './extras';
+
+// DevTools Tabs
+export * from './console';
+export * from './networks';
+export * from './application';
+export * from './storage';

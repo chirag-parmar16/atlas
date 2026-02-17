@@ -5,7 +5,7 @@ import { attachRecorder } from './session-recorder';
 import { ReportManager } from './report-manager';
 
 // @ts-ignore
-import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS } from './embedded';
+import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE } from './embedded';
 
 export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void): Promise<{
     broadcastLog: (msg: string) => void,
@@ -88,7 +88,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // Generic Tool Injection
     // @ts-ignore
     const setupPage = async (targetPage: any) => {
-        const tools = [UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS];
+        const tools = [UI_SHELL, RECORDER, LINKS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, STABILITY, SECURITY_MONITOR, EXTRAS];
 
         // 1. Network Manager (Isolated per page)
         const netMgr = createNetworkManager(targetPage, { domain, localPort }, reportManager, logger);
@@ -189,7 +189,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
 
     const runToolsNow = async (p: any) => {
-        const tools = [UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS];
+        const tools = [UI_SHELL, RECORDER, LINKS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, STABILITY, SECURITY_MONITOR, EXTRAS];
 
         await p.evaluate((toolScripts: string[]) => {
             toolScripts.forEach(script => {
