@@ -8,15 +8,18 @@ export const NETWORKS = `
     let listEl = null;
     let countEl = null;
     let lastFetchCount = 0;
+    let currentPagePath = window.location.pathname;
 
     const ICONS = {
-        TRASH: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>'
+        TRASH: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>',
+        AUDIT: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>'
     };
 
     const TYPE_MAP = {
         'fetch': 'XHR', 'xhr': 'XHR', 'document': 'Doc', 'script': 'JS',
         'stylesheet': 'CSS', 'image': 'IMG', 'font': 'Font', 'media': 'Media',
-        'Fetch': 'XHR'
+        'Fetch': 'XHR',
+        'Audit': 'Audit'
     };
 
     const STATUS_COLORS = {
@@ -25,7 +28,8 @@ export const NETWORKS = `
 
     const METHOD_COLORS = {
         'GET': '#3b82f6', 'POST': '#10b981', 'PUT': '#f59e0b',
-        'DELETE': '#ef4444', 'PATCH': '#a855f7', 'OPTIONS': '#71717a'
+        'DELETE': '#ef4444', 'PATCH': '#a855f7', 'OPTIONS': '#71717a',
+        'HEAD': '#71717a'
     };
 
     // Normalize paths so /, /index.html, /index.htm are treated as the same page
@@ -44,7 +48,7 @@ export const NETWORKS = `
         };
     }
 
-    // Sync from backend — uses _page field set by network-manager
+    // Sync from backend
     const syncFromBackend = async () => {
         try {
             if (window.getNetworkHistory) {
@@ -68,18 +72,29 @@ export const NETWORKS = `
     const getFilteredRequests = () => {
         const currentPage = getCurrentPage();
 
-        // Only show requests whose _page matches the current page
+        // Only show requests whose _page matches the current page (or legacy untagged ones)
         let filtered = requests.filter(r => {
-            if (!r._page) return true; // no tag = legacy, show it
+            if (!r._page) return true;
             return normalizePath(r._page) === currentPage;
         });
 
         if (activeType !== 'all') {
+            // Filter by specific type
             filtered = filtered.filter(r => {
-                const mapped = TYPE_MAP[r.type] || TYPE_MAP[r.resourceType] || 'Other';
-                return mapped === activeType;
+                let rType = TYPE_MAP[r.type] || TYPE_MAP[r.resourceType] || 'Other';
+                
+                // If browser says 'Doc' (e.g. viewing css directly), check extension
+                if (rType === 'Doc' || rType === 'Other') {
+                    const u = (r.url || '').split('?')[0].toLowerCase();
+                    if (u.endsWith('.css')) rType = 'CSS';
+                    else if (u.endsWith('.js')) rType = 'JS';
+                    else if (u.match(/\.(png|jpg|jpeg|gif|webp|svg|ico)$/)) rType = 'IMG';
+                }
+
+                return rType === activeType;
             });
         }
+
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
             filtered = filtered.filter(r => (r.url || '').toLowerCase().includes(q));
@@ -95,7 +110,7 @@ export const NETWORKS = `
 
         listEl.innerHTML = '';
         if (filtered.length === 0) {
-            listEl.innerHTML = '<div style="color:#52525b; text-align:center; padding-top:40px; font-style:italic; font-size:13px;">No requests on this page yet.</div>';
+            listEl.innerHTML = '<div style="color:#52525b; text-align:center; padding-top:40px; font-style:italic; font-size:13px;">No requests match this filter.</div>';
             return;
         }
 
@@ -176,15 +191,28 @@ export const NETWORKS = `
         topBar.style.cssText = 'display:flex; gap:4px; padding:8px 10px; background:rgba(0,0,0,0.3); border-bottom:1px solid #1f1f23; align-items:center; flex-wrap:wrap;';
 
         const types = [
-            { key: 'all', label: 'All' }, { key: 'XHR', label: 'XHR' },
-            { key: 'Doc', label: 'Doc' }, { key: 'JS', label: 'JS' },
-            { key: 'CSS', label: 'CSS' }, { key: 'IMG', label: 'Img' }
+            { key: 'all', label: 'All' }, 
+            { key: 'XHR', label: 'XHR' },
+            { key: 'Doc', label: 'Doc' }, 
+            { key: 'JS', label: 'JS' },
+            { key: 'CSS', label: 'CSS' }, 
+            { key: 'IMG', label: 'Img' }
         ];
 
         types.forEach(t => {
             const btn = document.createElement('button');
-            btn.style.cssText = 'background:' + (t.key === 'all' ? 'rgba(255,255,255,0.1)' : 'transparent') + '; border:1px solid ' + (t.key === 'all' ? 'rgba(255,255,255,0.2)' : 'transparent') + '; color:#aaa; padding:4px 10px; border-radius:5px; font-size:11px; cursor:pointer; font-weight:500;';
+            const isActive = activeType === t.key;
+            btn.style.cssText = 'background:' + (isActive ? 'rgba(255,255,255,0.1)' : 'transparent') + '; border:1px solid ' + (isActive ? 'rgba(255,255,255,0.2)' : 'transparent') + '; color:#aaa; padding:4px 10px; border-radius:5px; font-size:11px; cursor:pointer; font-weight:500;';
             btn.innerText = t.label;
+            
+            // Highlight Audit button if there are errors (optional, maybe overkill for now)
+            if (t.key === 'Audit') {
+                btn.innerHTML = ICONS.AUDIT + ' Audit';
+                btn.style.display = 'flex';
+                btn.style.alignItems = 'center';
+                btn.style.gap = '4px';
+            }
+
             btn.onclick = () => {
                 activeType = t.key;
                 topBar.querySelectorAll('button').forEach(b => {
@@ -223,10 +251,13 @@ export const NETWORKS = `
         listEl.style.cssText = 'flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:4px; padding:10px;';
         container.appendChild(listEl);
 
+        // Reset to current page on tab show
+        currentPagePath = window.location.pathname;
         renderRequests();
         syncFromBackend();
         return container;
     }, function () {
+        currentPagePath = window.location.pathname;
         syncFromBackend();
         renderRequests();
     });

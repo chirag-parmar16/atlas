@@ -14,14 +14,16 @@ export const LINKS = `
 
         if (internalLinks.length === 0) return;
 
-        // Dedup
-        const uniqueLinks = Array.from(new Set(internalLinks.map(a => a.href)));
+        // Dedup & Normalize (treat / and /index.html as same)
+        const uniqueLinks = Array.from(new Set(internalLinks.map(a => {
+            return a.href.replace(/\/index\.html?$/, '/');
+        })));
         
         console.log(\`[Atlas Auditor] Scanning \${uniqueLinks.length} internal links...\`);
 
         for (const link of uniqueLinks) {
             try {
-                const res = await fetch(link, { method: 'HEAD' });
+                const res = await fetch(link, { method: 'HEAD', headers: { 'X-Atlas-Audit': 'true' } });
                 if (res.status === 404 || res.status >= 500) {
                     const atlas = window.Atlas;
                     if (atlas) {

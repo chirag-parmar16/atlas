@@ -206,7 +206,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
 
             try {
                 const startTime = Date.now();
-                const headers = { ...request.headers(), 'x-forwarded-proto': 'https' };
+                const headers: Record<string, string> = { ...request.headers(), 'x-forwarded-proto': 'https' };
 
                 const response = await fetch(localUrl, {
                     method: request.method(),
@@ -240,7 +240,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
                     url: url.href.replace(localUrl, urlString),
                     method: request.method(),
                     status: response.status,
-                    type: 'Fetch',
+                    type: headers['x-atlas-audit'] ? 'Audit' : request.resourceType(),
                     time: duration,
                     reqHeaders: JSON.parse(JSON.stringify(request.headers())),
                     resHeaders: JSON.parse(JSON.stringify(resHeaders)),
