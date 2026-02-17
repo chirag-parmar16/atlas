@@ -38,7 +38,7 @@ export const UI_SHELL = `
         
         /* 1. Static Content Push (The Base) */
         body {
-            padding-top: 52px !important;
+            padding-top: 60px !important;
             margin-top: 0 !important;
             position: relative;
             box-sizing: border-box;
@@ -46,7 +46,7 @@ export const UI_SHELL = `
 
         body.atlas-hazard-mode::after {
             content: ""; pointer-events: none;
-            position: fixed; top: 52px; left: 0; width: 100%; height: calc(100% - 52px);
+            position: fixed; top: 60px; left: 0; width: 100%; height: calc(100% - 60px);
             border: 12px solid #f59e0b;
             box-sizing: border-box;
             background: linear-gradient(135deg, #f59e0b 25%, transparent 25%) -50px 0,
@@ -340,13 +340,13 @@ export const UI_SHELL = `
                  const style = window.getComputedStyle(el);
                  if (style.position === 'fixed' || style.position === 'sticky') {
                      const top = parseInt(style.top);
-                     if (!isNaN(top) && top < 40) {
+                     if (!isNaN(top) && top < 50) {
                          if (!el.dataset.atlasShifted) {
-                             el.style.top = (top + 48) + 'px';
+                             el.style.top = (top + 60) + 'px';
                              el.dataset.atlasShifted = 'true';
                          }
                      } else if (style.top === 'auto' && style.bottom === 'auto') {
-                         el.style.top = '48px';
+                         el.style.top = '60px';
                          el.dataset.atlasShifted = 'true';
                      }
                  }
@@ -392,7 +392,7 @@ export const UI_SHELL = `
         const hudStyle = document.createElement('style');
         hudStyle.textContent = \`
             .hud-bar {
-                position: fixed; top: 0; left: 0; width: 100%; height: 52px;
+                position: fixed; top: 0; left: 0; width: 100%; height: 60px;
                 background: #0a0a0a; border-bottom: 1px solid #1f1f23;
                 color: #e4e4e7; z-index: 2147483646;
                 display: flex; align-items: center; gap: 0;
