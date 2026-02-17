@@ -26,12 +26,6 @@ export const NETWORKS = `
         '2': '#10b981', '3': '#3b82f6', '4': '#f59e0b', '5': '#ef4444'
     };
 
-    const METHOD_COLORS = {
-        'GET': '#3b82f6', 'POST': '#10b981', 'PUT': '#f59e0b',
-        'DELETE': '#ef4444', 'PATCH': '#a855f7', 'OPTIONS': '#71717a',
-        'HEAD': '#71717a'
-    };
-
     // Normalize paths so /, /index.html, /index.htm are treated as the same page
     const normalizePath = (p) => {
         return (p || '/').replace(/\\/(index\\.html?)?$/, '/') || '/';
@@ -44,7 +38,13 @@ export const NETWORKS = `
         window.Atlas.logNetworkRequest = (data) => {
             requests.push(data);
             if (requests.length > 300) requests.shift();
-            renderRequests();
+            // Debounce render slightly to avoid massive updates
+            if (!window.Atlas._renderTimeout) {
+                window.Atlas._renderTimeout = setTimeout(() => {
+                    renderRequests();
+                    window.Atlas._renderTimeout = null;
+                }, 100);
+            }
         };
     }
 
@@ -102,11 +102,131 @@ export const NETWORKS = `
         return filtered;
     };
 
+    // Render detailed view for a single request (LAZY LOADING)
+    const renderDetails = (req, container) => {
+        container.innerHTML = ''; // Clear loading state
+        
+        // Tab Navigation
+        const tabsNav = document.createElement('div');
+        tabsNav.style.cssText = 'display:flex; background:#292a2d; border-bottom:1px solid #3c4043; height:28px; flex-shrink:0;';
+        
+        const createTab = (label, active = false) => {
+            const btn = document.createElement('button');
+            btn.innerText = label;
+            btn.style.cssText = \`background:transparent; border:none; color:\${active ? '#8ab4f8' : '#9aa0a6'}; padding:0 10px; font-size:11px; cursor:pointer; height:100%; border-bottom:2px solid \${active ? '#8ab4f8' : 'transparent'}; font-family:monospace; white-space:nowrap;\`;
+            return btn;
+        };
+
+        const tabLabels = ['Headers', 'Preview', 'Response', 'Cookies'];
+        const tabs = {};
+        const views = {};
+
+        // Create Tab Buttons & View Containers
+        tabLabels.forEach((label, i) => {
+            const isFirst = i === 0;
+            const btn = createTab(label, isFirst);
+            tabs[label] = btn;
+            tabsNav.appendChild(btn);
+
+            const view = document.createElement('div');
+            view.style.cssText = \`flex:1; overflow-y:auto; padding:10px; color:#e8eaed; display:\${isFirst ? 'block' : 'none'}; word-break:break-all;\`;
+            views[label] = view;
+        });
+
+        // 1. HEADERS CONTENT (Grid Layout)
+        let headersHtml = '<div style="display:flex; flex-direction:column; gap:16px;">';
+        
+        const renderSection = (title, items) => {
+            let s = \`<div><div style="font-weight:700; color:#e8eaed; margin-bottom:6px; font-size:12px;">\${title}</div>\`;
+            s += '<div style="display:grid; grid-template-columns: 140px 1fr; gap:4px 10px; font-size:11px;">';
+            items.forEach(item => {
+                s += \`<div style="color:#9aa0a6; font-weight:500;">\${item.label}:</div>\`;
+                s += \`<div style="color:#e8eaed; word-break:break-all;">\${item.value}</div>\`;
+            });
+            s += '</div></div>';
+            return s;
+        };
+
+        // General Section
+        const statusChar = String(req.status || 0).charAt(0);
+        const statusColor = STATUS_COLORS[statusChar] || '#9aa0a6';
+        headersHtml += renderSection('General', [
+            { label: 'Request URL', value: req.url },
+            { label: 'Request Method', value: req.method },
+            { label: 'Status Code', value: \`<span style="color:\${statusColor}">\${req.status}</span>\` },
+            { label: 'Remote Address', value: '-' } // Placeholder
+        ]);
+
+        // Response Headers
+        if (req.resHeaders && Object.keys(req.resHeaders).length > 0) {
+           const items = Object.entries(req.resHeaders).map(([k, v]) => ({ label: k, value: v }));
+           headersHtml += renderSection('Response Headers', items);
+        }
+
+        // Request Headers
+        if (req.reqHeaders && Object.keys(req.reqHeaders).length > 0) {
+            const items = Object.entries(req.reqHeaders).map(([k, v]) => ({ label: k, value: v }));
+            headersHtml += renderSection('Request Headers', items);
+        }
+
+        headersHtml += '</div>';
+        views['Headers'].innerHTML = headersHtml;
+
+        // 2 & 3. PREVIEW & RESPONSE CONTENT (Optimized)
+        // Truncate huge bodies to prevent UI freeze
+        let bodyContent = req.body ? String(req.body) : '';
+        const MAX_BODY_LENGTH = 10000; // 10KB limit for preview
+        const truncated = bodyContent.length > MAX_BODY_LENGTH;
+        if (truncated) bodyContent = bodyContent.substring(0, MAX_BODY_LENGTH) + '\\n... (Truncated for performance)';
+
+        let isJson = false;
+        try { JSON.parse(bodyContent); isJson = true; } catch(e){}
+
+        if (isJson) {
+            views['Preview'].innerHTML = \`<pre style="color:#a8c7fa; max-width:100%; white-space:pre-wrap;">\${bodyContent.replace(/</g, '&lt;')}</pre>\`;
+        } else {
+            views['Preview'].innerText = bodyContent || '(No content)';
+        }
+        
+        views['Response'].innerText = bodyContent || '(No content)';
+
+        // 4. COOKIES CONTENT
+        let cookiesHtml = '<table><tr><th style="text-align:left; color:#9aa0a6;">Name</th><th style="text-align:left; color:#9aa0a6;">Value</th></tr>';
+        const cookieHeader = (req.reqHeaders && (req.reqHeaders['cookie'] || req.reqHeaders['Cookie'])) || '';
+        if (cookieHeader) {
+            cookieHeader.split(';').forEach(c => {
+                const [k, v] = c.split('=').map(s => s.trim());
+                cookiesHtml += \`<tr><td style="color:#f28b82; padding-right:10px;">\${k}</td><td>\${v}</td></tr>\`;
+            });
+        } else {
+            cookiesHtml += '<tr><td colspan="2" style="font-style:italic; color:#5f6368;">No cookies sent</td></tr>';
+        }
+        cookiesHtml += '</table>';
+        views['Cookies'].innerHTML = cookiesHtml;
+
+        // Assembly
+        container.appendChild(tabsNav);
+        Object.values(views).forEach(v => container.appendChild(v));
+
+        // Tab Switching Logic
+        Object.keys(tabs).forEach(key => {
+            tabs[key].onclick = (e) => {
+                e.stopPropagation();
+                Object.values(tabs).forEach(t => { t.style.color = '#9aa0a6'; t.style.borderBottomColor = 'transparent'; });
+                Object.values(views).forEach(v => v.style.display = 'none');
+                
+                tabs[key].style.color = '#8ab4f8';
+                tabs[key].style.borderBottomColor = '#8ab4f8';
+                views[key].style.display = 'block';
+            };
+        });
+    };
+
     const renderRequests = () => {
         if (!listEl) return;
         const filtered = getFilteredRequests();
 
-        if (countEl) countEl.innerText = filtered.length;
+        if (countEl) countEl.innerText = String(filtered.length);
 
         listEl.innerHTML = '';
         if (filtered.length === 0) {
@@ -114,98 +234,148 @@ export const NETWORKS = `
             return;
         }
 
-        [...filtered].reverse().forEach(req => {
-            const item = document.createElement('div');
+        const table = document.createElement('div');
+        table.style.cssText = 'display:flex; flex-direction:column; height:100%; font-family:monospace; font-size:11px; color:#d4d4d8;';
+        
+        const header = document.createElement('div');
+        header.style.cssText = 'display:grid; grid-template-columns: 2fr 50px 50px 50px 50px 50px; gap:0; background:#202124; border-bottom:1px solid #3c4043; color:#9aa0a6; font-weight:500; font-size:11px; height:24px; align-items:center; flex-shrink:0; padding-right:10px;';
+        
+        const hCell = (text, align = 'left', border = true) => 
+            \`<div style="padding:0 5px; height:100%; display:flex; align-items:center; \${align === 'right' ? 'justify-content:flex-end;' : ''} \${border ? 'border-right:1px solid #3c4043;' : ''}">\${text}</div>\`;
+
+        header.innerHTML = 
+            hCell('Name') + 
+            hCell('Status') + 
+            hCell('Type') + 
+            hCell('Init') + 
+            hCell('Size', 'right') + 
+            hCell('Time', 'right', false);
+        
+        table.appendChild(header);
+
+        const body = document.createElement('div');
+        body.style.cssText = 'flex:1; overflow-y:auto; overflow-x:hidden; background:#0d0d0d;';
+        
+        [...filtered].reverse().forEach((req, index) => {
+            const row = document.createElement('div');
+            const isEven = index % 2 === 0;
+            
+            row.style.cssText = \`display:grid; grid-template-columns: 2fr 50px 50px 50px 50px 50px; gap:0; border-bottom:1px solid #202124; cursor:pointer; align-items:center; height:24px; background:\${isEven ? '#0d0d0d' : '#121212'}; color:#e8eaed; transition:background 0.05s;\`;
+            
+            // Hover
+            row.onmouseover = () => { if (detailsRow.style.display === 'none') row.style.background = '#2a2d32'; };
+            row.onmouseout = () => { if (detailsRow.style.display === 'none') row.style.background = isEven ? '#0d0d0d' : '#121212'; };
+
+            // Determine Data Colors/Text
             const statusChar = String(req.status || 0).charAt(0);
-            const statusColor = STATUS_COLORS[statusChar] || '#71717a';
-            const methodColor = METHOD_COLORS[req.method] || '#71717a';
-
-            item.style.cssText = 'padding:8px 10px; background:rgba(255,255,255,0.02); border-radius:5px; cursor:pointer; transition:background 0.15s; border-left:3px solid ' + statusColor + ';';
-            item.onmouseover = () => { item.style.background = 'rgba(255,255,255,0.05)'; };
-            item.onmouseout = () => { item.style.background = 'rgba(255,255,255,0.02)'; };
-
+            const statusColor = STATUS_COLORS[statusChar] || '#9aa0a6';
+            let rType = TYPE_MAP[req.type] || TYPE_MAP[req.resourceType] || 'Other';
+            
             let displayUrl = req.url || '';
+            let fileName = '';
             try {
                 const u = new URL(displayUrl);
-                displayUrl = u.pathname + u.search;
-            } catch (e) {}
-            if (displayUrl.length > 55) displayUrl = displayUrl.substring(0, 52) + '...';
+                fileName = u.pathname.split('/').pop() || '/';
+                if (fileName === '/' && u.pathname !== '/') fileName = u.pathname;
+                if (u.search) fileName += u.search;
 
-            const type = TYPE_MAP[req.type] || TYPE_MAP[req.resourceType] || 'Other';
-
-            const main = document.createElement('div');
-            main.style.cssText = 'display:flex; align-items:center; gap:8px; font-size:12px; font-family:\\'JetBrains Mono\\',monospace;';
-            main.innerHTML = ''
-                + '<span style="background:' + methodColor + '22; color:' + methodColor + '; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700; min-width:36px; text-align:center;">' + (req.method || 'GET') + '</span>'
-                + '<span style="color:#e4e4e7; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + (req.url || '').replace(/"/g, '&quot;') + '">' + displayUrl + '</span>'
-                + '<span style="color:' + statusColor + '; font-weight:700; font-size:12px;">' + (req.status || '—') + '</span>'
-                + '<span style="color:#71717a; font-size:11px; min-width:48px; text-align:right;">' + (req.time ? req.time + 'ms' : '—') + '</span>'
-                + '<span style="color:#3f3f46; font-size:10px; font-weight:500;">' + type + '</span>';
-            item.appendChild(main);
-
-            // Expandable details
-            const details = document.createElement('div');
-            details.style.cssText = 'display:none; margin-top:10px; font-size:12px; font-family:\\'JetBrains Mono\\',monospace;';
-
-            let detailsHtml = '<div style="color:#10b981; font-weight:700; margin-bottom:6px; font-size:12px;">Request Headers</div>';
-            if (req.reqHeaders) {
-                detailsHtml += '<div style="background:#0a0a0a; padding:8px; border-radius:4px; border:1px solid #1f1f23; max-height:140px; overflow-y:auto; margin-bottom:10px;">';
-                Object.entries(req.reqHeaders).forEach(([k, v]) => {
-                    detailsHtml += '<div style="padding:1px 0; font-size:11px;"><span style="color:#3b82f6;">' + k + '</span>: <span style="color:#d4d4d8;">' + v + '</span></div>';
-                });
-                detailsHtml += '</div>';
+                 const ext = u.pathname.split('.').pop()?.toLowerCase();
+                 if (rType === 'Other') {
+                    if (ext === 'css') rType = 'CSS';
+                    else if (ext === 'js' || ext === 'mjs') rType = 'JS';
+                    else if (['png','jpg','jpeg','gif','webp','svg'].includes(ext)) rType = 'Img';
+                 }
+            } catch (e) {
+                fileName = displayUrl.substring(0, 30);
             }
 
-            detailsHtml += '<div style="color:#f59e0b; font-weight:700; margin-bottom:6px; font-size:12px;">Response Headers</div>';
-            if (req.resHeaders) {
-                detailsHtml += '<div style="background:#0a0a0a; padding:8px; border-radius:4px; border:1px solid #1f1f23; max-height:140px; overflow-y:auto; margin-bottom:10px;">';
-                Object.entries(req.resHeaders).forEach(([k, v]) => {
-                    detailsHtml += '<div style="padding:1px 0; font-size:11px;"><span style="color:#f59e0b;">' + k + '</span>: <span style="color:#d4d4d8;">' + v + '</span></div>';
-                });
-                detailsHtml += '</div>';
-            }
+            const timeColor = req.time > 1000 ? '#f28b82' : '#9aa0a6';
+            const sizeStr = req.body ? Math.round(String(req.body).length / 1024) + ' KB' : '-';
 
-            if (req.body) {
-                detailsHtml += '<div style="color:#a855f7; font-weight:700; margin-bottom:6px; font-size:12px;">Response Body</div>';
-                const bodyText = String(req.body).length > 2000 ? String(req.body).substring(0, 2000) + '\\n... (truncated)' : String(req.body);
-                detailsHtml += '<pre style="background:#0a0a0a; padding:8px; border-radius:4px; border:1px solid #1f1f23; max-height:220px; overflow:auto; color:#d4d4d8; white-space:pre-wrap; word-break:break-all; font-size:11px; line-height:1.4;">' + bodyText.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
-            }
-
-            details.innerHTML = detailsHtml;
-            item.appendChild(details);
-
-            item.onclick = () => {
-                const vis = details.style.display === 'block';
-                details.style.display = vis ? 'none' : 'block';
+            const cell = (html, align = 'left', border = true, color = null) => {
+                const div = document.createElement('div');
+                div.style.cssText = \`padding:0 5px; height:24px; display:flex; align-items:center; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; \${align === 'right' ? 'justify-content:flex-end;' : ''} \${border ? 'border-right:1px solid #202124;' : ''} \${color ? 'color:' + color : ''}\`;
+                div.innerHTML = html;
+                return div;
             };
 
-            listEl.appendChild(item);
+            const nameDiv = cell(fileName, 'left', true);
+            nameDiv.title = req.url; // Tooltip
+
+            row.appendChild(nameDiv);
+            row.appendChild(cell((req.status || 'pending'), 'left', true, statusColor));
+            row.appendChild(cell(rType));
+            row.appendChild(cell('Other', 'left', true, '#9aa0a6'));
+            row.appendChild(cell(sizeStr, 'right'));
+            row.appendChild(cell((req.time ? Math.round(req.time) + ' ms' : '...'), 'right', false, timeColor));
+
+            // --- DETAILED VIEW CONTAINER (Lazy Rendered) ---
+            const detailsRow = document.createElement('div');
+            detailsRow.style.cssText = 'display:none; grid-column:1/-1; background:#202124; border-bottom:1px solid #3c4043; height:300px; overflow:hidden; flex-direction:column;';
+            detailsRow.style.display = 'none'; // Ensure hidden initially
+            
+            // Flag to check if rendered
+            let isRendered = false;
+
+            row.onclick = () => {
+                const vis = detailsRow.style.display === 'flex';
+                
+                if (vis) {
+                    detailsRow.style.display = 'none';
+                    row.style.background = isEven ? '#0d0d0d' : '#121212';
+                } else {
+                    // Lazy Render on first expand
+                    if (!isRendered) {
+                        renderDetails(req, detailsRow);
+                        isRendered = true;
+                    }
+                    detailsRow.style.display = 'flex';
+                    row.style.background = '#35363a';
+                }
+            };
+
+            body.appendChild(row);
+            body.appendChild(detailsRow);
         });
+
+        table.appendChild(body);
+        listEl.appendChild(table);
     };
 
     window.Atlas.addTool('Networks', function () {
         const container = document.createElement('div');
+        container.className = 'atlas-networks-container'; // Global scope for this tab
         container.style.cssText = 'display:flex; flex-direction:column; height:100%; gap:0;';
 
+        // --- CUSTOM SCROLLBAR STYLES ---
+        const style = document.createElement('style');
+        style.textContent = \`
+            .atlas-networks-container ::-webkit-scrollbar { width: 10px !important; height: 10px !important; }
+            .atlas-networks-container ::-webkit-scrollbar-track { background: #0d0d0d !important; border-left: 1px solid #202124 !important; }
+            .atlas-networks-container ::-webkit-scrollbar-thumb { background: #3c4043 !important; border-radius: 0 !important; border: 2px solid #0d0d0d !important; }
+            .atlas-networks-container ::-webkit-scrollbar-thumb:hover { background: #5f6368 !important; }
+            .atlas-networks-container ::-webkit-scrollbar-corner { background: #0d0d0d !important; }
+        \`;
+        container.appendChild(style);
+
         const topBar = document.createElement('div');
-        topBar.style.cssText = 'display:flex; gap:4px; padding:8px 10px; background:rgba(0,0,0,0.3); border-bottom:1px solid #1f1f23; align-items:center; flex-wrap:wrap;';
+        topBar.style.cssText = 'display:flex; gap:4px; padding:4px; background:#202124; border-bottom:1px solid #3c4043; align-items:center; flex-wrap:wrap; flex-shrink:0;';
 
         const types = [
-            { key: 'all', label: 'All' }, 
-            { key: 'XHR', label: 'XHR' },
-            { key: 'Doc', label: 'Doc' }, 
+            { key: 'all', label: 'All' },
+            { key: 'XHR', label: 'Fetch/XHR' },
+            { key: 'Doc', label: 'Doc' },
             { key: 'JS', label: 'JS' },
-            { key: 'CSS', label: 'CSS' }, 
+            { key: 'CSS', label: 'CSS' },
             { key: 'IMG', label: 'Img' }
         ];
 
         types.forEach(t => {
             const btn = document.createElement('button');
             const isActive = activeType === t.key;
-            btn.style.cssText = 'background:' + (isActive ? 'rgba(255,255,255,0.1)' : 'transparent') + '; border:1px solid ' + (isActive ? 'rgba(255,255,255,0.2)' : 'transparent') + '; color:#aaa; padding:4px 10px; border-radius:5px; font-size:11px; cursor:pointer; font-weight:500;';
+            btn.style.cssText = 'background:' + (isActive ? '#35363a' : 'transparent') + '; border:none; color:' + (isActive ? '#fff' : '#9aa0a6') + '; padding:2px 8px; border-radius:2px; font-size:11px; cursor:pointer; font-weight:500; font-family:monospace;';
             btn.innerText = t.label;
-            
-            // Highlight Audit button if there are errors (optional, maybe overkill for now)
+
             if (t.key === 'Audit') {
                 btn.innerHTML = ICONS.AUDIT + ' Audit';
                 btn.style.display = 'flex';
@@ -217,10 +387,10 @@ export const NETWORKS = `
                 activeType = t.key;
                 topBar.querySelectorAll('button').forEach(b => {
                     b.style.background = 'transparent';
-                    b.style.borderColor = 'transparent';
+                    b.style.color = '#9aa0a6';
                 });
-                btn.style.background = 'rgba(255,255,255,0.1)';
-                btn.style.borderColor = 'rgba(255,255,255,0.2)';
+                btn.style.background = '#35363a';
+                btn.style.color = '#fff';
                 renderRequests();
             };
             topBar.appendChild(btn);
@@ -228,19 +398,20 @@ export const NETWORKS = `
 
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
-        searchInput.placeholder = 'Filter URL...';
-        searchInput.style.cssText = 'margin-left:8px; flex:1; background:#0a0a0a; border:1px solid #27272a; color:#d4d4d8; padding:4px 10px; border-radius:5px; font-size:12px; font-family:\\'JetBrains Mono\\',monospace; outline:none; min-width:80px;';
+        searchInput.placeholder = 'Filter';
+        searchInput.style.cssText = 'margin-left:8px; flex:1; background:#000; border:1px solid #3c4043; color:#e8eaed; padding:2px 6px; border-radius:2px; font-size:11px; font-family:monospace; outline:none;';
         searchInput.oninput = () => { searchQuery = searchInput.value; renderRequests(); };
         topBar.appendChild(searchInput);
 
         const badge = document.createElement('span');
-        badge.style.cssText = 'background:#10b981; color:#000; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; margin-left:4px;';
+        badge.style.cssText = 'background:#10b981; color:#000; padding:1px 6px; border-radius:10px; font-size:10px; font-weight:700; margin-left:4px;';
         badge.innerText = '0';
         countEl = badge;
         topBar.appendChild(badge);
 
         const clearBtn = document.createElement('button');
-        clearBtn.style.cssText = 'background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.2); color:#ef4444; padding:4px 8px; border-radius:5px; font-size:11px; cursor:pointer; margin-left:4px; display:flex; align-items:center;';
+        clearBtn.style.cssText = 'background:transparent; border:none; color:#9aa0a6; padding:2px 6px; cursor:pointer; margin-left:4px; font-size:11px;';
+        clearBtn.title = 'Clear';
         clearBtn.innerHTML = ICONS.TRASH;
         clearBtn.onclick = () => { requests = []; if (window.clearNetworkHistory) window.clearNetworkHistory(); renderRequests(); };
         topBar.appendChild(clearBtn);
@@ -248,10 +419,10 @@ export const NETWORKS = `
         container.appendChild(topBar);
 
         listEl = document.createElement('div');
-        listEl.style.cssText = 'flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:4px; padding:10px;';
+        listEl.className = 'atlas-networks-list'; // Add class for styling
+        listEl.style.cssText = 'flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:0; padding:0; background:#0d0d0d;';
         container.appendChild(listEl);
 
-        // Reset to current page on tab show
         currentPagePath = window.location.pathname;
         renderRequests();
         syncFromBackend();
@@ -261,5 +432,5 @@ export const NETWORKS = `
         syncFromBackend();
         renderRequests();
     });
-})();
+}) ();
 `;

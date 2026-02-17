@@ -127,8 +127,12 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
             // Normalize: treat /, /index.html, /index.htm as the same page
             const normalizePath = (p: string) => p.replace(/\/(index\.html?)?$/, '/');
             const newPathname = normalizePath(url.pathname);
+
+            // ALWAYS clear history on main frame navigation (including reload) to prevent duplicates
+            currentPageViolations.length = 0;
+            requestLogHistory.length = 0;
+
             if (newPathname !== normalizePath(lastNavPathname)) {
-                currentPageViolations.length = 0;
                 isNewPage = true;
             }
             lastNavPathname = url.pathname;

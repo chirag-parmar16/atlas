@@ -91,6 +91,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         const tools = [UI_SHELL, RECORDER, LINKS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, STABILITY, SECURITY_MONITOR, EXTRAS];
 
         // 1. Network Manager (Isolated per page)
+        await targetPage.setCacheEnabled(false); // Ensure consistent request counts (24 vs 22)
         const netMgr = createNetworkManager(targetPage, { domain, localPort }, reportManager, logger);
         await netMgr.init();
 
