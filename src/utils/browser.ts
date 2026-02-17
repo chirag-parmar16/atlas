@@ -5,7 +5,7 @@ import { attachRecorder } from './session-recorder';
 import { ReportManager } from './report-manager';
 
 // @ts-ignore
-import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE } from './embedded';
+import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, LOADER, CLOSER } from './embedded';
 
 export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void): Promise<{
     broadcastLog: (msg: string) => void,
@@ -201,6 +201,12 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         const bridgeFunctions: Record<string, Function> = {
             atlasCloseBrowser: async () => {
                 console.log('[Atlas] Close requested from Browser HUD.');
+                // 1. Inject Closer Animation
+                try {
+                    await targetPage.evaluate((script: string) => { new Function(script)(); }, CLOSER);
+                    await new Promise(r => setTimeout(r, 3000)); // 3s delay
+                } catch (e) { }
+
                 if (onBrowserClose) onBrowserClose();
                 else { await close(); process.exit(0); }
             },
@@ -217,7 +223,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
 
     const runToolsNow = async (p: any) => {
-        const tools = [UI_SHELL, RECORDER, LINKS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, STABILITY, SECURITY_MONITOR, EXTRAS];
+        const tools = [UI_SHELL, RECORDER, LINKS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, STABILITY, SECURITY_MONITOR, EXTRAS, LOADER];
 
         await p.evaluate((toolScripts: string[]) => {
             toolScripts.forEach(script => {
@@ -266,6 +272,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             !domain.includes('.'); // Single word like 'test', 'dev'
 
         const protocol = isLocal ? 'http://' : 'https://';
+
+        console.log('[Atlas] Boot Sequence: Holding Loader for 5s...');
+        await new Promise(r => setTimeout(r, 5000)); // Precise 5s Boot Delay
 
         await page.goto(`${protocol}${domain}`, {
             waitUntil: 'domcontentloaded'
