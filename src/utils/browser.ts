@@ -3,6 +3,9 @@ import { Launcher } from 'chrome-launcher';
 import { createNetworkManager } from './network-manager';
 import { attachRecorder } from './session-recorder';
 import { ReportManager } from './report-manager';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
 
 // @ts-ignore
 import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, LOADER, CLOSER } from './embedded';
@@ -17,6 +20,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     console.log('[Atlas] Launching Browser Orchestrator...');
     const reportManager = new ReportManager(projectPath, `localhost:${localPort}`);
     let recorderInstance: any = null;
+    const networkManagers: any[] = [];
+
+    // BUG-001: Temporary Profile Directory
+    const profileDir = path.join(os.tmpdir(), `atlas-profile-${Date.now()}`);
 
     // 1. Resolve Chrome Path
     let chromePath = '';
@@ -67,7 +74,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         ignoreHTTPSErrors: true,
         ignoreDefaultArgs: ['--enable-automation'],
         args: [
-            '--kiosk',                                  // True fullscreen — no chrome UI, no ESC exit
+            `--app=about:blank`,                        // Launch in "App Mode" (No Tabs/URL bar)
+            `--user-data-dir=${profileDir}`,            // BUG-001: Isolated Profile
+            '--force-app-mode',                         // More aggressive app mode force
+            '--start-maximized',                        // Start full but not kiosk
             '--disable-pinch',                          // Prevent pinch zoom
             '--overscroll-history-navigation=disabled'   // Prevent swipe navigation
         ],
@@ -94,6 +104,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         await targetPage.setCacheEnabled(false); // Ensure consistent request counts (24 vs 22)
         const netMgr = createNetworkManager(targetPage, { domain, localPort }, reportManager, logger);
         await netMgr.init();
+        networkManagers.push(netMgr);
 
         // 2. Report Manager Binding
         await targetPage.exposeFunction('atlasLogViolation', async (violation: any) => {
@@ -103,10 +114,14 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // 3. Inject Tools + Persist Config
         // @ts-ignore
         await targetPage.evaluateOnNewDocument((toolScripts: string[], config: any) => {
+            // BUG-004: Guard against double injection
+            if ((window as any).__ATLAS_LOADED__) return;
+            (window as any).__ATLAS_LOADED__ = true;
+
             // Persist domain/port so the UI shell can auto-read them after navigation
             (window as any).__ATLAS_CONFIG__ = config;
             console.log("%c[Atlas] Injecting Runtime...", "color:cyan");
-            toolScripts.forEach(script => {
+            toolScripts.forEach((script: string) => {
                 try {
                     new Function(script)();
                 } catch (e: any) {
@@ -211,7 +226,22 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 else { await close(); process.exit(0); }
             },
             atlasGoBack: async () => { try { await targetPage.goBack(); } catch (e) { } },
-            atlasGoForward: async () => { try { await targetPage.goForward(); } catch (e) { } }
+            atlasGoForward: async () => { try { await targetPage.goForward(); } catch (e) { } },
+            atlasMinimizeWindow: async () => {
+                try {
+                    const session = await targetPage.target().createCDPSession();
+                    const { windowId } = await session.send('Browser.getWindowForTarget');
+                    await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } });
+                } catch (e) { console.error("Minimize failed", e); }
+            },
+            atlasToggleWindowMode: async () => {
+                try {
+                    const session = await targetPage.target().createCDPSession();
+                    const { windowId, bounds } = await session.send('Browser.getWindowForTarget');
+                    const newState = bounds.windowState === 'normal' ? 'maximized' : 'normal';
+                    await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: newState } });
+                } catch (e) { console.error("Window toggle failed", e); }
+            }
         };
         for (const [name, fn] of Object.entries(bridgeFunctions)) {
             try { await targetPage.exposeFunction(name, fn); } catch (e) { /* Already exposed */ }
@@ -226,6 +256,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         const tools = [UI_SHELL, RECORDER, LINKS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, STABILITY, SECURITY_MONITOR, EXTRAS, LOADER];
 
         await p.evaluate((toolScripts: string[]) => {
+            // BUG-004: Guard against double injection
+            if ((window as any).__ATLAS_LOADED__) return;
+            (window as any).__ATLAS_LOADED__ = true;
+
             toolScripts.forEach(script => {
                 try {
                     new Function(script)();
@@ -298,7 +332,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const broadcastLog = (msg: string) => {
         try {
             if (!page.isClosed()) {
-                page.evaluate((m) => {
+                page.evaluate((m: string) => {
                     window.dispatchEvent(new CustomEvent('atlas-console-log', {
                         detail: { type: 'log', message: `[Server] ${m}`, time: new Date().toLocaleTimeString() }
                     }));
@@ -309,7 +343,21 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     const close = async () => {
         console.log('[Atlas] Shutting down browsers...');
-        try { await browser.close(); } catch (e) { }
+        try {
+            // BUG-002: Cleanup network managers (WebSocket proxies)
+            for (const mgr of networkManagers) {
+                try { await mgr.cleanup(); } catch (e) { }
+            }
+            await browser.close();
+
+            // BUG-001: Delete temporary profile
+            if (fs.existsSync(profileDir)) {
+                try {
+                    // Recursive sync deletion is safest for cleanup on exit
+                    fs.rmSync(profileDir, { recursive: true, force: true });
+                } catch (e) { }
+            }
+        } catch (e) { }
     };
 
     return {

@@ -19,6 +19,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
     const violationHistory: any[] = [];       // Permanent — for JSON report
     const currentPageViolations: any[] = [];  // Cleared on navigation — for browser sync
     let lastNavPathname: string = '';          // Track pathname for hash-change detection
+    let isCleanedUp = false;
 
     // --- PII SCANNER ---
     const scanForPII = (text: string, isHtmlPage: boolean = false): { type: string, matches: string[] }[] => {
@@ -267,9 +268,9 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
                     if (contentType.includes('json') || contentType.includes('text') || contentType.includes('xml')) {
                         const str = Buffer.from(buffer).toString('utf-8');
 
-                        // Performance Optimization: Skip PII scan for extremely large files (>200KB)
-                        if (str.length > 200000) {
-                            safeLogData.body = str.substring(0, 1000) + '... (Truncated Large File)';
+                        // Performance Optimization: Skip PII scan for extremely large files (>1MB)
+                        if (str.length > 1000000) {
+                            safeLogData.body = str.substring(0, 5000) + '... (Truncated Very Large File)';
                             // Skip leaks check
                         } else {
                             safeLogData.body = str.length > 100000 ? str.substring(0, 100000) + '... (Truncated)' : str;
@@ -487,5 +488,15 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
         await attach(page);
     };
 
-    return { init, attach };
+    const cleanup = async () => {
+        if (isCleanedUp) return;
+        isCleanedUp = true;
+        if (wsProxyServer) {
+            try {
+                wsProxyServer.close();
+            } catch (e) { }
+        }
+    };
+
+    return { init, attach, cleanup };
 }

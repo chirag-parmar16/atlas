@@ -33,10 +33,7 @@ export async function init() {
         targetDomain: answers.targetDomain,
         startupTimeout: 30000,
         recordingEnabled: true,
-        debugMode: false,
-        // Add specific presets if needed
-        ...(projectType === 'laravel' ? { phpServer: true } : {}),
-        ...(projectType === 'nextjs' ? { nextLinkOptimization: true } : {})
+        debugMode: false
     };
 
     try {
@@ -59,7 +56,7 @@ export async function init() {
 function detectProjectType(cwd: string): string {
     if (fs.existsSync(path.join(cwd, 'composer.json'))) {
         const composer = JSON.parse(fs.readFileSync(path.join(cwd, 'composer.json'), 'utf-8'));
-        if (composer.require && composer.require['laravel/framework']) return 'laravel';
+        if (composer.require && composer.require['laravel/framework']) return 'php'; // Laravel detected, using PHP preset
         return 'php';
     }
 
@@ -67,7 +64,7 @@ function detectProjectType(cwd: string): string {
         const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf-8'));
         const deps = { ...pkg.dependencies, ...pkg.devDependencies };
 
-        if (deps['next']) return 'nextjs';
+        if (deps['next']) return 'node'; // Next.js detected, using Node preset
         if (deps['react']) return 'react';
         if (deps['vue']) return 'vue';
         if (deps['@angular/core']) return 'angular';

@@ -60,127 +60,118 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     npmArgs = ['run', 'dev'];
                 }
 
-                // Find Port
-                const srv = http.createServer();
-                srv.listen(0, '127.0.0.1', () => {
-                    const port = (srv.address() as AddressInfo).port;
-                    srv.close(() => {
-                        onLog(`[Atlas] Spawning app on port ${port}...`);
+                // Find Port: BUG-003 — Minimize race window by resolving as quickly as possible
+                const getFreePort = (): Promise<number> => new Promise((res) => {
+                    const srv = http.createServer();
+                    srv.listen(0, '127.0.0.1', () => {
+                        const p = (srv.address() as AddressInfo).port;
+                        srv.close(() => res(p));
+                    });
+                });
 
-                        const child = spawn('npm', npmArgs, {
-                            cwd: projectPath,
-                            env: { ...process.env, PORT: port.toString(), NODE_ENV: 'production' },
-                            shell: true,
-                            stdio: 'pipe'
-                        });
+                const port = await getFreePort();
+                onLog(`[Atlas] Spawning app on port ${port}...`);
 
-                        // Pipe Logs
-                        child.stdout?.on('data', (d) => onLog(d.toString().trim()));
-                        child.stderr?.on('data', (d) => onLog(`[ERR] ${d.toString().trim()}`));
+                const child = spawn('npm', npmArgs, {
+                    cwd: projectPath,
+                    env: { ...process.env, PORT: port.toString(), NODE_ENV: 'production' },
+                    shell: true,
+                    stdio: 'pipe'
+                });
 
-                        // Wait for readiness
-                        const checkInterval = setInterval(() => {
-                            const req = http.get(`http://127.0.0.1:${port}`, (res) => {
-                                if (res.statusCode) {
-                                    clearInterval(checkInterval);
-                                    resolve({
-                                        port,
-                                        child,
-                                        cleanup: async () => {
-                                            if (!child || !child.pid) return;
+                // Pipe Logs
+                child.stdout?.on('data', (d) => onLog(d.toString().trim()));
+                child.stderr?.on('data', (d) => onLog(`[ERR] ${d.toString().trim()}`));
 
-                                            // Use tree-kill for cross-platform process tree termination
-                                            const treeKill = require('tree-kill');
+                // Wait for readiness
+                const checkInterval = setInterval(() => {
+                    const req = http.get(`http://127.0.0.1:${port}`, (res) => {
+                        if (res.statusCode) {
+                            clearInterval(checkInterval);
+                            resolve({
+                                port,
+                                child,
+                                cleanup: async () => {
+                                    if (!child || !child.pid) return;
 
-                                            return new Promise<void>((resolve) => {
-                                                // Attempt graceful shutdown first
-                                                treeKill(child.pid, 'SIGTERM', (err?: Error) => {
-                                                    if (err) {
-                                                        // Process already dead or error occurred
-                                                        resolve();
-                                                        return;
-                                                    }
+                                    // Use tree-kill for cross-platform process tree termination
+                                    const treeKill = require('tree-kill');
 
-                                                    // Wait 5 seconds for graceful shutdown
-                                                    const gracePeriod = setTimeout(() => {
-                                                        // Force kill if still alive after grace period
-                                                        try {
-                                                            process.kill(child.pid!, 0); // Check if still alive
-                                                            treeKill(child.pid, 'SIGKILL', () => {
-                                                                resolve();
-                                                            });
-                                                        } catch (e) {
-                                                            // Process already dead
-                                                            resolve();
-                                                        }
-                                                    }, 5000);
+                                    return new Promise<void>((resolve) => {
+                                        // Attempt graceful shutdown first
+                                        treeKill(child.pid, 'SIGTERM', (err?: Error) => {
+                                            if (err) {
+                                                // Process already dead or error occurred
+                                                resolve();
+                                                return;
+                                            }
 
-                                                    // If process dies during grace period, clear timeout
-                                                    child.on('exit', () => {
-                                                        clearTimeout(gracePeriod);
+                                            // Wait 5 seconds for graceful shutdown
+                                            const gracePeriod = setTimeout(() => {
+                                                // Force kill if still alive after grace period
+                                                try {
+                                                    process.kill(child.pid!, 0); // Check if still alive
+                                                    treeKill(child.pid, 'SIGKILL', () => {
                                                         resolve();
                                                     });
-                                                });
+                                                } catch (e) {
+                                                    // Process already dead
+                                                    resolve();
+                                                }
+                                            }, 5000);
+
+                                            // If process dies during grace period, clear timeout
+                                            child.on('exit', () => {
+                                                clearTimeout(gracePeriod);
+                                                resolve();
                                             });
-                                        }
+                                        });
                                     });
                                 }
                             });
-                            req.on('error', () => { });
-                            req.end();
-                        }, 500);
-
-                        // Configurable Timeout (Env Var > Config File > Default 30s)
-                        let startupTimeout = 30000; // Default
-                        try {
-                            // 1. Check for config file
-                            const configPath = path.join(projectPath, 'atlas.config.json');
-                            if (fs.existsSync(configPath)) {
-                                const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-                                if (config.startupTimeout && typeof config.startupTimeout === 'number') {
-                                    startupTimeout = config.startupTimeout;
-                                    onLog(`[Atlas] Using timeout from atlas.config.json: ${startupTimeout}ms`);
-                                }
-                            }
-
-                            // 2. Check for environment variable (overrides config file)
-                            if (process.env.ATLAS_STARTUP_TIMEOUT) {
-                                const envTimeout = parseInt(process.env.ATLAS_STARTUP_TIMEOUT, 10);
-                                if (!isNaN(envTimeout) && envTimeout > 0) {
-                                    startupTimeout = envTimeout;
-                                    onLog(`[Atlas] Using timeout from ATLAS_STARTUP_TIMEOUT env: ${startupTimeout}ms`);
-                                }
-                            }
-                        } catch (e) {
-                            // Ignore config parsing errors, use default
                         }
-
-                        if (startupTimeout === 30000) {
-                            onLog(`[Atlas] Using default startup timeout: ${startupTimeout}ms`);
-                        }
-
-                        setTimeout(() => {
-                            clearInterval(checkInterval);
-                            // Fix: Reject cleanly instead of launching dead
-                            reject(new Error(`Server start timed out (${startupTimeout}ms). Port did not become active.`));
-                            try { child.kill(); } catch (e) { }
-                        }, startupTimeout);
-
-                        // Early Exit Watch
-                        child.on('exit', (code) => {
-                            if (code !== null && code !== 0) {
-                                clearInterval(checkInterval);
-                                reject(new Error(`Server process exited early with code ${code}`));
-                            }
-                        });
                     });
-                });
-                return;
+                    req.on('error', () => { });
+                    req.end();
+                }, 500);
 
+                // Configurable Timeout (Env Var > Config File > Default 30s)
+                let startupTimeout = 30000; // Default
+                try {
+                    const configPath = path.join(projectPath, 'atlas.config.json');
+                    if (fs.existsSync(configPath)) {
+                        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+                        if (config.startupTimeout) startupTimeout = config.startupTimeout;
+                    }
+                    if (process.env.ATLAS_STARTUP_TIMEOUT) {
+                        startupTimeout = parseInt(process.env.ATLAS_STARTUP_TIMEOUT);
+                    }
+                } catch (e) {
+                    // Ignore config parsing errors, use default
+                }
+
+                if (startupTimeout === 30000) {
+                    onLog(`[Atlas] Using default startup timeout: ${startupTimeout}ms`);
+                }
+
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    // Fix: Reject cleanly instead of launching dead
+                    reject(new Error(`Server start timed out (${startupTimeout}ms). Port did not become active.`));
+                    try { child.kill(); } catch (e) { }
+                }, startupTimeout);
+
+                // Early Exit Watch
+                child.on('exit', (code) => {
+                    if (code !== null && code !== 0) {
+                        clearInterval(checkInterval);
+                        reject(new Error(`Server process exited early with code ${code}`));
+                    }
+                });
             } catch (e) {
                 reject(e);
-                return;
             }
+            return;
         }
 
         // --- STATIC FALLBACK ---
@@ -191,7 +182,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
             const port = (staticServer.address() as AddressInfo).port;
             resolve({
                 port,
-                cleanup: () => staticServer.close()
+                cleanup: async () => { staticServer.close(); }
             });
         });
     });

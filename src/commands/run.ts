@@ -171,7 +171,16 @@ export async function run() {
                 finalDomain = atlasConfig.targetDomain;
             }
 
-            prompts.push({ type: 'number', name: 'port', message: 'Enter localhost port:' });
+            prompts.push({
+                type: 'input',
+                name: 'port',
+                message: 'Enter localhost port:',
+                validate: (i: string) => {
+                    const n = parseInt(i);
+                    return (!isNaN(n) && n > 0 && n < 65536) || 'Please enter a valid port number (1-65535)';
+                },
+                filter: (i: string) => parseInt(i)
+            });
 
             const answers = await inquirer.prompt(prompts);
             serverPort = answers.port;
