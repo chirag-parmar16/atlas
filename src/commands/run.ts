@@ -86,7 +86,14 @@ export async function run() {
     console.log('');
 
     const configPath = path.join(projectPath, 'atlas.config.json');
-    if (!fs.existsSync(configPath)) {
+    let atlasConfig: any = {};
+    if (fs.existsSync(configPath)) {
+        try {
+            atlasConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        } catch (e) {
+            console.log(`   ${chalk.yellow('WARNING')} Failed to parse atlas.config.json`);
+        }
+    } else {
         console.log(`   ${chalk.red.bold('ERROR')} ${chalk.white('Atlas is not initialized.')}`);
         process.exit(1);
     }
@@ -126,24 +133,49 @@ export async function run() {
             console.log('');
 
             const serverPromise = startServer(projectPath, onServerLog);
-            const domainPrompt = inquirer.prompt([{
-                type: 'input', name: 'domain', message: 'Enter domain to mask as:',
-                filter: (i: string) => i.trim(), validate: (i: string) => i.length > 0
-            }]);
 
-            const [serverResult, answers] = await Promise.all([serverPromise, domainPrompt]);
-            serverPort = serverResult.port;
-            serverCleanup = serverResult.cleanup;
-            finalDomain = answers.domain;
+            if (atlasConfig.targetDomain) {
+                const serverResult = await serverPromise;
+                serverPort = serverResult.port;
+                serverCleanup = serverResult.cleanup;
+                finalDomain = atlasConfig.targetDomain;
+                console.log(`   ${NEON_GREEN('✓')} Using target domain: ${CYAN(finalDomain)}`);
+            } else {
+                const answers = await inquirer.prompt([{
+                    type: 'input',
+                    name: 'domain',
+                    message: 'Enter domain to mask as:',
+                    filter: (i: string) => i.trim(),
+                    validate: (i: string) => i.length > 0
+                }]);
+
+                const serverResult = await serverPromise;
+                serverPort = serverResult.port;
+                serverCleanup = serverResult.cleanup;
+                finalDomain = answers.domain;
+            }
         } else {
             console.log(YELLOW('   MODE MANUAL') + GRAY(' • No package.json detected'));
             console.log('');
-            const answers = await inquirer.prompt([
-                { type: 'input', name: 'domain', message: 'Enter domain to mask as:' },
-                { type: 'number', name: 'port', message: 'Enter localhost port:' }
-            ]);
+
+            const prompts: any[] = [];
+            if (!atlasConfig.targetDomain) {
+                prompts.push({
+                    type: 'input',
+                    name: 'domain',
+                    message: 'Enter domain to mask as:',
+                    validate: (i: string) => i.length > 0
+                });
+            } else {
+                console.log(`   ${NEON_GREEN('✓')} Using target domain: ${CYAN(atlasConfig.targetDomain)}`);
+                finalDomain = atlasConfig.targetDomain;
+            }
+
+            prompts.push({ type: 'number', name: 'port', message: 'Enter localhost port:' });
+
+            const answers = await inquirer.prompt(prompts);
             serverPort = answers.port;
-            finalDomain = answers.domain;
+            if (!finalDomain) finalDomain = answers.domain;
         }
     } catch (err: any) {
         if (err?.name === 'ExitPromptError') process.exit(0);

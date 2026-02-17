@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import inquirer from 'inquirer';
 
 export async function init() {
     const projectPath = process.cwd();
@@ -16,9 +17,20 @@ export async function init() {
     const projectType = detectProjectType(projectPath);
     console.log(`[Atlas] Detected Project Type: \x1b[36m${projectType}\x1b[0m`);
 
+    // Prompt for Target Domain
+    const answers = await inquirer.prompt([
+        {
+            type: 'input',
+            name: 'targetDomain',
+            message: 'Enter target domain to mask (e.g., example.com):',
+            validate: (input) => input.trim().length > 0 || 'Domain cannot be empty'
+        }
+    ]);
+
     // Create config based on type
     const config = {
         projectType: projectType,
+        targetDomain: answers.targetDomain,
         startupTimeout: 30000,
         recordingEnabled: true,
         debugMode: false,
@@ -33,6 +45,7 @@ export async function init() {
         console.log(`\nCreated: \x1b[36m${configPath}\x1b[0m`);
         console.log('\nConfiguration:');
         console.log(`  • Type: ${projectType}`);
+        console.log(`  • Domain: ${answers.targetDomain}`);
         console.log('  • Startup timeout: 30 seconds');
         console.log('  • Recording: Enabled');
         console.log('  • Debug mode: Disabled');
