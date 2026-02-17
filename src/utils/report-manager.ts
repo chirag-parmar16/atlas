@@ -10,6 +10,7 @@ export interface Violation {
     timestamp: number;
     url: string;
     metadata?: any;
+    metrics?: { loadTime: number; storage: number };
 }
 
 export class ReportManager {
@@ -85,18 +86,26 @@ export class ReportManager {
         }
     }
 
-    async logNavigation(url: string) {
+    async logNavigation(url: string, metrics?: { loadTime: number; storage: number }) {
         const lastEntry = this.entries.length > 0 ? this.entries[this.entries.length - 1] : null;
 
-        // Skip if same URL as last entry to avoid noise
-        if (lastEntry && lastEntry.type === 'navigation' && lastEntry.url === url) return;
+        // Skip if same URL as last entry to avoid noise (unless metrics are provided now and weren't before)
+        if (lastEntry && lastEntry.type === 'navigation' && lastEntry.url === url && !metrics) return;
+
+        // If updating previous entry with metrics
+        if (lastEntry && lastEntry.type === 'navigation' && lastEntry.url === url && metrics) {
+            lastEntry.metrics = metrics;
+            this.scheduleFlush();
+            return;
+        }
 
         this.entries.push({
             type: 'navigation',
             source: 'Browser',
             message: `Visited: ${url}`,
             timestamp: Date.now(),
-            url
+            url,
+            metrics
         });
         this.scheduleFlush();
     }
@@ -142,6 +151,8 @@ export class ReportManager {
             localUrl: string;
             timestamp: number;
             time: string;
+            duration: string;
+            metrics?: { loadTime: number; storage: number };
             violations: any[];
             subPages: { url: string; timestamp: number; time: string }[];
         }[] = [];
@@ -149,14 +160,27 @@ export class ReportManager {
         // Track which normalized paths we've already created a page for
         const pathToPageIndex = new Map<string, number>();
 
-        this.entries.forEach(entry => {
+        this.entries.forEach((entry, idx) => {
             if (entry.type === 'navigation') {
                 const norm = this.normalizePath(entry.url);
                 const existingIndex = pathToPageIndex.get(norm);
 
+                // Calculate duration (time until next calc frame or end)
+                let duration = '—';
+                const nextEntry = this.entries.slice(idx + 1).find(e => e.type === 'navigation');
+                if (nextEntry) {
+                    const ms = nextEntry.timestamp - entry.timestamp;
+                    duration = ms > 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
+                }
+
                 if (existingIndex !== undefined) {
-                    // Same page (hash navigation) — add as sub-page
+                    // Same page (hash navigation) — add as sub-page, but UPDATE metrics if present
                     const parentPage = pages[existingIndex];
+                    if (entry.metrics) {
+                        parentPage.metrics = entry.metrics;
+                        parentPage.duration = duration; // Update duration as user extended stay
+                    }
+
                     // Only add if URL is different from parent
                     if (parentPage.url !== entry.url) {
                         const alreadyListed = parentPage.subPages.some(sp => sp.url === entry.url);
@@ -176,6 +200,8 @@ export class ReportManager {
                         localUrl: this.getLocalUrl(entry.url),
                         timestamp: entry.timestamp,
                         time: new Date(entry.timestamp).toLocaleTimeString(),
+                        duration,
+                        metrics: entry.metrics,
                         violations: [],
                         subPages: []
                     };
@@ -291,23 +317,61 @@ export class ReportManager {
             const healthScore = violations.length === 0 ? "Perfect" : (criticalCount > 0 ? "Attention Required" : "Stable");
             const healthIcon = violations.length === 0 ? "🟢" : (criticalCount > 0 ? "🔴" : "🟡");
 
+            const uniquePages = new Set(entries.filter(e => e.type === 'navigation').map(e => this.normalizePath(e.url)));
+            const navigableSteps = entries.filter(e => e.type === 'navigation' && e.metrics);
+            const avgLoadTime = navigableSteps.length > 0
+                ? Math.round(navigableSteps.reduce((acc, curr) => acc + (curr.metrics?.loadTime || 0), 0) / navigableSteps.length)
+                : 0;
+
             md += `| Metric | Status | Count |\n`;
             md += `| :--- | :--- | :--- |\n`;
             md += `| **Site Health** | ${healthIcon} ${healthScore} | - |\n`;
             md += `| **Critical Issues** | 🔴 High Impact | ${criticalCount} |\n`;
             md += `| **Warnings** | 🟡 Medium Impact | ${warningCount} |\n`;
-            md += `| **Total Steps** | 🗺️ User Journey | ${entries.filter(e => e.type === 'navigation').length} |\n\n`;
+            md += `| **Pages Visited** | 🗺️ Unique URLs | ${uniquePages.size} |\n`;
+            if (avgLoadTime > 0) md += `| **Avg Load Time** | ⚡ Performance | ${avgLoadTime}ms |\n`;
+            md += `\n`;
+
+            // Page Frequency Table
+            md += `#### 🔄 Visit Frequency\n\n`;
+            md += `| Page | Visits | Last Visit |\n`;
+            md += `| :--- | :--- | :--- |\n`;
+
+            const visitCounts = new Map<string, { count: number, lastTime: number }>();
+            entries.filter(e => e.type === 'navigation').forEach(e => {
+                const norm = this.normalizePath(e.url);
+                const current = visitCounts.get(norm) || { count: 0, lastTime: 0 };
+                visitCounts.set(norm, {
+                    count: current.count + 1,
+                    lastTime: Math.max(current.lastTime, e.timestamp)
+                });
+            });
+
+            visitCounts.forEach((data, url) => {
+                const local = this.getLocalUrl(url);
+                let displayUrl = url;
+                try {
+                    displayUrl = url === 'http://test/' ? '/' : new URL(url).pathname;
+                } catch (e) {
+                    displayUrl = url;
+                }
+                md += `| [${displayUrl}](${local}) | **${data.count}** | ${new Date(data.lastTime).toLocaleTimeString()} |\n`;
+            });
+            md += `\n`;
 
             md += `--- \n\n`;
 
             // Group violations by the page they occurred on
-            let journey: { url: string, timestamp: number, violations: Violation[] }[] = [];
+            let journey: { url: string, timestamp: number, metrics?: { loadTime: number, storage: number }, violations: Violation[] }[] = [];
 
             entries.forEach(entry => {
                 if (entry.type === 'navigation') {
-                    // Only push if URL is different from the last step or if it's the first step
+                    // Start new journey step if URL changes or it's the first one
                     if (journey.length === 0 || journey[journey.length - 1].url !== entry.url) {
-                        journey.push({ url: entry.url, timestamp: entry.timestamp, violations: [] });
+                        journey.push({ url: entry.url, timestamp: entry.timestamp, metrics: entry.metrics, violations: [] });
+                    } else if (entry.metrics) {
+                        // Update metrics for existing step if newer ones come in (e.g. from same-page reload/nav)
+                        journey[journey.length - 1].metrics = entry.metrics;
                     }
                 } else if (entry.type === 'violation') {
                     if (journey.length > 0) {
@@ -331,10 +395,28 @@ export class ReportManager {
                 const stepTitle = step.url === 'http://test/' ? 'Home Page' : step.url;
                 const localUrl = this.getLocalUrl(step.url);
 
+                // Calculate duration
+                let duration = '—';
+                const nextStep = journey[index + 1];
+                if (nextStep) {
+                    const ms = nextStep.timestamp - step.timestamp;
+                    duration = ms > 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
+                } else {
+                    duration = 'End';
+                }
+
                 md += `### Step ${index + 1}: ${stepTitle}\n`;
                 md += `🔗 **Masked:** [${step.url}](${step.url})  \n`;
                 md += `🛠️ **Local:** [${localUrl}](${localUrl})  \n`;
-                md += `⏱️ *Time: ${new Date(step.timestamp).toLocaleTimeString()}*\n\n`;
+
+                const metaParts = [`⏱️ *${new Date(step.timestamp).toLocaleTimeString()}*`];
+                if (step.metrics) {
+                    metaParts.push(`⚡ **Load:** ${step.metrics.loadTime}ms`);
+                    metaParts.push(`💾 **Storage:** ${step.metrics.storage}KB`);
+                }
+                metaParts.push(`⏳ **Duration:** ${duration}`);
+
+                md += `${metaParts.join(' • ')}\n\n`;
 
                 if (step.violations.length === 0) {
                     // Check if this is same page as a previous step that had violations

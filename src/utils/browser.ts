@@ -123,20 +123,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         if (!recorderInstance) recorderInstance = rec; // Track the first one as primary
 
         // 4. Navigation Tracker
-        let lastUrl = '';
-        const logNav = async (url?: string) => {
-            const currentUrl = url || targetPage.url();
-            if (!currentUrl || currentUrl === 'about:blank') return;
-            if (currentUrl === lastUrl) return;
-            lastUrl = currentUrl;
-            await reportManager.logNavigation(currentUrl);
-        };
 
-        targetPage.on('framenavigated', async (frame: any) => {
-            if (frame === targetPage.mainFrame()) {
-                await logNav(targetPage.url());
-            }
-        });
 
         // Catch SPA transitions (Back, Forward, Fragment, History)
         await targetPage.evaluateOnNewDocument(() => {
@@ -161,6 +148,46 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 log();
             };
         });
+
+        // Reusable logging function for SPA / Initial Load
+        const logNav = async (url?: string) => {
+            const currentUrl = url || targetPage.url();
+            if (!currentUrl || currentUrl === 'about:blank') return;
+
+            // Wait for load event approx to get metrics
+            setTimeout(async () => {
+                if (targetPage.isClosed()) return;
+                try {
+                    const metrics = await targetPage.evaluate(() => {
+                        const timing = performance.getEntriesByType('navigation')[0] as any;
+                        const loadTime = timing ? (timing.loadEventEnd || timing.domComplete || 0) : 0;
+
+                        // 2. Storage
+                        let storageBytes = 0;
+                        try {
+                            Object.keys(localStorage).forEach(k => storageBytes += (localStorage[k].length + k.length));
+                            Object.keys(sessionStorage).forEach(k => storageBytes += (sessionStorage[k].length + k.length));
+                            storageBytes += document.cookie.length;
+                        } catch (e) { }
+
+                        return {
+                            loadTime: Math.round(loadTime),
+                            storage: Number((storageBytes / 1024).toFixed(2)) // KB with 2 decimals
+                        };
+                    });
+
+                    // Ensure metrics are valid numbers
+                    if (metrics) {
+                        if (isNaN(metrics.loadTime)) metrics.loadTime = 0;
+                        if (isNaN(metrics.storage)) metrics.storage = 0;
+                    }
+
+                    await reportManager.logNavigation(currentUrl, metrics);
+                } catch (e) {
+                    await reportManager.logNavigation(currentUrl);
+                }
+            }, 2000); // Slight delay to allow load to finish
+        };
 
         await targetPage.exposeFunction('atlasLogNavigation', async (url?: string) => {
             await logNav(url);
