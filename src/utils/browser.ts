@@ -77,7 +77,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             `--app=about:blank`,                        // Launch in "App Mode" (No Tabs/URL bar)
             `--user-data-dir=${profileDir}`,            // BUG-001: Isolated Profile
             '--force-app-mode',                         // More aggressive app mode force
-            '--start-maximized',                        // Start full but not kiosk
+            '--kiosk',                                  // Start in kiosk mode
             '--disable-pinch',                          // Prevent pinch zoom
             '--overscroll-history-navigation=disabled'   // Prevent swipe navigation
         ],
