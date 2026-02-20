@@ -145,8 +145,7 @@ export function createNetworkManager(page: Page, config: NetworkConfig, reportMa
             }
         }
 
-        // 1. Throttling & Chaos Check
-        // 1. Throttling & Chaos Check
+        // 1. Load Stressor Check
 
         if (stressConfig.enabled) {
             if (stressConfig.dropRate > 0 && Math.random() * 100 < stressConfig.dropRate) {
