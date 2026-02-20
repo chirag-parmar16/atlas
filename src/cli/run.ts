@@ -3,8 +3,8 @@ import inquirer from 'inquirer';
 import path from 'path';
 import fs from 'fs';
 import chalk from 'chalk';
-import { startServer } from '../utils/server';
-import { launchBrowser } from '../utils/browser';
+import { startServer } from '../server/server';
+import { launchBrowser } from '../browser/browser';
 
 // --- CONFIG & THEME ---
 const NEON_GREEN = chalk.hex('#39ff14');
@@ -229,7 +229,7 @@ export async function run() {
     let performCleanup: () => Promise<void>;
     let cleaningUp = false; // Guard against double cleanup
 
-    const { close, reportManager, recorder } = await launchBrowser(finalDomain, serverPort, projectPath, (msg) => logToTerminal(msg), () => { performCleanup(); });
+    const { close, reportManager, recorder } = await launchBrowser(finalDomain, serverPort, projectPath, (msg: string) => logToTerminal(msg), () => { performCleanup(); });
 
     performCleanup = async () => {
         if (cleaningUp) return; // Prevent double execution

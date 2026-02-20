@@ -7,7 +7,7 @@ const { PuppeteerScreenRecorder } = require('puppeteer-screen-recorder');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const execPromise = util.promisify(exec);
 
-import { ReportManager } from './report-manager';
+import { ReportManager } from '../reporting/report-manager';
 
 export function attachRecorder(page: Page, reportManager: ReportManager) {
     const projectPath = process.cwd();

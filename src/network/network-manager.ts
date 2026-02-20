@@ -1,6 +1,6 @@
 import { Page, HTTPRequest } from 'puppeteer-core';
 import { URL } from 'url';
-import { ReportManager } from './report-manager';
+import { ReportManager } from '../reporting/report-manager';
 
 export interface NetworkConfig {
     domain: string;

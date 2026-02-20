@@ -1,14 +1,14 @@
 import puppeteer from 'puppeteer-core';
 import { Launcher } from 'chrome-launcher';
-import { createNetworkManager } from './network-manager';
-import { attachRecorder } from './session-recorder';
-import { ReportManager } from './report-manager';
+import { createNetworkManager } from '../network/network-manager';
+import { attachRecorder } from '../extras/session-recorder';
+import { ReportManager } from '../reporting/report-manager';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
 
 // @ts-ignore
-import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, LOADER, CLOSER } from './embedded';
+import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, LOADER, CLOSER } from '../ui';
 
 export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void): Promise<{
     broadcastLog: (msg: string) => void,
