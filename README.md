@@ -65,7 +65,7 @@ Atlas automatically detects your project type:
 ### 🌐 Domain Masking
 Browse your localhost app as if it were on `https://myapp.com` or `https://api.production.local`. Atlas intercepts network requests and proxies them to your local server, solving CORS issues and allowing you to test production-only APIs locally.
 
-### 💣 Chaos Engineering
+### 💣 Load Stressor
 Test your app's resilience by injecting failure. Configurable via the UI:
 
 | Setting         | Description                                                  |
@@ -76,7 +76,7 @@ Test your app's resilience by injecting failure. Configurable via the UI:
 ### 🔌 WebSocket Support
 Atlas includes a dedicated **WebSocket Proxy** that:
 *   Intercepts `Upgrade: websocket` headers.
-*   Supports Chaos injection (dropping frames, delaying messages) on active socket connections.
+*   Supports Load Stressor injection (dropping frames, delaying messages) on active socket connections.
 
 ### 🎥 Session Recording
 Records your entire development session for retrospective debugging.
@@ -96,7 +96,7 @@ The "Security Warden" module actively monitors your app's traffic:
 
 Atlas injects a **floating pill** into the bottom-right corner of the browser window.
 *   **Heads-Up Display (HUD)**: Shows current status.
-*   **Controls**: Toggle Chaos and Recording instantly.
+*   **Controls**: Toggle Stressor and Recording instantly.
 *   **Violations**: Real-time alerts for Security and Performance issues.
 
 ---
@@ -108,7 +108,7 @@ Atlas operates by launching a controlled **Puppeteer** instance that acts as a p
 | Component           | Responsibility                                                                |
 | :------------------ | :---------------------------------------------------------------------------- |
 | **CLI**             | Orchestrates env setup, server spawning (`npm run dev`), and process cleanup. |
-| **Network Manager** | Intercepts HTTP/WS traffic, applies chaos, and proxies to localhost.          |
+| **Network Manager** | Intercepts HTTP/WS traffic, applies stress, and proxies to localhost.         |
 | **Security Warden** | Regular Expression engine for PII scanning and Header analysis.               |
 | **Recorder**        | Uses `puppeteer-screen-recorder` and `ffmpeg` to capture session video.       |
 
