@@ -1,14 +1,20 @@
 import puppeteer from 'puppeteer-core';
 import { Launcher } from 'chrome-launcher';
-import { createNetworkManager } from '../network/network-manager';
-import { attachRecorder } from '../extras/session-recorder';
-import { ReportManager } from '../reporting/report-manager';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
 
-// @ts-ignore
-import { UI_SHELL, RECORDER, LINKS, STABILITY, SECURITY_MONITOR, EXTRAS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, LOADER, CLOSER } from '../ui';
+// Engine (Brain)
+import { createNetworkInterceptor } from '../engine/network-interceptor';
+import { attachRecorder } from '../engine/session-recorder';
+import { ReportManager } from '../engine/report-manager';
+
+// Pipeline (Bloodline)
+import { createPipeline } from '../pipeline/pipeline';
+
+// UI Suite (Structured)
+import { injectAtlasUI } from '../ui/injection';
+import { CLOSER } from '../ui/components';
 
 export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void): Promise<{
     broadcastLog: (msg: string) => void,
@@ -21,6 +27,19 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const reportManager = new ReportManager(projectPath, `localhost:${localPort}`);
     let recorderInstance: any = null;
     const networkManagers: any[] = [];
+
+    // --- Pipeline (Bloodline): Event Bus ---
+    const pipeline = createPipeline();
+
+    // Wire: violations → report manager
+    pipeline.on('violation', async (v) => {
+        try { await reportManager.logViolation(v); } catch (e) { }
+    });
+
+    // Wire: navigations → report manager (with delayed metrics)
+    pipeline.on('navigation', async (entry) => {
+        try { await reportManager.logNavigation(entry.url); } catch (e) { }
+    });
 
     // BUG-001: Temporary Profile Directory
     const profileDir = path.join(os.tmpdir(), `atlas-profile-${Date.now()}`);
@@ -74,7 +93,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         ignoreHTTPSErrors: true,
         ignoreDefaultArgs: ['--enable-automation'],
         args: [
-            `--app=about:blank`,                        // Launch in "App Mode" (No Tabs/URL bar)
             `--user-data-dir=${profileDir}`,            // BUG-001: Isolated Profile
             '--force-app-mode',                         // More aggressive app mode force
             '--kiosk',                                  // Start in kiosk mode
@@ -98,37 +116,25 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // Generic Tool Injection
     // @ts-ignore
     const setupPage = async (targetPage: any) => {
-        const tools = [UI_SHELL, RECORDER, LINKS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, STABILITY, SECURITY_MONITOR, EXTRAS];
 
-        // 1. Network Manager (Isolated per page)
-        await targetPage.setCacheEnabled(false); // Ensure consistent request counts (24 vs 22)
-        const netMgr = createNetworkManager(targetPage, { domain, localPort }, reportManager, logger);
-        await netMgr.init();
-        networkManagers.push(netMgr);
+        // 1. Network Interceptor via Engine (wired through Pipeline)
+        await targetPage.setCacheEnabled(false);
+        const netInterceptor = createNetworkInterceptor(targetPage, { domain, localPort }, {
+            onViolation: (v: any) => pipeline.emit('violation', v),
+            onNetworkEvent: (r: any) => pipeline.emit('network:request', r),
+            onLog: logger,
+            onNavigation: (url: string) => pipeline.emit('navigation', { url, timestamp: Date.now() })
+        });
+        await netInterceptor.init();
+        networkManagers.push(netInterceptor);
 
-        // 2. Report Manager Binding
+        // 2. Report Manager Binding (violations flow via Pipeline)
         await targetPage.exposeFunction('atlasLogViolation', async (violation: any) => {
-            await reportManager.logViolation(violation);
+            pipeline.emit('violation', violation);
         });
 
-        // 3. Inject Tools + Persist Config
-        // @ts-ignore
-        await targetPage.evaluateOnNewDocument((toolScripts: string[], config: any) => {
-            // BUG-004: Guard against double injection
-            if ((window as any).__ATLAS_LOADED__) return;
-            (window as any).__ATLAS_LOADED__ = true;
-
-            // Persist domain/port so the UI shell can auto-read them after navigation
-            (window as any).__ATLAS_CONFIG__ = config;
-            console.log("%c[Atlas] Injecting Runtime...", "color:cyan");
-            toolScripts.forEach((script: string) => {
-                try {
-                    new Function(script)();
-                } catch (e: any) {
-                    console.error('[Atlas Runtime Error]', e.message, e.stack);
-                }
-            });
-        }, tools, { domain, port: localPort });
+        // 3. Inject Tools Suite
+        await injectAtlasUI(targetPage, { domain, port: localPort });
 
         // 3. Recorder (Single instance attached to main page? Or per page?)
         // Recorder typically records the *tab* it was attached to. 
@@ -241,6 +247,40 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                     const newState = bounds.windowState === 'normal' ? 'maximized' : 'normal';
                     await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: newState } });
                 } catch (e) { console.error("Window toggle failed", e); }
+            },
+            // --- RESTORED RECORDING BRIDGES ---
+            atlasStartRecording: async () => {
+                const rec = recorderInstance || attachRecorder(targetPage, reportManager);
+                if (!recorderInstance) {
+                    recorderInstance = rec;
+                    await rec.init();
+                }
+                return await targetPage.evaluate(() => {
+                    // @ts-ignore
+                    if (window.atlasStartRecording) return window.atlasStartRecording();
+                    return false;
+                });
+            },
+            atlasStopRecording: async () => {
+                return await targetPage.evaluate(() => {
+                    // @ts-ignore
+                    if (window.atlasStopRecording) return window.atlasStopRecording();
+                    return null;
+                });
+            },
+            atlasRecordEvent: async (event: any) => {
+                if (recorderInstance) {
+                    // Logic to forward to recorder instance or log directly
+                    // Note: session-recorder init already exposes this on the page
+                }
+            },
+            setSecurityMode: async (mode: string) => {
+                console.log(`[Atlas] Security Warden mode set to: ${mode}`);
+                pipeline.emit('action:security-mode', mode);
+            },
+            setStressConfig: async (config: any) => {
+                console.log(`[Atlas] Stress testing config updated`, config);
+                pipeline.emit('action:stress', config);
             }
         };
         for (const [name, fn] of Object.entries(bridgeFunctions)) {
@@ -250,26 +290,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     // 4. Attach Modules (Initial Page)
     await setupPage(page);
-
-
-    const runToolsNow = async (p: any) => {
-        const tools = [UI_SHELL, RECORDER, LINKS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, STABILITY, SECURITY_MONITOR, EXTRAS, LOADER];
-
-        await p.evaluate((toolScripts: string[]) => {
-            // BUG-004: Guard against double injection
-            if ((window as any).__ATLAS_LOADED__) return;
-            (window as any).__ATLAS_LOADED__ = true;
-
-            toolScripts.forEach(script => {
-                try {
-                    new Function(script)();
-                } catch (e: any) {
-                    console.error('[Atlas Runtime Error]', e.message, e.stack);
-                }
-            });
-        }, tools);
-    };
-    await runToolsNow(page);
 
 
     // 3. Navigation Lock & Multi-Tab Support
@@ -283,9 +303,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
                     // Setup isolated tools for new tab
                     await setupPage(newPage);
-
-                    // Inject immediately into current context
-                    await runToolsNow(newPage);
+                    await injectAtlasUI(newPage, { domain, port: localPort });
 
 
                     // REMOVED: Force Reload (Fixed Double Load)
@@ -307,8 +325,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
         const protocol = isLocal ? 'http://' : 'https://';
 
-        console.log('[Atlas] Boot Sequence: Holding Loader for 5s...');
-        await new Promise(r => setTimeout(r, 5000)); // Precise 5s Boot Delay
+        console.log(`[Atlas] Navigating to ${protocol}${domain}...`);
 
         await page.goto(`${protocol}${domain}`, {
             waitUntil: 'domcontentloaded'
@@ -348,6 +365,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             for (const mgr of networkManagers) {
                 try { await mgr.cleanup(); } catch (e) { }
             }
+
+            // Pipeline cleanup
+            pipeline.removeAll();
+
             await browser.close();
 
             // BUG-001: Delete temporary profile

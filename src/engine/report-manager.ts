@@ -2,16 +2,8 @@ import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import path from 'path';
 
-export interface Violation {
-    type: 'violation' | 'navigation';
-    source: string;
-    message: string;
-    level?: number;
-    timestamp: number;
-    url: string;
-    metadata?: any;
-    metrics?: { loadTime: number; storage: number };
-}
+// Use centralized Violation type from engine state
+import { Violation } from './state';
 
 export class ReportManager {
     private reportPath: string;
