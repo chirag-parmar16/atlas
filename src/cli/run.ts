@@ -229,7 +229,14 @@ export async function run() {
     let performCleanup: () => Promise<void>;
     let cleaningUp = false; // Guard against double cleanup
 
-    const { close, reportManager, recorder } = await launchBrowser(finalDomain, serverPort, projectPath, (msg: string) => logToTerminal(msg), () => { performCleanup(); });
+    const { close, reportManager, recorder } = await launchBrowser(
+        finalDomain,
+        serverPort,
+        projectPath,
+        (msg: string) => logToTerminal(msg),
+        () => { performCleanup(); },
+        atlasConfig.disabledTabs || []
+    );
 
     performCleanup = async () => {
         if (cleaningUp) return; // Prevent double execution

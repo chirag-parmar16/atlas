@@ -24,24 +24,60 @@ import {
 export interface UIConfig {
     domain: string;
     port: number;
+    disabledTabs?: string[];
 }
 
 /**
  * The complete ordered suite of Atlas UI components to inject.
  */
-const ATLAS_UI_SUITE = [
-    UI_SHELL,
-    RECORDER,
-    LINKS,
-    CONSOLE_TOOL,
-    NETWORKS,
-    APPLICATION,
-    STORAGE,
-    STABILITY,
-    SECURITY_MONITOR,
-    EXTRAS,
-    LOADER
-];
+const ATLAS_UI_MAP: Record<string, string> = {
+    'shell': UI_SHELL,
+    'recorder': RECORDER,
+    'links': LINKS,
+    'console': CONSOLE_TOOL,
+    'networks': NETWORKS,
+    'application': APPLICATION,
+    'storage': STORAGE,
+    'stability': STABILITY, // alias for scalability
+    'scalability': STABILITY,
+    'security': SECURITY_MONITOR,
+    'extras': EXTRAS,
+    'loader': LOADER
+};
+
+function getInjectedScripts(disabledTabs: string[] = []): string[] {
+    const disabled = new Set(disabledTabs.map(t => t.toLowerCase()));
+    const scripts: string[] = [];
+
+    // Core components, always injected
+    scripts.push(ATLAS_UI_MAP['shell']);
+    scripts.push(ATLAS_UI_MAP['loader']);
+
+    // Canonical tab mapping with aliases
+    const tabs = [
+        { key: 'recorder', aliases: ['recorder', 'recording'] },
+        { key: 'links', aliases: ['links', 'link'] },
+        { key: 'console', aliases: ['console'] },
+        { key: 'networks', aliases: ['networks', 'network'] },
+        { key: 'application', aliases: ['application'] },
+        { key: 'storage', aliases: ['storage'] },
+        { key: 'stability', aliases: ['stability', 'scalability', 'stress'] },
+        { key: 'security', aliases: ['security', 'monitor'] },
+        { key: 'extras', aliases: ['extras', 'more'] }
+    ];
+
+    tabs.forEach(tab => {
+        const isTabDisabled = tab.aliases.some(alias => disabled.has(alias));
+        if (!isTabDisabled) {
+            const script = ATLAS_UI_MAP[tab.key];
+            if (script) {
+                scripts.push(script);
+            }
+        }
+    });
+
+    return scripts;
+}
 
 /**
  * The core injection payload that runs inside the browser context.
@@ -84,10 +120,11 @@ function atlasPayloadRunner(toolScripts: string[], config: UIConfig) {
  * and an immediate execution (for the current state).
  */
 export async function injectAtlasUI(page: Page, config: UIConfig): Promise<void> {
+    const scripts = getInjectedScripts(config.disabledTabs);
+
     // 1. Persistent hook for all future navigations (hard loads)
-    await page.evaluateOnNewDocument(atlasPayloadRunner, ATLAS_UI_SUITE, config);
+    await page.evaluateOnNewDocument(atlasPayloadRunner, scripts, config);
 
     // 2. Immediate injection for the current page context
-    // This handles cases where the page is already loaded or being attached to dynamically.
-    await page.evaluate(atlasPayloadRunner, ATLAS_UI_SUITE, config);
+    await page.evaluate(atlasPayloadRunner, scripts, config);
 }

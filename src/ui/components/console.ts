@@ -54,6 +54,15 @@ export function buildConsoleScript(): string {
                 stack: level === 'error' ? (new Error().stack || '') : ''
             });
 
+            if (level === 'error' && window.Atlas && window.Atlas.reportViolation) {
+                const isResourceErr = msg.toLowerCase().includes('load') || msg.toLowerCase().includes('failed') || msg.toLowerCase().includes('fetch');
+                window.Atlas.reportViolation(
+                    isResourceErr ? 'Resource' : 'Runtime',
+                    msg,
+                    window.Atlas.Severity.ERROR
+                );
+            }
+
             if (logs.length > 500) logs.shift();
             renderLogs();
         };

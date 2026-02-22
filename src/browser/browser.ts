@@ -16,7 +16,7 @@ import { createPipeline } from '../pipeline/pipeline';
 import { injectAtlasUI } from '../ui/injection';
 import { CLOSER } from '../ui/components';
 
-export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void): Promise<{
+export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = []): Promise<{
     broadcastLog: (msg: string) => void,
     close: () => Promise<void>,
     process: any,
@@ -134,7 +134,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         });
 
         // 3. Inject Tools Suite
-        await injectAtlasUI(targetPage, { domain, port: localPort });
+        await injectAtlasUI(targetPage, { domain, port: localPort, disabledTabs });
 
         // 3. Recorder (Single instance attached to main page? Or per page?)
         // Recorder typically records the *tab* it was attached to. 
