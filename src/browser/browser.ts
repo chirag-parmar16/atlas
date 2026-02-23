@@ -1,7 +1,7 @@
 import puppeteer from 'puppeteer-core';
-import { Launcher } from 'chrome-launcher';
+import { launchElectron, killElectron } from '../electron/electron-launcher';
+import { ChildProcess } from 'child_process';
 import path from 'path';
-import os from 'os';
 import fs from 'fs';
 
 // Engine (Brain)
@@ -41,27 +41,25 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         try { await reportManager.logNavigation(entry.url); } catch (e) { }
     });
 
-    // BUG-001: Temporary Profile Directory
-    const profileDir = path.join(os.tmpdir(), `atlas-profile-${Date.now()}`);
-
-    // 1. Resolve Chrome Path
-    let chromePath = '';
+    // 1. Launch Electron (replaces Chrome)
+    let electronProcess: ChildProcess;
+    let electronDebugPort: number;
     try {
-        const installations = Launcher.getInstallations();
-        chromePath = installations.length > 0 ? installations[0] : '';
+        const electronResult = await launchElectron();
+        electronProcess = electronResult.electronProcess;
+        electronDebugPort = electronResult.debugPort;
+
+        // Connect puppeteer-core to Electron's CDP endpoint
+        var browser = await puppeteer.connect({
+            browserWSEndpoint: electronResult.wsEndpoint,
+            defaultViewport: null
+        });
+        console.log(`[Atlas] Connected to Electron via CDP`);
     } catch (e) {
-        console.warn(`[Atlas] Warning: Failed to auto-detect Chrome: ${(e as any).message}`);
-    }
-
-    if (!chromePath) {
-        console.error(`\n\x1b[31m[CRITICAL] Google Chrome not found!\x1b[0m`);
-        console.error(`Atlas requires Google Chrome to be installed on your system.`);
-        console.error(`Please install Chrome and try again: \x1b[36mhttps://www.google.com/chrome/\x1b[0m\n`);
-
-        // Graceful exit instead of crash
+        console.error(`\n\x1b[31m[CRITICAL] Failed to launch Electron!\x1b[0m`);
+        console.error((e as any).message);
         process.exit(1);
     }
-    console.log(`[Atlas] Using Chrome: ${chromePath}`);
 
     // 2. Check FFmpeg Availability (Required for Session Recording)
     let ffmpegAvailable = false;
@@ -84,23 +82,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         console.warn(`  Linux:   sudo apt install ffmpeg  OR  sudo yum install ffmpeg\n`);
         console.warn(`You can continue without FFmpeg, but recording will be disabled.\n`);
     }
-
-    // 3. Launch Visible Browser
-    const browser = await puppeteer.launch({
-        executablePath: chromePath,
-        headless: false,
-        // @ts-ignore
-        ignoreHTTPSErrors: true,
-        ignoreDefaultArgs: ['--enable-automation'],
-        args: [
-            `--user-data-dir=${profileDir}`,            // BUG-001: Isolated Profile
-            '--force-app-mode',                         // More aggressive app mode force
-            '--kiosk',                                  // Start in kiosk mode
-            '--disable-pinch',                          // Prevent pinch zoom
-            '--overscroll-history-navigation=disabled'   // Prevent swipe navigation
-        ],
-        defaultViewport: null
-    });
 
     // Setup Pages
     const pages = await browser.pages();
@@ -359,9 +340,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     };
 
     const close = async () => {
-        console.log('[Atlas] Shutting down browsers...');
+        console.log('[Atlas] Shutting down Electron...');
         try {
-            // BUG-002: Cleanup network managers (WebSocket proxies)
+            // Cleanup network managers (WebSocket proxies)
             for (const mgr of networkManagers) {
                 try { await mgr.cleanup(); } catch (e) { }
             }
@@ -369,22 +350,18 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             // Pipeline cleanup
             pipeline.removeAll();
 
-            await browser.close();
+            // Disconnect puppeteer from Electron's CDP
+            await browser.disconnect();
 
-            // BUG-001: Delete temporary profile
-            if (fs.existsSync(profileDir)) {
-                try {
-                    // Recursive sync deletion is safest for cleanup on exit
-                    fs.rmSync(profileDir, { recursive: true, force: true });
-                } catch (e) { }
-            }
+            // Kill the Electron process
+            killElectron(electronProcess);
         } catch (e) { }
     };
 
     return {
         broadcastLog,
         close,
-        process: browser.process(),
+        process: electronProcess,
         reportManager,
         recorder: recorderInstance
     };

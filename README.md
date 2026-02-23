@@ -1,8 +1,8 @@
 # 🗺️ Atlas
 
-> **The Chrome-Based Sandbox for Universal Web Development**
+> **The Electron-Powered Standalone Sandbox for Universal Web Development**
 
-Atlas is a powerful **local development sandbox** that launches your web projects in an isolated **Chrome browser window**. It acts as a transparent proxy between your application and the browser, allowing you to simulate production environments (custom domains, chaos engineering) without modifying your code.
+Atlas is a powerful **standalone development sandbox** powered by **Electron**. It launches your web projects in an isolated browser window with a built-in devtools overlay. It acts as a transparent proxy between your application and the browser, allowing you to simulate production environments (custom domains, chaos engineering) without modifying your code.
 
 It acts as a "flight simulator" for web developers, letting you fly your app in dangerous conditions (API failures, strict security) while safely on the ground (localhost).
 
@@ -59,7 +59,7 @@ Atlas automatically detects your project type:
     *   Automatically installs dependencies (`npm install`).
     *   Builds the project (supports `build`, `build-client`, `build:all`).
     *   Starts the server (`npm start` or `npm run dev`).
-    *   Launches Chrome in kiosk mode with the mapped domain.
+    *   Launches an Electron window in kiosk mode with the mapped domain.
 
 2.  **Manual Mode** (Static / Other Languages):
     *   If no `package.json` is found, Atlas prompts for the **Local Port**.
@@ -139,7 +139,7 @@ Atlas injects a **Shadow DOM overlay** into the browser window with full style i
 
 ## 🏗️ Architecture
 
-Atlas is built with a **layered event-driven architecture**. The Pipeline (typed event bus) serves as the central nervous system, connecting all layers.
+Atlas is built with a **layered event-driven architecture**. The Electron shell provides the container, while the Pipeline (typed event bus) serves as the central nervous system connecting all layers.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -176,7 +176,7 @@ Atlas is built with a **layered event-driven architecture**. The Pipeline (typed
 | :----------------------- | :---------------------------------------------------------------------------- |
 | **CLI**                  | Orchestrates env setup, server spawning, process cleanup, tab config          |
 | **Server Manager**       | Auto-detect project, install deps, build, spawn server, health check          |
-| **Browser Orchestrator** | Launch Puppeteer (kiosk), wire Pipeline, attach all modules                   |
+| **Browser Orchestrator** | Launch Electron (kiosk), connect CDP, wire Pipeline, attach all modules       |
 | **Network Interceptor**  | CDP request interception, domain proxy, chaos injection, PII/perf scanning    |
 | **Security Warden**      | Pure functions for PII regex scanning and CORS header checking                |
 | **Performance Tracker**  | Rolling average latency with bounded LRU, anomaly detection                   |
@@ -245,7 +245,6 @@ atlas/
 
 ## ⚠️ Requirements
 
-*   **Google Chrome** must be installed.
 *   **FFmpeg** is required for session recording (`choco install ffmpeg` or `brew install ffmpeg`).
 *   **Node.js v18+**.
 

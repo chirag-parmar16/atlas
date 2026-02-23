@@ -23,14 +23,14 @@ export const NAVIGATION_HOOKS: string = `
     window.addEventListener('popstate', log);
 
     var origPush = history.pushState;
-    history.pushState = function() {
-        origPush.apply(this, arguments);
+    history.pushState = function(data: any, unused: string, url?: string | URL | null) {
+        origPush.apply(this, [data, unused, url]);
         log();
     };
 
     var origReplace = history.replaceState;
-    history.replaceState = function() {
-        origReplace.apply(this, arguments);
+    history.replaceState = function(data: any, unused: string, url?: string | URL | null) {
+        origReplace.apply(this, [data, unused, url]);
         log();
     };
 })();

@@ -6,4 +6,4 @@
 
 export * from './components';
 export * from './styles';
-export * from './injection';
+export { injectAtlasUI, UIConfig } from './injection';
