@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atlas Standalone</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            background: #0d0d0d;
+            color: #e8eaed;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Matches Atlas HUD */
+        .atlas-hud {
+            height: 36px;
+            background: #000;
+            border-bottom: 1px solid #222;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            gap: 8px;
+            -webkit-app-region: drag;
+            z-index: 100;
+        }
+
+        .hud-btn {
+            background: transparent;
+            border: 1px solid #333;
+            color: #999;
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            -webkit-app-region: no-drag;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .hud-btn:hover { background: rgba(255,255,255,0.05); color: #fff; border-color: #555; }
+
+        .hud-url {
+            flex: 1;
+            background: #0d0d0d;
+            border: 1px solid #222;
+            border-radius: 4px;
+            color: #10b981;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-family: monospace;
+            text-align: center;
+            letter-spacing: 1px;
+            -webkit-app-region: no-drag;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #0d0d0d;
+            overflow: hidden;
+        }
+
+        /* Animated Premium Background Blobs */
+        .bg-glow {
+            position: absolute;
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, rgba(59, 130, 246, 0.05) 40%, transparent 70%);
+            filter: blur(100px);
+            border-radius: 50%;
+            z-index: 1;
+            animation: move 25s infinite alternate ease-in-out;
+        }
+
+        .bg-glow-2 {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, rgba(167, 139, 250, 0.04) 40%, transparent 70%);
+            filter: blur(80px);
+            border-radius: 50%;
+            z-index: 1;
+            animation: move-alt 18s infinite alternate ease-in-out;
+            top: 20%; right: 10%;
+        }
+
+        @keyframes move {
+            0% { transform: translate(-20%, -20%) scale(1); }
+            100% { transform: translate(20%, 20%) scale(1.1); }
+        }
+
+        @keyframes move-alt {
+            0% { transform: translate(10%, -10%) scale(1.2); }
+            100% { transform: translate(-10%, 10%) scale(1); }
+        }
+
+        .logo-container {
+            z-index: 10;
+            text-align: center;
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 20px rgba(16, 185, 129, 0.2)); }
+            50% { transform: translateY(-15px) scale(1.02); filter: drop-shadow(0 0 40px rgba(16, 185, 129, 0.4)); }
+        }
+
+        .title {
+            font-size: 96px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #10b981, #3b82f6);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -4px;
+            margin-bottom: 0px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #71717a;
+            font-weight: 300;
+            letter-spacing: 8px;
+            text-transform: uppercase;
+            margin-top: -10px;
+        }
+
+        .status {
+            position: absolute;
+            bottom: 50px;
+            font-size: 10px;
+            color: #10b981;
+            font-family: 'Courier New', Courier, monospace;
+            opacity: 0.6;
+            background: rgba(16, 185, 129, 0.03);
+            padding: 10px 20px;
+            border-radius: 2px;
+            border: 1px solid rgba(16, 185, 129, 0.1);
+            z-index: 10;
+            letter-spacing: 3px;
+            text-shadow: 0 0 5px rgba(16, 185, 129, 0.5);
+            animation: pulse-border 2s infinite alternate;
+        }
+
+        @keyframes pulse-border {
+            from { border-color: rgba(16, 185, 129, 0.1); }
+            to { border-color: rgba(16, 185, 129, 0.4); }
+        }
+    </style>
+</head>
+<body>
+    <div class="atlas-hud">
+        <button class="hud-btn" onclick="window.atlasGoBack()">◀</button>
+        <button class="hud-btn" onclick="window.atlasGoForward()">▶</button>
+        <div class="hud-url">ATLAS V2.0 // STANDALONE READY</div>
+        <button class="hud-btn" onclick="window.atlasMinimizeWindow()">—</button>
+        <button class="hud-btn" onclick="window.atlasToggleWindowMode()">☐</button>
+        <button class="hud-btn" style="color:#ef4444; border-color:#451a1a;" onclick="window.atlasCloseBrowser()">✕</button>
+    </div>
+    <div class="main-content">
+        <div class="bg-glow"></div>
+        <div class="bg-glow-2"></div>
+        
+        <!-- User Project Container -->
+        <webview id="project-view" src="about:blank" style="display:none; width:100%; height:100%; border:none; background:#fff; z-index:5;"></webview>
+
+        <div id="splash-layer" style="display:contents;">
+            <div class="logo-container">
+                <h1 class="title">ATLAS</h1>
+                <p class="subtitle">Neural Runtime</p>
+            </div>
+            <div class="status">CORE_ENGINE_STABLE // WAITING_FOR_COMMAND</div>
+        </div>
+    </div>
+    <script>
+        const webview = document.getElementById('project-view');
+        const splash = document.getElementById('splash-layer');
+        const urlDisplay = document.querySelector('.hud-url');
+
+        // Listen for navigation in webview to update HUD
+        webview.addEventListener('did-start-navigation', (e) => {
+            if (e.isMainFrame) {
+                const url = e.url;
+                urlDisplay.textContent = url.toUpperCase();
+                splash.style.display = 'none';
+                webview.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
