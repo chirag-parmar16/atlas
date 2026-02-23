@@ -1,7 +1,8 @@
 # 🗺️ Atlas
+
 > **The Chrome-Based Sandbox for Universal Web Development**
 
-Atlas is a powerful **local development sandbox** that launches your web projects in an isolated **Chrome browser window**. It acts as a transparent proxy between your application and the browser, allowing you to simulate production environments (custom domains, chaos) without modifying your code.
+Atlas is a powerful **local development sandbox** that launches your web projects in an isolated **Chrome browser window**. It acts as a transparent proxy between your application and the browser, allowing you to simulate production environments (custom domains, chaos engineering) without modifying your code.
 
 It acts as a "flight simulator" for web developers, letting you fly your app in dangerous conditions (API failures, strict security) while safely on the ground (localhost).
 
@@ -15,7 +16,7 @@ Atlas is available as a global NPM package.
 npm install -g atlas-sandbox
 ```
 
-*Note: You need Node.js v19+ installed on your system.*
+*Note: You need Node.js v18+ installed on your system.*
 
 ---
 
@@ -33,12 +34,19 @@ cd /path/to/your/project
 atlas init
 ```
 
-This creates an `atlas.config.json` file in your project directory.
+This creates an `atlas.config.json` file in your project directory. Atlas auto-detects your project type (Node, React, Vue, Angular, PHP, Static).
 
 ### 3. Run Atlas
 ```bash
 atlas run
 ```
+
+### CLI Options
+
+| Flag                   | Description              | Example                     |
+| :--------------------- | :----------------------- | :-------------------------- |
+| `-d, --disable <tabs>` | Disable specific UI tabs | `atlas -d console,networks` |
+| `-e, --enable <tabs>`  | Re-enable disabled tabs  | `atlas -e console`          |
 
 ---
 
@@ -47,11 +55,11 @@ atlas run
 Atlas automatically detects your project type:
 
 1.  **Auto Mode** (Node.js/NPM Projects):
-    *   Detects `package.json`.
+    *   Detects `package.json` and framework (Next.js, React, Vue, Angular, Express).
     *   Automatically installs dependencies (`npm install`).
     *   Builds the project (supports `build`, `build-client`, `build:all`).
     *   Starts the server (`npm start` or `npm run dev`).
-    *   Launches Chrome with the mapped domain.
+    *   Launches Chrome in kiosk mode with the mapped domain.
 
 2.  **Manual Mode** (Static / Other Languages):
     *   If no `package.json` is found, Atlas prompts for the **Local Port**.
@@ -63,54 +71,175 @@ Atlas automatically detects your project type:
 ## 🛠️ Features
 
 ### 🌐 Domain Masking
-Browse your localhost app as if it were on `https://myapp.com` or `https://api.production.local`. Atlas intercepts network requests and proxies them to your local server, solving CORS issues and allowing you to test production-only APIs locally.
+Browse your localhost app as if it were on `https://myapp.com` or `https://api.production.local`. Atlas intercepts network requests via CDP and proxies them to your local server, solving CORS issues and allowing you to test production-only APIs locally.
 
-### 💣 Load Stressor
+### 💣 Chaos Engineering (Load Stressor)
 Test your app's resilience by injecting failure. Configurable via the UI:
 
-| Setting         | Description                                                  |
-| :-------------- | :----------------------------------------------------------- |
-| `Latency Spike` | Randomly add **2s - 5s delay** to requests.                  |
-| `Packet Drop`   | Randomly abort requests mid-flight (simulates spotty Wi-Fi). |
+| Setting         | Description                                                 |
+| :-------------- | :---------------------------------------------------------- |
+| `Error Rate`    | Inject **HTTP 500** responses at a configurable percentage. |
+| `Latency Spike` | Add **2s - 5s delay** to a percentage of requests.          |
+| `Packet Drop`   | Abort requests mid-flight (simulates spotty Wi-Fi).         |
 
-### 🔌 WebSocket Support
+### 🔌 WebSocket Proxying
 Atlas includes a dedicated **WebSocket Proxy** that:
-*   Intercepts `Upgrade: websocket` headers.
-*   Supports Load Stressor injection (dropping frames, delaying messages) on active socket connections.
+*   Intercepts `Upgrade: websocket` headers and proxies to localhost.
+*   Supports chaos injection (dropping frames, delaying messages) on active WebSocket connections.
+*   Includes **SSRF protection** — only allows `localhost`/`127.0.0.1` targets.
 
 ### 🎥 Session Recording
-Records your entire development session for retrospective debugging.
+Records your development session for retrospective debugging:
 *   **Video**: High-quality `.mp4` recording of the browser window.
 *   **Cursor**: Injects a high-visibility fake cursor for clearer interaction tracking.
-*   **Parts**: Automatically handles long sessions by splitting and merging video parts using `ffmpeg`.
+*   **Pause/Resume**: Split recording into parts with seamless pause/resume support.
+*   **Merge**: Automatically merges multi-part recordings via `ffmpeg`.
 
 ### 🏥 Security Warden
-The "Security Warden" module actively monitors your app's traffic:
-*   **PII Leaks**: Scans response bodies for **Emails**, **Credit Card Numbers**, and **Auth Tokens** (JWT, AWS Keys).
-*   **Strict CORS**: Blocks responses with `Access-Control-Allow-Origin: *` to enforce production security standards.
-*   **Performance Monitoring**: Flags requests that are >2x slower than their rolling average (>250ms).
+The Security Warden actively monitors your app's traffic:
+*   **PII Leaks**: Scans response bodies for **Emails**, **Credit Card Numbers**, and **Auth Tokens** (JWT, AWS Keys). Emails are only flagged in API responses (not HTML pages).
+*   **Strict CORS**: In Strict mode, blocks responses with `Access-Control-Allow-Origin: *` and logs violations.
+*   **PII Masking**: Sensitive data is masked in violation logs to prevent secondary exposure.
+
+### ⚡ Performance Monitoring
+*   Tracks request latency with a **rolling average** per URL path.
+*   Flags requests that are **>2x slower** than their average (above 250ms threshold).
+*   Uses a **bounded LRU cache** (max 1000 paths) to prevent memory leaks.
+
+### 📊 Auto Journey Report
+Runs automatically in the background — no user interaction required:
+*   Tracks all navigations with per-page metrics (load time, storage usage).
+*   On exit, generates a **tree-structured JSON report** (`atlas-reports/json/`).
+*   On exit, generates a **human-readable Markdown audit** (`atlas-reports/markdown/`).
+*   Saves session recording video to `atlas-reports/videos/`.
 
 ---
 
 ## 🧩 The Atlas UI
 
-Atlas injects a **floating pill** into the bottom-right corner of the browser window.
-*   **Heads-Up Display (HUD)**: Shows current status.
-*   **Controls**: Toggle Stressor and Recording instantly.
-*   **Violations**: Real-time alerts for Security and Performance issues.
+Atlas injects a **Shadow DOM overlay** into the browser window with full style isolation:
+
+*   **HUD Bar**: Top bar showing domain mapping, URL, back/forward navigation, minimize, maximize, and close controls.
+*   **Floating Pill**: Draggable circular button that opens the expandable tools menu.
+*   **Tool Panels** (9 tabs):
+
+| Tab             | Description                                                                          |
+| :-------------- | :----------------------------------------------------------------------------------- |
+| **Console**     | Intercepted console output with level filters, stack traces, and PII detection       |
+| **Networks**    | Chrome DevTools-style request inspector with headers, preview, response, and cookies |
+| **Application** | Page metadata, meta tags, scripts, stylesheets, cookies, and storage                 |
+| **Storage**     | Page weight analysis, size breakdown, client storage metrics, top 10 resources       |
+| **Stability**   | Chaos engineering controls (error rate, latency, drop rate) + live violation monitor |
+| **Security**    | Security Warden mode toggle + security violation log                                 |
+| **Recorder**    | Start/stop/pause video recording controls                                            |
+| **Links**       | Navigation links and route tracking                                                  |
+| **Extras**      | Project utilities (force reload, etc.)                                               |
 
 ---
 
 ## 🏗️ Architecture
 
-Atlas operates by launching a controlled **Puppeteer** instance that acts as a proxy & supervisor.
+Atlas is built with a **layered event-driven architecture**. The Pipeline (typed event bus) serves as the central nervous system, connecting all layers.
 
-| Component           | Responsibility                                                                |
-| :------------------ | :---------------------------------------------------------------------------- |
-| **CLI**             | Orchestrates env setup, server spawning (`npm run dev`), and process cleanup. |
-| **Network Manager** | Intercepts HTTP/WS traffic, applies stress, and proxies to localhost.         |
-| **Security Warden** | Regular Expression engine for PII scanning and Header analysis.               |
-| **Recorder**        | Uses `puppeteer-screen-recorder` and `ffmpeg` to capture session video.       |
+```
+┌──────────────────────────────────────────────────────────┐
+│  Layer 1: CLI Interface (atlas.ts, init.ts, run.ts)      │
+├──────────────────────────────────────────────────────────┤
+│  Layer 2: Infrastructure (server.ts, browser.ts)         │
+├──────────────────────────────────────────────────────────┤
+│  Layer 3: Engine (Brain)                                 │
+│  ├─ network-interceptor.ts   CDP proxy + domain masking  │
+│  ├─ security-warden.ts       PII scanning + CORS checks  │
+│  ├─ performance-tracker.ts   Latency anomaly detection    │
+│  ├─ session-recorder.ts      Multi-part video capture     │
+│  ├─ report-manager.ts        Journey reports (JSON + MD)  │
+│  └─ state.ts                 Centralized type definitions │
+├──────────────────────────────────────────────────────────┤
+│  Layer 4: Pipeline (pipeline.ts) — Typed Event Bus       │
+├──────────────────────────────────────────────────────────┤
+│  Layer 5: Transport                                      │
+│  ├─ injector.ts              Shadow DOM builder           │
+│  ├─ ws-server.ts             WebSocket state broadcaster  │
+│  ├─ dispatcher.ts            Action router                │
+│  ├─ ui-server.ts             Express static file server   │
+│  └─ protocol.ts              Versioned message types      │
+├──────────────────────────────────────────────────────────┤
+│  Layer 6: UI (shell.ts + 9 tool panels)                  │
+├──────────────────────────────────────────────────────────┤
+│  Layer 7: Renderer (app.js, styles.css, index.html)      │
+├──────────────────────────────────────────────────────────┤
+│  Layer 8: Collectors (page info, storage, navigation)    │
+└──────────────────────────────────────────────────────────┘
+```
+
+| Component                | Responsibility                                                                |
+| :----------------------- | :---------------------------------------------------------------------------- |
+| **CLI**                  | Orchestrates env setup, server spawning, process cleanup, tab config          |
+| **Server Manager**       | Auto-detect project, install deps, build, spawn server, health check          |
+| **Browser Orchestrator** | Launch Puppeteer (kiosk), wire Pipeline, attach all modules                   |
+| **Network Interceptor**  | CDP request interception, domain proxy, chaos injection, PII/perf scanning    |
+| **Security Warden**      | Pure functions for PII regex scanning and CORS header checking                |
+| **Performance Tracker**  | Rolling average latency with bounded LRU, anomaly detection                   |
+| **Pipeline**             | Typed EventEmitter connecting Engine ↔ Transport ↔ UI (50 max listeners)      |
+| **Report Manager**       | In-memory tree-structured journal, periodic flush, Markdown report generation |
+| **Session Recorder**     | `puppeteer-screen-recorder` + `ffmpeg` for multi-part video capture           |
+| **Transport**            | Shadow DOM injection, WebSocket broadcasting, action routing, static serving  |
+
+---
+
+## 📁 Project Structure
+
+```
+atlas/
+├── atlas.ts                     # CLI entry point (commander)
+├── package.json                 # NPM package config
+├── tsconfig.json                # TypeScript config
+├── diagrams/                    # Architecture diagrams (Mermaid)
+│   ├── 01_context_dfd.md
+│   ├── 02_er_diagram.md
+│   ├── 03_use_case_diagram.md
+│   ├── 04_class_diagram.md
+│   ├── 05_interaction_diagram.md
+│   ├── 06_data_dictionary.md
+│   └── 07_system_flow_diagram.md
+└── src/
+    ├── cli/                     # CLI commands
+    │   ├── init.ts              # atlas init — project setup
+    │   └── run.ts               # atlas run — session runner
+    ├── server/                  # Server management
+    │   └── server.ts            # npm/static server spawning
+    ├── browser/                 # Browser control
+    │   └── browser.ts           # Puppeteer orchestrator
+    ├── engine/                  # Core engine modules
+    │   ├── index.ts             # Public API re-exports
+    │   ├── state.ts             # Centralized types & state
+    │   ├── network-interceptor.ts # CDP proxy engine
+    │   ├── security-warden.ts   # PII + CORS scanning
+    │   ├── performance-tracker.ts # Latency anomaly detection
+    │   ├── session-recorder.ts  # Video capture
+    │   ├── report-manager.ts    # Journey report generation
+    │   └── report-generator.ts  # Legacy report generator
+    ├── pipeline/                # Event bus
+    │   └── pipeline.ts          # Typed EventEmitter
+    ├── collectors/              # Page data collectors
+    │   └── index.ts             # Navigation, storage, page info
+    ├── transport/               # Communication layer
+    │   ├── index.ts             # Public API
+    │   ├── protocol.ts          # Message type definitions
+    │   ├── injector.ts          # Shadow DOM builder
+    │   ├── ws-server.ts         # WebSocket state broadcaster
+    │   ├── dispatcher.ts        # Action router
+    │   └── ui-server.ts         # Express static server
+    ├── ui/                      # Injected UI components
+    │   ├── index.ts             # Entry point
+    │   ├── injection.ts         # Puppeteer injection module
+    │   ├── components/          # 13 component scripts
+    │   └── styles/              # 5 CSS modules
+    └── renderer/                # Standalone renderer app
+        ├── index.html           # Renderer HTML shell
+        ├── app.js               # Shadow DOM application
+        └── styles.css           # Renderer stylesheet
+```
 
 ---
 
@@ -124,4 +253,4 @@ Atlas operates by launching a controlled **Puppeteer** instance that acts as a p
 
 ## 📄 License
 
-MIT © Atlas Team
+MIT © Chirag Parmar
