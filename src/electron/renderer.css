@@ -1,12 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+
 * { margin:0; padding:0; box-sizing:border-box; }
         body {
             background: #000;
             color: #d4d4d8;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             height: 100vh;
             overflow: hidden;
             display: flex;
             flex-direction: column;
+        }
+
+        /* --- CUSTOM SCROLLBARS --- */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            border: 1px solid transparent;
+            background-clip: padding-box;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        ::-webkit-scrollbar-corner {
+            background: transparent;
         }
 
         /* --- SCREENSHOT-PERFECT HUD --- */
@@ -139,34 +162,51 @@
         /* --- HOST-BASED EXPANDABLE MENU --- */
         .menu {
             position: fixed; 
-            bottom: 70px; right: 20px; /* Fixed spacing from pill */
-            width: 700px;
+            bottom: 74px; right: 20px;
+            width: 520px;
             height: 480px;
-            background: rgba(13, 13, 13, 0.96); backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px;
-            box-shadow: 0 12px 48px rgba(0,0,0,0.6);
+            background: rgba(10, 10, 10, 0.98); backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
             display: flex; flex-direction: column; 
             opacity: 0; pointer-events: none; 
-            transform: scale(0.95);
-            transition: opacity 0.2s, transform 0.2s;
+            transform: translateY(10px) scale(0.98);
+            transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             z-index: 15000;
             overflow: hidden;
         }
-        .menu.visible { opacity: 1; pointer-events: auto; transform: scale(1); }
+        .menu.visible { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
         
         .menu .watermark {
-            position: absolute; bottom: -20px; right: -20px; width: 300px; height: 300px;
-            z-index: 0; opacity: 0.03; pointer-events: none; color: #10b981;
+            position: absolute; bottom: -40px; right: -40px; width: 350px; height: 350px;
+            z-index: 0; opacity: 0.04; pointer-events: none; color: #10b981;
         }
 
-        .tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); position:relative; z-index:1; }
-        .tab {
-            flex: 1; padding: 10px; text-align: center; cursor: pointer; color: #fff; font-size: 12px;
-            background: transparent; border: none; opacity: 0.6; transition: opacity 0.2s;
+        .tabs { 
+            display: flex; 
+            background: rgba(0,0,0,0.4); 
+            border-bottom: 1px solid rgba(255,255,255,0.08); 
+            position:relative; z-index:1;
+            padding: 0 10px;
         }
-        .tab:hover { opacity: 0.9; }
-        .tab.active { opacity: 1; border-bottom: 2px solid #10b981; font-weight: bold; background: rgba(255,255,255,0.05); }
+        .tab {
+            flex: 1; padding: 12px 6px; text-align: center; cursor: pointer; color: #fff; font-size: 11px;
+            background: transparent; border: none; opacity: 0.5; transition: all 0.2s ease;
+            font-weight: 500; letter-spacing: 0.3px; position: relative;
+        }
+        .tab:hover { opacity: 0.8; }
+        .tab.active { 
+            opacity: 1; 
+            font-weight: 700; 
+        }
+        .tab.active::after {
+            content: '';
+            position: absolute; bottom: 0; left: 10%; right: 10%;
+            height: 2px; background: #10b981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+            border-radius: 2px;
+        }
         
         .content { flex: 1; overflow-y: hidden; padding: 0; position: relative; z-index:1; }
         .panel { display: none; height: 100%; flex-direction: column; gap: 0; }

@@ -45,7 +45,7 @@
 
             list.forEach(link => {
                 const item = document.createElement('div');
-                item.style.cssText = 'font-size:11px; color:#ffffff; font-family:"JetBrains Mono", monospace; word-break:break-all; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03); opacity:0.9;';
+                item.style.cssText = 'font-size:11px; color:#ffffff; word-break:break-all; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03); opacity:0.9;';
                 item.innerHTML = '<span style="color:' + color + '; margin-right:8px; font-weight:bold;">→</span>' + (link.text || '(No Text)') + '<br><small style="color:#71717a;">' + link.href.replace(/</g, '&lt;') + '</small>';
                 item.title = link.href;
                 ul.appendChild(item);

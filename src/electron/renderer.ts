@@ -69,12 +69,17 @@ function formatDisplayURL(rawUrl: string) {
 webview.addEventListener('did-start-navigation', (e: any) => {
     if (e.isMainFrame) {
         urlInput.value = formatDisplayURL(e.url);
-        webview.style.opacity = '1';
+        if (e.url !== 'about:blank') {
+            webview.style.opacity = '1';
+        }
     }
 });
 
 webview.addEventListener('did-navigate', (e: any) => {
     urlInput.value = formatDisplayURL(e.url);
+    if (e.url !== 'about:blank') {
+        webview.style.opacity = '1';
+    }
 });
 
 webview.addEventListener('did-navigate-in-page', (e: any) => {
@@ -94,14 +99,14 @@ function updateMenuPosition() {
     const winH = window.innerHeight;
 
     // Default: show menu above the pill
-    let top = rect.top - 430;
-    let left = rect.right - 480;
+    let top = rect.top - 490;
+    let left = rect.right - 520;
 
     // Flip to below if too close to top
     if (top < 10) top = rect.bottom + 10;
     // Align left if too close to right edge
     if (left < 10) left = 10;
-    if (left + 480 > winW - 10) left = winW - 490;
+    if (left + 520 > winW - 10) left = winW - 530;
 
     menu.style.left = left + 'px';
     menu.style.top = top + 'px';
