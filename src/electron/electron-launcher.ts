@@ -79,7 +79,7 @@ function waitForCDP(port: number, timeoutMs: number = 30000): Promise<string> {
 /**
  * Launch Electron with remote debugging and return the CDP endpoint.
  */
-export async function launchElectron(): Promise<ElectronLaunchResult> {
+export async function launchElectron(domain: string, port: number): Promise<ElectronLaunchResult> {
     const debugPort = getRandomPort();
 
     // Resolve the Electron binary
@@ -105,7 +105,12 @@ export async function launchElectron(): Promise<ElectronLaunchResult> {
         electronMain
     ], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, ATLAS_DEBUG_PORT: String(debugPort) }
+        env: {
+            ...process.env,
+            ATLAS_DEBUG_PORT: String(debugPort),
+            ATLAS_DOMAIN: domain,
+            ATLAS_PORT: String(port)
+        }
     });
 
     // Forward Electron stderr/stdout for debugging

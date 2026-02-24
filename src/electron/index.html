@@ -7,192 +7,635 @@
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body {
-            background: #0d0d0d;
-            color: #e8eaed;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            color: #d4d4d8;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             height: 100vh;
             overflow: hidden;
             display: flex;
             flex-direction: column;
         }
 
-        /* Matches Atlas HUD */
-        .atlas-hud {
-            height: 36px;
-            background: #000;
-            border-bottom: 1px solid #222;
+        /* --- SCREENSHOT-PERFECT HUD --- */
+        .hud-bar {
+            height: 40px;
+            background: linear-gradient(to bottom, #121212, #0d0d0d);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             display: flex;
             align-items: center;
             padding: 0 10px;
-            gap: 8px;
-            -webkit-app-region: drag;
             z-index: 100;
+            user-select: none;
+            -webkit-app-region: drag;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        
+        .hud-nav-btns { 
+            display: flex; 
+            gap: 12px; 
+            margin-right: 15px;
+            -webkit-app-region: no-drag; 
+        }
+        
+        .hud-nav-btn {
+            background: transparent; border: none; color: #52525b;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: color 0.15s;
+        }
+        .hud-nav-btn:hover { color: #fff; }
+        .hud-nav-btn svg { width: 14px; height: 14px; }
+        
+        .hud-label { 
+            font-weight: 800; color: #fff; font-size: 13px; 
+            margin-right: 15px; letter-spacing: -0.2px; 
+            display: flex; align-items: center; gap: 8px;
+            text-shadow: 0 0 15px rgba(255,255,255,0.1);
+        }
+        .hud-label .dot { 
+            width: 8px; height: 8px; 
+            background: #10b981; border-radius: 50%; 
+            box-shadow: 0 0 12px #10b981, 0 0 4px #10b981; 
+            animation: pulse-dot 2s infinite ease-in-out;
+        }
+        @keyframes pulse-dot {
+            0% { box-shadow: 0 0 12px #10b981, 0 0 4px #10b981; opacity: 1; }
+            50% { box-shadow: 0 0 20px #10b981, 0 0 8px #10b981; opacity: 0.8; }
+            100% { box-shadow: 0 0 12px #10b981, 0 0 4px #10b981; opacity: 1; }
         }
 
-        .hud-btn {
-            background: transparent;
-            border: 1px solid #333;
-            color: #999;
-            padding: 2px 10px;
-            border-radius: 4px;
-            font-size: 11px;
+        .hud-url-bar {
+            flex: 1; display: flex; align-items: center; gap: 10px;
+            background: linear-gradient(to bottom, #1c1c1f, #18181b); 
+            border: 1px solid rgba(255,255,255,0.08); 
+            border-radius: 6px;
+            padding: 0 12px; height: 28px; min-width: 0;
             -webkit-app-region: no-drag;
-            cursor: pointer;
-            transition: all 0.2s;
+            box-shadow: inset 0 1px 4px rgba(0,0,0,0.4);
         }
-
-        .hud-btn:hover { background: rgba(255,255,255,0.05); color: #fff; border-color: #555; }
-
-        .hud-url {
-            flex: 1;
-            background: #0d0d0d;
-            border: 1px solid #222;
-            border-radius: 4px;
-            color: #10b981;
-            padding: 4px 10px;
-            font-size: 11px;
-            font-family: monospace;
-            text-align: center;
-            letter-spacing: 1px;
+        
+        .hud-url-lock { color: #10b981; flex-shrink: 0; }
+        
+        .hud-url-input {
+            flex: 1; background: transparent; border: none; outline: none;
+            color: #d4d4d8; font-family: 'Inter', sans-serif;
+            font-size: 13px; width: 100%;
+        }
+        
+        .hud-route-tag {
+            display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+            background: #1c1c1f; padding: 2px 8px; border-radius: 4px;
+            border: 1px solid #27272a; font-size: 11px; margin: 0 10px;
+            -webkit-app-region: no-drag;
+        }
+        .hud-route-tag .tag-domain { color: #3b82f6; font-weight: 500; }
+        .hud-route-tag .tag-arrow { color: #52525b; font-size: 10px; }
+        .hud-route-tag .tag-port { color: #f59e0b; font-weight: 500; }
+        
+        .hud-right { 
+            display: flex; 
+            align-items: stretch;
+            height: 100%;
             -webkit-app-region: no-drag;
         }
 
-        /* Main Content */
+        .win-control-btn {
+            background: transparent; border: none; color: #a1a1aa;
+            width: 46px; height: 100%; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s, color 0.15s;
+        }
+        .win-control-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+        .win-control-btn.close:hover { background: #e81123; color: #fff; }
+        .win-control-btn svg { width: 12px; height: 12px; }
+
+        /* Content */
         .main-content {
             flex: 1;
+            background: #000;
             position: relative;
+        }
+        webview {
+            width: 100%;
+            height: 100%;
+            background: #fff;
+        }
+
+        /* --- HOST-BASED FLOATING PILL --- */
+        .host-pill {
+            position: fixed;
+            bottom: 32px;
+            right: 32px;
+            background: rgba(18, 18, 18, 0.7);
+            backdrop-filter: blur(24px) saturate(160%);
+            -webkit-backdrop-filter: blur(24px) saturate(160%);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 9999px;
+            color: #fff;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(255,255,255,0.05);
+            z-index: 10000;
+            user-select: none;
+            pointer-events: auto;
+            cursor: grab;
+            transition: transform 0.2s cubic-bezier(0.2, 0, 0.2, 1), box-shadow 0.2s;
+        }
+        .host-pill.is-dragging { transition: none; opacity: 0.9; }
+        .host-pill:active { cursor: grabbing; transform: scale(0.98); }
+        
+        .bottom-accent {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: #fcee0a;
+            z-index: 10000;
+            pointer-events: none;
+            box-shadow: 0 -4px 15px rgba(252, 238, 10, 0.4), 0 0 30px rgba(252, 238, 10, 0.2);
+        }
+        .host-pill .pill-logo { color: #10b981; display: flex; }
+        .host-pill .pill-status-icon { color: #10b981; display: flex; }
+        .host-pill.has-violations .pill-status-icon { color: #ef4444; }
+        .host-pill .pill-count { font-family: 'JetBrains Mono', monospace; opacity: 0.8; font-size: 11px; }
+        
+        .host-pill.pulse { animation: pill-pulse 0.4s ease-out; }
+
+        /* --- HOST-BASED EXPANDABLE MENU --- */
+        .host-menu {
+            position: fixed;
+            width: 520px;
+            height: 480px;
+            background: rgba(13, 13, 13, 0.9);
+            backdrop-filter: blur(32px) saturate(160%);
+            -webkit-backdrop-filter: blur(32px) saturate(160%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
             display: flex;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: #0d0d0d;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translateY(10px) scale(0.95);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 9999;
             overflow: hidden;
+            border-left: 2px solid #10b981; /* Neon green spine */
         }
+        .host-menu.visible { visibility: visible; opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
 
-        /* Animated Premium Background Blobs */
-        .bg-glow {
-            position: absolute;
-            width: 800px;
-            height: 800px;
-            background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, rgba(59, 130, 246, 0.05) 40%, transparent 70%);
-            filter: blur(100px);
-            border-radius: 50%;
-            z-index: 1;
-            animation: move 25s infinite alternate ease-in-out;
+        .menu-header {
+            padding: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
+        .menu-title { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: -0.2px; }
 
-        .bg-glow-2 {
-            position: absolute;
-            width: 600px;
-            height: 600px;
-            background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, rgba(167, 139, 250, 0.04) 40%, transparent 70%);
-            filter: blur(80px);
-            border-radius: 50%;
-            z-index: 1;
-            animation: move-alt 18s infinite alternate ease-in-out;
-            top: 20%; right: 10%;
+        .menu-tabs {
+            display: flex;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(0, 0, 0, 0.2);
         }
+        .menu-tab {
+            flex: 1; padding: 10px 4px; text-align: center; cursor: pointer;
+            color: #71717a; font-size: 11px; font-weight: 600;
+            transition: all 0.2s; border-bottom: 2px solid transparent;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .menu-tab:hover { color: #fff; background: rgba(255, 255, 255, 0.03); }
+        .menu-tab.active { color: #10b981; border-bottom-color: #10b981; background: rgba(16, 185, 129, 0.05); }
 
-        @keyframes move {
-            0% { transform: translate(-20%, -20%) scale(1); }
-            100% { transform: translate(20%, 20%) scale(1.1); }
+        .menu-content { flex: 1; overflow-y: auto; padding: 16px; color: #d4d4d8; font-size: 13px; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        
+        .empty-state {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100%; opacity: 0.5; gap: 10px;
         }
+        .empty-state svg { width: 32px; height: 32px; }
 
-        @keyframes move-alt {
-            0% { transform: translate(10%, -10%) scale(1.2); }
-            100% { transform: translate(-10%, 10%) scale(1); }
+        /* --- LIST STYLES FOR MENU --- */
+        .data-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; }
+        .data-item {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
         }
+        .data-item:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.15); }
+        .data-item .item-meta { display: flex; justify-content: space-between; font-size: 11px; opacity: 0.6; }
+        .data-item .item-msg { font-weight: 500; word-break: break-all; }
+        .item-traffic { flex-direction: row; align-items: center; justify-content: space-between; }
+        .item-traffic .method { color: #fcee0a; font-weight: 700; margin-right: 8px; }
+        .item-traffic .url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .item-traffic .status { font-family: 'JetBrains Mono', monospace; }
+        .status-ok { color: #10b981; }
+        .status-err { color: #ef4444; }
 
-        .logo-container {
-            z-index: 10;
-            text-align: center;
-            animation: float 6s ease-in-out infinite;
+        /* --- OVERVIEW TAB STYLES --- */
+        .overview-stats { display: flex; gap: 12px; margin-bottom: 24px; }
+        .stat-box {
+            flex: 1; background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px; padding: 16px;
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
         }
+        .stat-val { font-size: 24px; font-weight: 800; color: #fff; font-family: 'JetBrains Mono', monospace; }
+        .stat-lbl { font-size: 11px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 1px; }
 
-        @keyframes float {
-            0%, 100% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 20px rgba(16, 185, 129, 0.2)); }
-            50% { transform: translateY(-15px) scale(1.02); filter: drop-shadow(0 0 40px rgba(16, 185, 129, 0.4)); }
+        .session-info {
+            background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;
         }
+        .info-row { display: flex; justify-content: space-between; font-size: 12px; }
+        .info-row span:first-child { color: #a1a1aa; }
+        .info-row span:last-child { font-weight: 600; }
 
-        .title {
-            font-size: 96px;
-            font-weight: 900;
-            background: linear-gradient(135deg, #10b981, #3b82f6);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -4px;
-            margin-bottom: 0px;
+        /* --- CONSOLE/LOG STYLES --- */
+        .log-item {
+            padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.03);
+            font-family: 'JetBrains Mono', monospace; font-size: 11px;
+            display: flex; gap: 8px; flex-direction: column;
         }
+        .log-header { display: flex; justify-content: space-between; font-size: 10px; opacity: 0.6; }
+        .log-msg { word-break: break-all; white-space: pre-wrap; }
+        .log-error { border-left: 2px solid #ef4444; background: rgba(239, 68, 68, 0.05); }
+        .log-warn { border-left: 2px solid #f59e0b; background: rgba(245, 158, 11, 0.05); }
 
-        .subtitle {
-            font-size: 14px;
-            color: #71717a;
-            font-weight: 300;
-            letter-spacing: 8px;
-            text-transform: uppercase;
-            margin-top: -10px;
-        }
+        /* --- STORAGE STYLES --- */
+        .storage-bar-group { margin-bottom: 16px; }
+        .storage-label { display: flex; justify-content: space-between; font-size: 11px; color: #a1a1aa; margin-bottom: 4px; }
+        .storage-bar-bg { height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; }
+        .storage-bar-fill { height: 100%; transition: width 0.5s; border-radius: 3px; }
 
-        .status {
-            position: absolute;
-            bottom: 50px;
-            font-size: 10px;
-            color: #10b981;
-            font-family: 'Courier New', Courier, monospace;
-            opacity: 0.6;
-            background: rgba(16, 185, 129, 0.03);
-            padding: 10px 20px;
-            border-radius: 2px;
-            border: 1px solid rgba(16, 185, 129, 0.1);
-            z-index: 10;
-            letter-spacing: 3px;
-            text-shadow: 0 0 5px rgba(16, 185, 129, 0.5);
-            animation: pulse-border 2s infinite alternate;
+        /* --- LINKS STYLES --- */
+        .link-item {
+            display: flex; align-items: center; gap: 8px; padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.02); font-size: 11px;
         }
+        .link-icon { color: #10b981; font-weight: bold; }
+        .link-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #a1a1aa; }
 
-        @keyframes pulse-border {
-            from { border-color: rgba(16, 185, 129, 0.1); }
-            to { border-color: rgba(16, 185, 129, 0.4); }
+        /* --- RECORDER STYLES --- */
+        .recorder-controls { display: flex; gap: 8px; margin-top: 16px; }
+        .recorder-btn {
+            flex: 1; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.05); color: #fff; font-size: 11px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
         }
+        .recorder-btn:hover { background: rgba(255,255,255,0.1); }
+        .recorder-btn.active { background: #ef4444; border-color: #ef4444; }
     </style>
 </head>
 <body>
-    <div class="atlas-hud">
-        <button class="hud-btn" onclick="window.atlasGoBack()">◀</button>
-        <button class="hud-btn" onclick="window.atlasGoForward()">▶</button>
-        <div class="hud-url">ATLAS V2.0 // STANDALONE READY</div>
-        <button class="hud-btn" onclick="window.atlasMinimizeWindow()">—</button>
-        <button class="hud-btn" onclick="window.atlasToggleWindowMode()">☐</button>
-        <button class="hud-btn" style="color:#ef4444; border-color:#451a1a;" onclick="window.atlasCloseBrowser()">✕</button>
-    </div>
-    <div class="main-content">
-        <div class="bg-glow"></div>
-        <div class="bg-glow-2"></div>
-        
-        <!-- User Project Container -->
-        <webview id="project-view" src="about:blank" style="display:none; width:100%; height:100%; border:none; background:#fff; z-index:5;"></webview>
-
-        <div id="splash-layer" style="display:contents;">
-            <div class="logo-container">
-                <h1 class="title">ATLAS</h1>
-                <p class="subtitle">Neural Runtime</p>
-            </div>
-            <div class="status">CORE_ENGINE_STABLE // WAITING_FOR_COMMAND</div>
+    <div class="hud-bar">
+        <div class="hud-nav-btns">
+            <button class="hud-nav-btn" id="hud-back-btn" title="Go Back">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+            <button class="hud-nav-btn" id="hud-fwd-btn" title="Go Forward">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+        </div>
+        <div class="hud-label">
+            <div class="dot"></div>
+            <span>ATLAS</span>
+        </div>
+        <div class="hud-url-bar">
+            <svg class="hud-url-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            <input type="text" class="hud-url-input" id="hud-url-input" spellcheck="false" autocomplete="off" value="ABOUT:BLANK" />
+        </div>
+        <div class="hud-route-tag">
+            <span class="tag-domain" id="tag-domain">annapurna.org</span>
+            <span class="tag-arrow">→</span>
+            <span class="tag-port" id="tag-port">:5501</span>
+        </div>
+        <div class="hud-right">
+            <button class="win-control-btn" id="win-min-btn" title="Minimize">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            <button class="win-control-btn" id="win-max-btn" title="Maximize">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <button class="win-control-btn close" id="win-close-btn" title="Close Session">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
         </div>
     </div>
-    <script>
-        const webview = document.getElementById('project-view');
-        const splash = document.getElementById('splash-layer');
-        const urlDisplay = document.querySelector('.hud-url');
+    <div class="main-content">
+        <webview id="project-view" src="about:blank" style="opacity:0; width:100%; height:100%; border:none;"></webview>
+    </div>
 
-        // Listen for navigation in webview to update HUD
+    <!-- Host-Controlled Floating Pill -->
+    <div class="host-pill" id="host-pill">
+        <span class="pill-logo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+        </span>
+        <span>Atlas</span>
+        <span class="pill-status-icon" id="pill-status-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </span>
+        <span class="pill-count" id="pill-count">0</span>
+    </div>
+
+    <!-- Host-Based Expandable Menu -->
+    <div class="host-menu" id="host-menu">
+        <div class="menu-header">
+            <span class="menu-title">ATLAS TOOLS</span>
+        </div>
+        <div class="menu-tabs" id="host-tabs">
+            <!-- Dynamically populated by window.Atlas.addTool -->
+        </div>
+        <div class="menu-content" id="host-panels">
+            <!-- Dynamically populated by window.Atlas.addTool -->
+        </div>
+    </div>
+
+    <!-- Global Bottom Accent Bar -->
+    <div class="bottom-accent"></div>
+    <script>
+        console.log('[Atlas] Host HUD Initialized');
+        const webview = document.getElementById('project-view');
+        const urlInput = document.getElementById('hud-url-input');
+        
+        webview.addEventListener('dom-ready', () => {
+            console.log('[Atlas] Guest webview process ready.');
+        });
+        const tagDomain = document.getElementById('tag-domain');
+        const tagPort = document.getElementById('tag-port');
+
+        // Parse Domain/Port from URL params
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('domain')) tagDomain.textContent = params.get('domain');
+        if (params.has('port')) tagPort.textContent = ':' + params.get('port');
+
+        // Window Control Handlers
+        document.getElementById('win-min-btn').onclick = () => window.atlasControls.minimize();
+        document.getElementById('win-max-btn').onclick = () => window.atlasControls.maximize();
+        document.getElementById('win-close-btn').onclick = () => window.atlasControls.close();
+
+        // Navigation Handlers
+        document.getElementById('hud-back-btn').onclick = () => webview.goBack();
+        document.getElementById('hud-fwd-btn').onclick = () => webview.goForward();
+
+        // URL Input Handler
+        urlInput.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                let url = urlInput.value.trim();
+                if (!url.startsWith('http')) url = 'https://' + url;
+                webview.src = url;
+                urlInput.blur();
+            }
+        };
+
+        // URL Formatter for Domain Masking
+        function formatDisplayURL(rawUrl) {
+            if (!rawUrl || rawUrl === 'about:blank') return 'about:blank';
+            const domain = tagDomain.textContent.trim();
+            let display = rawUrl;
+            
+            // Replace localhost with masked domain
+            display = display.replace(/^https?:\/\/localhost(:\d+)?/, `https://${domain}`);
+            
+            // Hide extensions (.html)
+            display = display.replace(/\.html$/, '');
+            display = display.replace(/\/index$/, '/');
+            
+            return display;
+        }
+
+        // Sync URL on navigation
         webview.addEventListener('did-start-navigation', (e) => {
             if (e.isMainFrame) {
-                const url = e.url;
-                urlDisplay.textContent = url.toUpperCase();
-                splash.style.display = 'none';
-                webview.style.display = 'block';
+                urlInput.value = formatDisplayURL(e.url);
+                webview.style.opacity = '1';
+            }
+        });
+
+        webview.addEventListener('did-navigate', (e) => {
+            urlInput.value = formatDisplayURL(e.url);
+        });
+        
+        webview.addEventListener('did-navigate-in-page', (e) => {
+            urlInput.value = formatDisplayURL(e.url);
+        });
+
+        const pill = document.getElementById('host-pill');
+        const pillCount = document.getElementById('pill-count');
+        const menu = document.getElementById('host-menu');
+
+        // --- ATLAS API (HOST ADAPTER) ---
+        window.Atlas = {
+            Severity: { INFO: 0, WARN: 1, ERROR: 2 },
+            tools: [],
+            violations: [],
+            addTool: function(name, renderCallback, onShow) {
+                const id = name.toLowerCase().replace(/\s+/g, '-');
+                const tabsContainer = document.getElementById('host-tabs');
+                const panelsContainer = document.getElementById('host-panels');
+                
+                const tab = document.createElement('div');
+                tab.className = 'menu-tab';
+                tab.innerText = name;
+                tab.onclick = () => {
+                    document.querySelectorAll('.menu-tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                    tab.classList.add('active');
+                    panel.classList.add('active');
+                    if (onShow) onShow();
+                };
+                tabsContainer.appendChild(tab);
+
+                const panel = document.createElement('div');
+                panel.className = 'tab-panel';
+                panel.id = 'panel-' + id;
+                if (renderCallback) {
+                    const el = renderCallback();
+                    if (el) panel.appendChild(el);
+                }
+                panelsContainer.appendChild(panel);
+
+                if (tabsContainer.children.length === 1) {
+                    tab.classList.add('active');
+                    panel.classList.add('active');
+                }
+                this.tools.push({ name, onShow });
+            },
+            reportViolation: function(source, message, level) {
+                const v = { source, message, level, timestamp: Date.now() };
+                this.violations.push(v);
+                window.updateViolationCount(this.violations.length);
+            }
+        };
+
+        // --- PIPELINE DATA BRIDGE ---
+        window.updateViolationCount = (count) => {
+            pillCount.textContent = count;
+            pill.classList.toggle('has-violations', count > 0);
+            pill.classList.add('pulse');
+            setTimeout(() => pill.classList.remove('pulse'), 400);
+        };
+
+        window.updateConsole = (entry) => {
+            if (console[entry.level]) {
+                console[entry.level]('[Atlas Bridge]', entry.message);
+            }
+        };
+
+        window.updateTraffic = (reqs) => {
+            if (window.Atlas.logNetworkRequest) {
+                reqs.forEach(r => window.Atlas.logNetworkRequest(r));
+            }
+        };
+
+        window.updateStorage = (metrics) => {
+            window.__ATLAS_STORAGE__ = metrics;
+        };
+
+        window.updateLinks = (links) => {
+            window.__ATLAS_LINKS__ = links;
+        };
+
+        // --- LOAD ORIGINAL TOOLS ---
+        const loadTools = async () => {
+            try {
+                const toolScripts = await window.atlasControls.getTools();
+                Object.values(toolScripts).forEach(script => {
+                    try {
+                        // Execute the script in the HUD context
+                        // The scripts are wrapped in (function(){...})() so this works
+                        new Function(script)();
+                    } catch (e) {
+                        console.error('[Atlas HUD] Failed to load tool:', e);
+                    }
+                });
+                console.log('[Atlas HUD] All tools registered dynamically.');
+            } catch (e) {
+                console.error('[Atlas HUD] Failed to fetch tools via IPC:', e);
+            }
+        };
+
+        loadTools();
+
+        // Initial recorder state
+        if (window.updateRecorder) window.updateRecorder({ isRecording: false });
+
+        // --- DRAG LOGIC ---
+        let isDragging = false;
+        let startX, startY, initialLeft, initialTop;
+
+        function updateMenuPosition() {
+            const rect = pill.getBoundingClientRect();
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+            
+            // Default: show menu above the pill
+            let top = rect.top - 430;
+            let left = rect.right - 480;
+
+            // Flip to below if too close to top
+            if (top < 10) top = rect.bottom + 10;
+            // Align left if too close to right edge
+            if (left < 10) left = 10;
+            if (left + 480 > winW - 10) left = winW - 490;
+
+            menu.style.left = left + 'px';
+            menu.style.top = top + 'px';
+        }
+
+        // Restore postion
+        const savedPos = localStorage.getItem('atlas-pill-pos');
+        if (savedPos) {
+            const pos = JSON.parse(savedPos);
+            pill.style.left = pos.x;
+            pill.style.top = pos.y;
+            pill.style.bottom = 'auto';
+            pill.style.right = 'auto';
+            updateMenuPosition();
+        }
+
+        pill.addEventListener('mousedown', (e) => {
+            // Avoid drag when clicking status icon or count if menu is open?
+            // For now, allow drag except on menu toggle?
+            // If dragging, don't toggle menu.
+            let dragStartTime = Date.now();
+            
+            isDragging = true;
+            const rect = pill.getBoundingClientRect();
+            initialLeft = rect.left;
+            initialTop = rect.top;
+            startX = e.clientX;
+            startY = e.clientY;
+
+            // Switch to absolute positioning
+            pill.style.bottom = 'auto';
+            pill.style.right = 'auto';
+            pill.style.left = initialLeft + 'px';
+            pill.style.top = initialTop + 'px';
+
+            document.addEventListener('mousemove', onDragging);
+            document.addEventListener('mouseup', (e) => {
+                onDragEnd();
+                const dx = Math.abs(e.clientX - startX);
+                const dy = Math.abs(e.clientY - startY);
+                // Only toggle if it wasn't a significant drag
+                if (dx < 5 && dy < 5) {
+                    toggleMenu();
+                }
+            }, { once: true });
+        });
+
+        function onDragging(e) {
+            if (!isDragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            pill.style.left = (initialLeft + dx) + 'px';
+            pill.style.top = (initialTop + dy) + 'px';
+            updateMenuPosition();
+        }
+
+        function onDragEnd() {
+            isDragging = false;
+            pill.classList.remove('is-dragging');
+            document.removeEventListener('mousemove', onDragging);
+            
+            // Persist position
+            localStorage.setItem('atlas-pill-pos', JSON.stringify({
+                x: pill.style.left,
+                y: pill.style.top
+            }));
+        }
+
+        // --- MENU LOGIC ---
+        function toggleMenu() {
+            menu.classList.toggle('visible');
+            updateMenuPosition();
+        }
+
+
+        // --- RESIZE RESILIENCE ---
+        window.addEventListener('resize', () => {
+            if (pill.style.left) {
+                const rect = pill.getBoundingClientRect();
+                const winW = window.innerWidth;
+                const winH = window.innerHeight;
+
+                // Adjust if outside bounds
+                if (rect.right > winW - 10) pill.style.left = (winW - rect.width - 24) + 'px';
+                if (rect.bottom > winH - 10) pill.style.top = (winH - rect.height - 24) + 'px';
+                if (rect.left < 10) pill.style.left = '24px';
+                if (rect.top < 10) pill.style.top = '64px'; // HUD height offset
             }
         });
     </script>

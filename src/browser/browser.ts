@@ -13,8 +13,7 @@ import { ReportManager } from '../engine/report-manager';
 import { createPipeline } from '../pipeline/pipeline';
 
 // UI Suite (Structured)
-import { injectAtlasUI } from '../ui/injection';
-import { CLOSER } from '../ui/components';
+
 
 export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = []): Promise<{
     broadcastLog: (msg: string) => void,
@@ -31,21 +30,82 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // --- Pipeline (Bloodline): Event Bus ---
     const pipeline = createPipeline();
 
-    // Wire: violations → report manager
+    // Wire: violations → report manager & Host HUD
     pipeline.on('violation', async (v) => {
-        try { await reportManager.logViolation(v); } catch (e) { }
+        try {
+            await reportManager.logViolation(v);
+            const violations = reportManager.getViolations();
+            const count = violations.length;
+            await mainWindow.evaluate((c, vils) => {
+                // @ts-ignore
+                if (window.updateViolationCount) window.updateViolationCount(c);
+                // @ts-ignore
+                if (window.updateViolations) window.updateViolations(vils);
+            }, count, violations);
+        } catch (e) { }
     });
 
-    // Wire: navigations → report manager (with delayed metrics)
-    pipeline.on('navigation', async (entry) => {
-        try { await reportManager.logNavigation(entry.url); } catch (e) { }
+    const requests: any[] = [];
+    pipeline.on('network:request', async (req) => {
+        requests.push(req);
+        if (requests.length > 50) requests.shift();
+        try {
+            await mainWindow.evaluate((rs) => {
+                // @ts-ignore
+                if (window.updateTraffic) window.updateTraffic(rs);
+            }, requests);
+        } catch (e) { }
     });
+
+    pipeline.on('console:log', async (entry) => {
+        try {
+            await mainWindow.evaluate((e) => {
+                // @ts-ignore
+                if (window.updateConsole) window.updateConsole(e);
+            }, entry);
+        } catch (e) { }
+    });
+
+    pipeline.on('storage:metrics', async (m) => {
+        try {
+            await mainWindow.evaluate((metrics) => {
+                // @ts-ignore
+                if (window.updateStorage) window.updateStorage(metrics);
+            }, m);
+        } catch (e) { }
+    });
+
+    // Helper to scan for links (Zero Injection - just query via evaluate)
+    const scanLinks = async () => {
+        try {
+            const links = await mainWindow.evaluate(() => {
+                return Array.from(document.querySelectorAll('a[href]')).map(a => ({
+                    href: (a as HTMLAnchorElement).href,
+                    text: a.textContent?.trim() || ''
+                }));
+            });
+            await mainWindow.evaluate((ls) => {
+                // @ts-ignore
+                if (window.updateLinks) window.updateLinks(ls);
+            }, links);
+        } catch (e) { }
+    };
+
+    // Trigger link scan on navigation and periodically
+    pipeline.on('navigation', async (entry) => {
+        try {
+            await reportManager.logNavigation(entry.url);
+            setTimeout(scanLinks, 2000); // Wait for page load
+        } catch (e) { }
+    });
+
+    setInterval(scanLinks, 10000); // Periodic refresh
 
     // 1. Launch Electron (replaces Chrome)
     let electronProcess: ChildProcess;
     let electronDebugPort: number;
     try {
-        const electronResult = await launchElectron();
+        const electronResult = await launchElectron(domain, localPort);
         electronProcess = electronResult.electronProcess;
         electronDebugPort = electronResult.debugPort;
 
@@ -83,11 +143,35 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         console.warn(`You can continue without FFmpeg, but recording will be disabled.\n`);
     }
 
-    // Setup Pages
-    const pages = await browser.pages();
-    const page = pages.length > 0 ? pages[0] : await browser.newPage();
-
+    // 4. Setup Pages
+    const allPages = await browser.pages();
+    const mainWindow = allPages[0];
     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
+    await mainWindow.setUserAgent(ua);
+
+    console.log('[Atlas] Hub attached. Waiting for guest viewport...');
+
+    // Wait for the webview target to be created by index.html
+    const webviewTarget = await browser.waitForTarget(t => {
+        const type = t.type();
+        const url = t.url();
+        // Log all targets to help debug why the webview isn't being caught
+        if (type !== 'background_page') {
+            console.log(`[Atlas] Scanning target: ${type} (${url})`);
+        }
+        return type === 'webview' || (type === 'other' && url === 'about:blank');
+    }, { timeout: 15000 }).catch(err => {
+        console.error('[Atlas] FATAL: Timeout waiting for Guest page. Is the HUD visible?');
+        throw err;
+    });
+
+    const page = await webviewTarget.page();
+
+    if (!page) {
+        throw new Error('[Atlas] Failed to attach to Guest page. Host UI may be broken.');
+    }
+
+    console.log('[Atlas] Guest page attached.');
     await page.setUserAgent(ua);
 
     // DEBUG: Bridge Console (Silenced for cleaner terminal)
@@ -114,8 +198,8 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             pipeline.emit('violation', violation);
         });
 
-        // 3. Inject Tools Suite
-        await injectAtlasUI(targetPage, { domain, port: localPort, disabledTabs });
+        // 3. Inject Tools Suite (REMOVED - Moving to Host UI)
+
 
         // 3. Recorder (Single instance attached to main page? Or per page?)
         // Recorder typically records the *tab* it was attached to. 
@@ -204,10 +288,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             atlasCloseBrowser: async () => {
                 console.log('[Atlas] Close requested from Browser HUD.');
                 // 1. Inject Closer Animation
-                try {
-                    await targetPage.evaluate((script: string) => { new Function(script)(); }, CLOSER);
-                    await new Promise(r => setTimeout(r, 3000)); // 3s delay
-                } catch (e) { }
 
                 if (onBrowserClose) onBrowserClose();
                 else { await close(); process.exit(0); }
@@ -284,7 +364,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
                     // Setup isolated tools for new tab
                     await setupPage(newPage);
-                    await injectAtlasUI(newPage, { domain, port: localPort });
+
 
 
                     // REMOVED: Force Reload (Fixed Double Load)

@@ -10,7 +10,9 @@
  * used by all Atlas Engine/Transport/UI modules.
  */
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
+import path from 'path';
+import url from 'url';
 
 // Get the debug port from environment variable (avoids Electron CLI parsing conflicts)
 const debugPort = parseInt(process.env.ATLAS_DEBUG_PORT || '0', 10);
@@ -28,37 +30,90 @@ let mainWindow: BrowserWindow | null = null;
 
 app.on('ready', () => {
     mainWindow = new BrowserWindow({
-        // Kiosk mode — matches current Chrome --kiosk behavior
-        kiosk: true,
+        // Standard mode instead of kiosk to allow better window management
+        kiosk: false,
         // Frameless — Atlas has its own HUD bar
         frame: false,
-        // Full screen by default
-        fullscreen: false,
-        // Start maximized
-        show: true,
+        // Start maximized (this will be handled after initialization)
+        show: false,
         // Web preferences
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            webviewTag: true,
+            preload: path.join(__dirname, 'preload.js'),
             // Allow running insecure content for localhost proxying
             webSecurity: false,
         },
         // Appearance
         backgroundColor: '#111111',
         title: 'Atlas',
-        // Start in maximized state (kiosk will override this)
+        // Start in maximized state
         autoHideMenuBar: true,
     });
+
+    // Start maximized and then show to prevent flickering
+    mainWindow.maximize();
+    mainWindow.show();
 
     // Remove the application menu
     mainWindow.setMenu(null);
 
-    // Load about:blank — Puppeteer will navigate
-    mainWindow.loadURL('about:blank');
+    // IPC Handlers for Window Controls
+    ipcMain.on('window-minimize', () => {
+        mainWindow?.minimize();
+    });
+
+    ipcMain.on('window-maximize', () => {
+        if (mainWindow?.isMaximized()) {
+            mainWindow?.unmaximize();
+        } else {
+            mainWindow?.maximize();
+        }
+    });
+
+    ipcMain.on('window-close', () => {
+        mainWindow?.close();
+    });
+
+    // Get domain/port from env for the HUD
+    const domain = process.env.ATLAS_DOMAIN || 'unknown';
+    const port = process.env.ATLAS_PORT || '0';
+    // Resolve index.html path - check script directory (dist) then fallback to src
+    let indexPath = path.join(__dirname, 'index.html');
+    if (!require('fs').existsSync(indexPath)) {
+        indexPath = path.join(process.cwd(), 'src', 'electron', 'index.html');
+    }
+
+    const indexUrl = url.pathToFileURL(indexPath).toString();
+    console.log(`[Atlas] Loading Host HUD from: ${indexPath}`);
+
+    // Load local index.html with identity params
+    mainWindow.loadURL(`${indexUrl}?domain=${encodeURIComponent(domain)}&port=${port}`);
 
     // Handle window close
     mainWindow.on('closed', () => {
         mainWindow = null;
+    });
+
+    // IPC Handler to serve tool scripts to the HUD
+    ipcMain.handle('get-atlas-tools', () => {
+        // We import them here to avoid top-level complexity
+        const {
+            LINKS, RECORDER, EXTRAS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, STABILITY, SECURITY_MONITOR
+        } = require('../tools/components/index');
+
+        return {
+            'Console': CONSOLE_TOOL,
+            'Networks': NETWORKS,
+            'Application': APPLICATION,
+            'Storage': STORAGE,
+            'Stability': STABILITY,
+            'Security': SECURITY_MONITOR,
+            'Links': LINKS,
+            'Recorder': RECORDER,
+            'Extras': EXTRAS
+        };
     });
 });
 

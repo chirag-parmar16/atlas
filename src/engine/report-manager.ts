@@ -48,6 +48,10 @@ export class ReportManager {
     private entries: Violation[] = [];
     private flushTimer: any = null;
 
+    public getViolations(): Violation[] {
+        return this.entries;
+    }
+
     private async getReports(): Promise<Violation[]> {
         // If we have in-memory entries, return those (source of truth)
         if (this.entries.length > 0) return this.entries;

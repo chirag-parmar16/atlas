@@ -5,7 +5,6 @@
  * interactive filtering and clearing. 
  * UPDATED: Vibrant semantic colors for log text and transparent backgrounds.
  */
-import { CONSOLE_LEVEL_STYLES } from '../styles/tabs.css';
 
 export function buildConsoleScript(): string {
     return `
