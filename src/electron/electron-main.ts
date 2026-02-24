@@ -10,9 +10,10 @@
  * used by all Atlas Engine/Transport/UI modules.
  */
 
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer } from 'electron';
 import path from 'path';
 import url from 'url';
+import fs from 'fs';
 
 // Get the debug port from environment variable (avoids Electron CLI parsing conflicts)
 const debugPort = parseInt(process.env.ATLAS_DEBUG_PORT || '0', 10);
@@ -78,6 +79,108 @@ app.on('ready', () => {
 
     ipcMain.on('window-close', () => {
         mainWindow?.close();
+    });
+
+    // --- NATIVE SCREEN RECORDING IPC ---
+    ipcMain.handle('get-window-source', async () => {
+        const sources = await desktopCapturer.getSources({ types: ['window', 'screen'] });
+        // Find the Atlas window source. If not found, fallback to the entire screen.
+        let atlasSource = sources.find(s => s.name === 'Atlas' || s.name.includes('Atlas'));
+        if (!atlasSource && sources.length > 0) {
+            atlasSource = sources[0]; // Fallback to primary screen
+        }
+        return atlasSource?.id || null;
+    });
+
+    // Active file handles for recording
+    const activeRecordings = new Map<string, fs.WriteStream>();
+
+    ipcMain.on('save-video-chunk', (event, { sessionId, buffer }: { sessionId: string, buffer: ArrayBuffer }) => {
+        try {
+            if (!activeRecordings.has(sessionId)) {
+                const tempDir = path.join(process.cwd(), 'atlas-reports', '.temp');
+                if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+                // Map to MP4 initially so it can be merged if needed, 
+                // but the codec is usually webm. We will handle codec on Renderer side.
+                const filePath = path.join(tempDir, `session-${sessionId}-native.webm`);
+                const stream = fs.createWriteStream(filePath, { flags: 'a' });
+                activeRecordings.set(sessionId, stream);
+                console.log(`[Atlas] Native Recording Started: ${filePath}`);
+            }
+
+            const stream = activeRecordings.get(sessionId);
+            if (stream) {
+                stream.write(Buffer.from(buffer));
+            }
+        } catch (e) {
+            console.error('[Atlas] Error saving video chunk', e);
+        }
+    });
+
+    ipcMain.handle('finalize-video', async (event, { sessionId }: { sessionId: string }) => {
+        return new Promise((resolve) => {
+            try {
+                const stream = activeRecordings.get(sessionId);
+                if (stream) {
+                    stream.end();
+                    activeRecordings.delete(sessionId);
+
+                    const tempDir = path.join(process.cwd(), 'atlas-reports', '.temp');
+                    const videoDir = path.join(process.cwd(), 'atlas-reports', 'video');
+                    if (!fs.existsSync(videoDir)) fs.mkdirSync(videoDir, { recursive: true });
+
+                    const webmPath = path.join(tempDir, `session-${sessionId}-native.webm`);
+                    const mp4Path = path.join(videoDir, `session-${sessionId}.mp4`);
+
+                    console.log(`[Atlas] Finalizing Native Recording... Converting to MP4`);
+
+                    try {
+                        const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+                        const { exec } = require('child_process');
+
+                        // Convert webm to mp4 using fast copy if possible, or re-encode if needed
+                        // VP9 in webm to MP4 usually requires re-encoding or just stream copying if supported
+                        const cmd = `"${ffmpegPath}" -i "${webmPath}" -c copy "${mp4Path}"`;
+
+                        exec(cmd, (err: any) => {
+                            if (err) {
+                                // If copy fails (codec mismatch), try re-encoding
+                                console.log(`[Atlas] Direct copy failed, re-encoding to MP4...`);
+                                const reencodeCmd = `"${ffmpegPath}" -i "${webmPath}" "${mp4Path}"`;
+                                exec(reencodeCmd, (err2: any) => {
+                                    if (!err2) {
+                                        console.log(`[Atlas] Native Recording Saved: ${mp4Path}`);
+                                        try { fs.unlinkSync(webmPath); } catch (e) { }
+                                    } else {
+                                        console.error(`[Atlas] Failed to convert video:`, err2);
+                                    }
+                                    resolve(true);
+                                });
+                            } else {
+                                console.log(`[Atlas] Native Recording Saved: ${mp4Path}`);
+                                try { fs.unlinkSync(webmPath); } catch (e) { }
+                                resolve(true);
+                            }
+                        });
+                    } catch (e) {
+                        console.error('[Atlas] FFmpeg not found, leaving as .webm', e);
+                        // Fallback: move webm to video folder
+                        const fallbackPath = path.join(videoDir, `session-${sessionId}-native.webm`);
+                        try {
+                            fs.renameSync(webmPath, fallbackPath);
+                            console.log(`[Atlas] Native Recording Saved (WebM): ${fallbackPath}`);
+                        } catch (err) { }
+                        resolve(true);
+                    }
+                } else {
+                    resolve(false);
+                }
+            } catch (e) {
+                console.error('[Atlas] Error finalizing recording', e);
+                resolve(false);
+            }
+        });
     });
 
     // Get domain/port from env for the HUD

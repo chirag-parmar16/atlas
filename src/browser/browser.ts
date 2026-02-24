@@ -20,12 +20,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     broadcastLog: (msg: string) => void,
     close: () => Promise<void>,
     process: ChildProcess,
-    reportManager: ReportManager,
-    recorder: { generateLog: (targetDir: string, sessionData: { id: string, parts: string[] } | null | undefined) => Promise<string | null>, getSession: () => unknown } | null
+    reportManager: ReportManager
 }> {
     console.log('[Atlas] Launching Browser Orchestrator...');
     const reportManager = new ReportManager(projectPath, `localhost:${localPort}`);
-    let recorderInstance: { generateLog: (targetDir: string, sessionData: { id: string, parts: string[] } | null | undefined) => Promise<string | null>, getSession: () => unknown, init: () => Promise<void> } | null = null;
     const networkManagers: { cleanup: () => Promise<void> }[] = [];
     let page: Page | null = null;
 
@@ -358,11 +356,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // 3. Recorder (Single instance attached to main page? Or per page?)
         // Recorder typically records the *tab* it was attached to. 
         // For now, let's keep it simple: Attach recorder to every page but only the user controls one? 
-        // 3. Attach Recorder
-        const rec = attachRecorder(targetPage, reportManager);
-        await rec.init();
-        if (!recorderInstance) recorderInstance = rec; // Track the first one as primary
-
+        // --- DEPRECATED: Recording is now handled Natively in the Electron Main/Renderer Process ---
         // 4. Navigation Tracker
 
 
@@ -463,32 +457,11 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                     await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: newState } });
                 } catch (e) { console.error("Window toggle failed", e); }
             },
-            // --- RESTORED RECORDING BRIDGES ---
-            atlasStartRecording: async () => {
-                const rec = recorderInstance || attachRecorder(targetPage, reportManager);
-                if (!recorderInstance) {
-                    recorderInstance = rec;
-                    await rec.init();
-                }
-                return await targetPage.evaluate(() => {
-                    // @ts-ignore
-                    if (window.atlasStartRecording) return window.atlasStartRecording();
-                    return false;
-                });
-            },
-            atlasStopRecording: async () => {
-                return await targetPage.evaluate(() => {
-                    // @ts-ignore
-                    if (window.atlasStopRecording) return window.atlasStopRecording();
-                    return null;
-                });
-            },
-            atlasRecordEvent: async (event: unknown) => {
-                if (recorderInstance) {
-                    // Logic to forward to recorder instance or log directly
-                    // Note: session-recorder init already exposes this on the page
-                }
-            },
+            // --- DEPRECATED: Recording is now handled Natively in the Electron Main/Renderer Process ---
+            atlasStartRecording: async () => false,
+            atlasStopRecording: async () => null,
+            atlasTogglePause: async () => { },
+            atlasRecordEvent: async () => { },
             setSecurityMode: async (mode: string) => {
                 console.log(`[Atlas] Security Warden mode set to: ${mode}`);
                 pipeline.emit('action:security-mode', mode);
@@ -498,15 +471,13 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 pipeline.emit('action:stress', config);
             }
         };
-        console.log(`[Atlas] [DEBUG] Exposing bridge functions to guest and host...`);
+        console.log(`[Atlas] [DEBUG] Exposing bridge functions to guest...`);
         for (const [name, fn] of Object.entries(bridgeFunctions)) {
             try {
                 await targetPage.exposeFunction(name, fn);
-                // Also expose to Host HUD (mainWindow) so UI can trigger them
-                if (mainWindow && !mainWindow.isClosed()) {
-                    await mainWindow.exposeFunction(name, fn);
-                }
-            } catch (e) { /* Already exposed */ }
+            } catch (e) {
+                // Already exposed
+            }
         }
         console.log(`[Atlas] [DEBUG] setupPage complete for: ${targetPage.url()}`);
     };
@@ -577,15 +548,22 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 console.log(`[Atlas] [DEBUG] Session/Target/Frame lost. Attempting to re-find guest page...`);
                 await new Promise(r => setTimeout(r, 2000));
 
-                // Re-find the webview target by checking all pages
-                const allPages = await browser.pages();
-                const newGuestPage = allPages.find(p => p !== mainWindow && !p.url().includes('index.html'));
+                // Re-find the webview target robustly
+                const targets = await browser.targets();
+                const newWebview = targets.find(t => {
+                    const type = t.type();
+                    const url = t.url();
+                    return type === 'webview' || (type === 'other' && url === 'about:blank') || (type === 'page' && !url.includes('index.html'));
+                });
 
-                if (newGuestPage) {
-                    page = newGuestPage;
-                    console.log(`[Atlas] [DEBUG] Re-attached to fresh guest page: ${page.url()}`);
-                    // Ensure tools are set up on this fresh page (if not already done by targetcreated)
-                    await setupPage(page);
+                if (newWebview) {
+                    const newGuestPage = await newWebview.page();
+                    if (newGuestPage) {
+                        page = newGuestPage;
+                        console.log(`[Atlas] [DEBUG] Re-attached to fresh guest page: ${page.url()}`);
+                        // Ensure tools are set up on this fresh page (if not already done by targetcreated)
+                        await setupPage(page);
+                    }
                 }
             } else if (i === maxRetries - 1) {
                 console.error("Navigation failed after all retries", e);
@@ -636,7 +614,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         broadcastLog,
         close,
         process: electronProcess,
-        reportManager,
-        recorder: recorderInstance
+        reportManager
     };
 }

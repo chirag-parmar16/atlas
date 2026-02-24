@@ -234,7 +234,7 @@ export async function run() {
     let performCleanup: () => Promise<void>;
     let cleaningUp = false; // Guard against double cleanup
 
-    const { close, reportManager, recorder } = await launchBrowser(
+    const { close, reportManager } = await launchBrowser(
         finalDomain,
         serverPort,
         projectPath,
@@ -260,8 +260,6 @@ export async function run() {
         if (reportManager) {
             await reportManager.flushToDisk();
             await reportManager.generateMarkdownReport();
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            if (recorder && recorder.getSession()) await recorder.generateLog(projectPath, recorder.getSession() as any);
         }
 
         console.log(`   ${NEON_GREEN('✓')} ${chalk.white('Reports saved to')} ${CYAN('atlas-reports/')}`);

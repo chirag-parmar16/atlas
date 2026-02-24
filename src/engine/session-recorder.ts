@@ -81,75 +81,97 @@ export function attachRecorder(page: Page, reportManager: ReportManager) {
                 window.__removeAtlasCursor = () => cursor.remove();
             });
         };
+        await injectCursor();
+    };
 
-        // Expose Controls
-        await page.exposeFunction('atlasStartRecording', async () => {
-            if (currentSession) return false; // Already recording
+    const startNextPart = async () => {
+        if (!currentSession) return false;
 
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            currentSession = {
-                id: timestamp,
-                parts: [],
-                partCount: 0,
-                activeVideoPath: null,
-                startTime: Date.now()
-            };
+        currentSession.partCount++;
+        const filename = `session-${currentSession.id}-part${currentSession.partCount}.mp4`;
+        const tempDir = path.join(projectPath, 'atlas_reports', '.temp');
+        if (!require('fs').existsSync(tempDir)) require('fs').mkdirSync(tempDir, { recursive: true });
 
-            return await startNextPart();
-        });
+        const videoPath = path.join(tempDir, filename);
+        currentSession.activeVideoPath = videoPath;
 
-        await page.exposeFunction('atlasStopRecording', async () => {
-            if (!currentSession) return null;
+        console.log(`[Atlas] 🎬 Starting Recording Part ${currentSession.partCount}: ${filename}`);
 
-            // Stop current part
-            if (recorder && currentSession.activeVideoPath) {
-                try {
-                    await recorder.stop();
-                    currentSession.parts.push(currentSession.activeVideoPath);
-                } catch (e) { console.error(e); }
-            }
+        try {
+            recorder = new PuppeteerScreenRecorder(page, { fps: 30 });
+            await recorder!.start(videoPath);
 
-            lastSessionInfo = {
-                id: currentSession.id,
-                parts: [...currentSession.parts],
-                startTime: currentSession.startTime,
-                endTime: Date.now()
-            };
+            // Inject Cursor if missing
+            await init();
+            return true;
+        } catch (e) {
+            console.error('[Atlas] Failed to start recorder', e);
+            return false;
+        }
+    };
 
-            // Cleanup Cursor
+    const startRecording = async () => {
+        if (currentSession) return false; // Already recording
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        currentSession = {
+            id: timestamp,
+            parts: [],
+            partCount: 0,
+            activeVideoPath: null,
+            startTime: Date.now()
+        };
+
+        return await startNextPart();
+    };
+
+    const stopRecording = async () => {
+        if (!currentSession) return null;
+
+        // Stop current part
+        if (recorder && currentSession.activeVideoPath) {
+            try {
+                await recorder.stop();
+                currentSession.parts.push(currentSession.activeVideoPath);
+            } catch (e) { console.error(e); }
+        }
+
+        lastSessionInfo = {
+            id: currentSession.id,
+            parts: [...currentSession.parts],
+            startTime: currentSession.startTime,
+            endTime: Date.now()
+        };
+
+        // Cleanup Cursor
+        try {
             await page.evaluate(() => {
                 // @ts-ignore
                 if (window.__removeAtlasCursor) window.__removeAtlasCursor();
             });
+        } catch (e) { }
 
-            currentSession = null;
-            recorder = null;
-            return "Stopped (Ready to Generate Report)";
-        });
+        currentSession = null;
+        recorder = null;
+        return "Stopped (Ready to Generate Report)";
+    };
 
-        await page.exposeFunction('atlasTogglePause', async (paused: boolean) => {
-            if (!currentSession) return;
+    const togglePause = async (paused: boolean) => {
+        if (!currentSession) return;
 
-            if (paused) {
-                // TRUE PAUSE: Stop the recorder!
-                console.log('[Atlas] ⏸ Pausing Recording (Saving Part)');
-                if (recorder && currentSession.activeVideoPath) {
-                    await recorder.stop();
-                    currentSession.parts.push(currentSession.activeVideoPath);
-                    recorder = null;
-                }
-                // No Overlay: User requested native view.
-            } else {
-                // RESUME: Start new Part!
-                console.log('[Atlas] ▶ Resuming Recording (Starting New Part)');
-                await startNextPart();
+        if (paused) {
+            // TRUE PAUSE: Stop the recorder!
+            console.log('[Atlas] ⏸ Pausing Recording (Saving Part)');
+            if (recorder && currentSession.activeVideoPath) {
+                await recorder.stop();
+                currentSession.parts.push(currentSession.activeVideoPath);
+                recorder = null;
             }
-        });
-
-        await page.exposeFunction('atlasRecordEvent', async (event: Record<string, unknown>) => {
-            sessionEvents.push(event);
-        });
-
+        } else {
+            // RESUME: Start new Part!
+            console.log('[Atlas] ▶ Resuming Recording (Starting New Part)');
+            await startNextPart();
+        }
     };
 
     const getSession = () => currentSession || lastSessionInfo;
@@ -188,5 +210,5 @@ export function attachRecorder(page: Page, reportManager: ReportManager) {
         return finalVideoPath;
     };
 
-    return { init, generateLog, getSession };
+    return { init, generateLog, getSession, startRecording, stopRecording, togglePause };
 }

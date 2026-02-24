@@ -147,6 +147,65 @@ let isRecordingPaused = false;
     }
 };
 
+let mediaRecorder: MediaRecorder | null = null;
+let recordedSessionId = '';
+
+(window as any).startNativeRecording = async () => {
+    try {
+        const sourceId = await (window as any).atlasNativeRecorder.getWindowSource();
+        if (!sourceId) return false;
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+                mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: sourceId,
+                    minFrameRate: 30,
+                    maxFrameRate: 30
+                }
+            } as any
+        });
+
+        recordedSessionId = new Date().toISOString().replace(/[:.]/g, '-');
+        mediaRecorder = new (window as any).MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+
+        mediaRecorder!.ondataavailable = async (e: any) => {
+            if (e.data.size > 0) {
+                const buffer = await e.data.arrayBuffer();
+                (window as any).atlasNativeRecorder.saveChunk(recordedSessionId, buffer);
+            }
+        };
+
+        mediaRecorder!.start(1000); // emit chunks every second
+        (window as any).updateRecorder({ isRecording: true });
+        return true;
+    } catch (e) {
+        console.error('[Atlas] Native recording failed:', e);
+        return false;
+    }
+};
+
+(window as any).stopNativeRecording = async () => {
+    if (mediaRecorder) {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach((t: any) => t.stop());
+        setTimeout(() => {
+            (window as any).atlasNativeRecorder.finalize(recordedSessionId);
+            mediaRecorder = null;
+        }, 1500); // Flush final chunks
+        (window as any).updateRecorder({ isRecording: false });
+    }
+};
+
+(window as any).pauseNativeRecording = (paused: boolean) => {
+    if (mediaRecorder) {
+        if (paused) mediaRecorder.pause();
+        else mediaRecorder.resume();
+        (window as any).updateRecorder({ isRecording: true, paused });
+    }
+};
+
 function updateRecordingTimer() {
     if (isRecordingPaused) return;
     const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
@@ -163,17 +222,15 @@ function updateRecordingTimer() {
 (document.getElementById('pill-pause-btn') as HTMLElement).onclick = async (e) => {
     e.stopPropagation(); // Don't drag/toggle menu
     isRecordingPaused = !isRecordingPaused;
-    if ((window as any).atlasTogglePause) {
-        await (window as any).atlasTogglePause(isRecordingPaused);
-        (window as any).updateRecorder({ isRecording: true, paused: isRecordingPaused });
+    if (typeof (window as any).pauseNativeRecording === 'function') {
+        (window as any).pauseNativeRecording(isRecordingPaused);
     }
 };
 
 (document.getElementById('pill-stop-btn') as HTMLElement).onclick = async (e) => {
     e.stopPropagation();
-    if ((window as any).atlasStopRecording) {
-        await (window as any).atlasStopRecording();
-        (window as any).updateRecorder({ isRecording: false });
+    if (typeof (window as any).stopNativeRecording === 'function') {
+        (window as any).stopNativeRecording();
     }
 };
 

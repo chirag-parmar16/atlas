@@ -23,16 +23,21 @@
         btn.onmouseover = () => { btn.style.transform = 'translateY(-1px)'; btn.style.boxShadow = '0 10px 20px rgba(239, 68, 68, 0.25)'; };
         btn.onmouseout = () => { btn.style.transform = 'translateY(0)'; btn.style.boxShadow = '0 8px 16px rgba(239, 68, 68, 0.2)'; };
         btn.onclick = async () => {
-            // @ts-ignore
-            if (window.atlasStartRecording) {
-                // @ts-ignore
-                const started = await window.atlasStartRecording();
-                // @ts-ignore
-                if (started && window.updateRecorder) window.updateRecorder({ isRecording: true });
+            let started = false;
+            try {
+                if (typeof (window as any).startNativeRecording === 'function') {
+                    started = await (window as any).startNativeRecording();
+                }
+            } catch (e) { }
+
+            if (started) {
+                btn.innerText = 'RECORDING ACTIVE';
+                btn.style.background = '#71717a';
+                btn.style.boxShadow = 'none';
+            } else {
+                btn.innerText = 'START FAILED';
+                setTimeout(() => { btn.innerText = 'START RECORDING'; }, 2000);
             }
-            btn.innerText = 'RECORDING ACTIVE';
-            btn.style.background = '#71717a';
-            btn.style.boxShadow = 'none';
         };
         header.appendChild(btn);
         containerEl.appendChild(header);
