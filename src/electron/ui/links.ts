@@ -62,9 +62,9 @@
     const atlas = (window as any).Atlas;
 
     // React to live link scans
-    atlas.onLinksUpdated = () => {
+    atlas.on('linksUpdated', () => {
         renderLinks();
-    };
+    });
 
     atlas.addTool('Links', function () {
         containerEl = document.createElement('div');

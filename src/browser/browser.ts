@@ -27,35 +27,41 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const reportManager = new ReportManager(projectPath, `localhost:${localPort}`);
     let recorderInstance: { generateLog: (targetDir: string, sessionData: { id: string, parts: string[] } | null | undefined) => Promise<string | null>, getSession: () => unknown, init: () => Promise<void> } | null = null;
     const networkManagers: { cleanup: () => Promise<void> }[] = [];
+    let page: Page | null = null;
 
     // --- Pipeline (Bloodline): Event Bus ---
     const pipeline = createPipeline();
+
+    // Current page local state (for HUD display)
+    let currentPageViolations: Violation[] = [];
+    const currentPageRequests: NetworkRequest[] = [];
+
+    const syncHUD = async () => {
+        try {
+            await mainWindow.evaluate((vc, vils, reqs) => {
+                // @ts-ignore
+                if (window.updateViolationCount) window.updateViolationCount(vc);
+                // @ts-ignore
+                if (window.updateViolations) window.updateViolations(vils);
+                // @ts-ignore
+                if (window.updateTraffic) window.updateTraffic(reqs);
+            }, currentPageViolations.length, currentPageViolations, currentPageRequests);
+        } catch (e) { }
+    };
 
     // Wire: violations → report manager & Host HUD
     pipeline.on('violation', async (v) => {
         try {
             await reportManager.logViolation(v);
-            const violations = reportManager.getViolations();
-            const count = violations.length;
-            await mainWindow.evaluate((c, vils) => {
-                // @ts-ignore
-                if (window.updateViolationCount) window.updateViolationCount(c);
-                // @ts-ignore
-                if (window.updateViolations) window.updateViolations(vils);
-            }, count, violations);
+            currentPageViolations.push(v);
+            await syncHUD();
         } catch (e) { }
     });
 
-    const requests: NetworkRequest[] = [];
     pipeline.on('network:request', async (req) => {
-        requests.push(req);
-        if (requests.length > 50) requests.shift();
-        try {
-            await mainWindow.evaluate((rs) => {
-                // @ts-ignore
-                if (window.updateTraffic) window.updateTraffic(rs);
-            }, requests);
-        } catch (e) { }
+        currentPageRequests.push(req);
+        if (currentPageRequests.length > 50) currentPageRequests.shift();
+        await syncHUD();
     });
 
     pipeline.on('console:log', async (entry) => {
@@ -97,6 +103,12 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     pipeline.on('navigation', async (entry) => {
         try {
             await reportManager.logNavigation(entry.url);
+
+            // Reset HUD state on navigation
+            currentPageViolations = [];
+            currentPageRequests.length = 0;
+            await syncHUD();
+
             setTimeout(scanLinks, 2000); // Wait for page load
         } catch (e) { }
     });
@@ -201,7 +213,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         throw err;
     });
 
-    const page = await webviewTarget.page();
+    page = await webviewTarget.page();
 
     if (!page) {
         throw new Error('[Atlas] Failed to attach to Guest page. Host UI may be broken.');
@@ -227,6 +239,52 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         });
         await netInterceptor.init();
         networkManagers.push(netInterceptor);
+
+        // 1.5. Bridge Guest Console & Errors to Pipeline
+        targetPage.on('console', async msg => {
+            const level = msg.type() as any;
+            const allowedLevels = ['log', 'warn', 'error', 'info', 'debug'];
+
+            // Evaluate arguments to get real values (handles objects, multiple args)
+            let message = '';
+            try {
+                const args = await Promise.all(msg.args().map(arg => arg.jsonValue()));
+                message = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+            } catch (e) {
+                message = msg.text(); // Fallback to simple text
+            }
+
+            pipeline.emit('console:log', {
+                level: allowedLevels.includes(level) ? level : 'log',
+                message: message,
+                timestamp: Date.now(),
+                stack: ''
+            });
+        });
+
+        targetPage.on('pageerror', (err: any) => {
+            pipeline.emit('violation', {
+                source: 'Runtime',
+                message: err.message || String(err),
+                level: 2, // ERROR
+                timestamp: Date.now(),
+                url: targetPage.url(),
+                metadata: { stack: err.stack }
+            });
+        });
+
+        targetPage.on('requestfailed', req => {
+            const failure = req.failure();
+            if (failure && failure.errorText !== 'net::ERR_ABORTED') {
+                pipeline.emit('violation', {
+                    source: 'Resource',
+                    message: `Failed to load ${req.url()}: ${failure.errorText}`,
+                    level: 2, // ERROR
+                    timestamp: Date.now(),
+                    url: targetPage.url()
+                });
+            }
+        });
 
         // 2. Report Manager Binding (violations flow via Pipeline)
         await targetPage.exposeFunction('atlasLogViolation', async (violation: Omit<Violation, 'type'>) => {

@@ -2,15 +2,15 @@ import { pill, pillCount, menu } from './setup-api';
 
 // Dynamically import tools to ensure window.Atlas is initialized first
 async function loadTools() {
-    await import('./ui/application');
-    await import('./ui/console');
-    await import('./ui/extras');
     await import('./ui/links');
+    await import('./ui/console');
     await import('./ui/networks');
-    await import('./ui/recorder');
-    await import('./ui/security-monitor');
-    await import('./ui/stability');
+    await import('./ui/application');
     await import('./ui/storage');
+    await import('./ui/stability');
+    await import('./ui/security-monitor');
+    await import('./ui/extras');
+    await import('./ui/recorder');
     console.log('[Atlas] All UI Tools loaded dynamically.');
 }
 loadTools();

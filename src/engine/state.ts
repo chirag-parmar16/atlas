@@ -33,6 +33,7 @@ export interface NetworkRequest {
     status: number;
     type: string;
     resourceType?: string;
+    size: number;
     time: number;
     reqHeaders: Record<string, string>;
     resHeaders: Record<string, string>;

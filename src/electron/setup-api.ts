@@ -7,6 +7,16 @@ export const menu = document.getElementById('host-menu') as HTMLElement;
     Severity: { INFO: 0, WARN: 1, ERROR: 2 },
     tools: [],
     violations: [],
+    _listeners: {} as Record<string, Function[]>,
+    on: function (event: string, callback: Function) {
+        if (!this._listeners[event]) this._listeners[event] = [];
+        this._listeners[event].push(callback);
+    },
+    emit: function (event: string, data?: any) {
+        if (this._listeners[event]) {
+            this._listeners[event].forEach((cb: any) => cb(data));
+        }
+    },
     addTool: function (name: string, renderCallback: any, onShow: any) {
         const id = name.toLowerCase().replace(/\s+/g, '-');
 
@@ -58,15 +68,14 @@ export const menu = document.getElementById('host-menu') as HTMLElement;
         const v = { source, message, level, timestamp: Date.now() };
         this.violations.push(v);
         (window as any).updateViolationCount(this.violations.length);
+        this.emit('violationsUpdated', this.violations);
     }
 };
 
 // --- PIPELINE DATA BRIDGE ---
 (window as any).updateViolations = (vils: any[]) => {
     (window as any).Atlas.violations = vils;
-    if ((window as any).Atlas.onViolationsUpdated) {
-        (window as any).Atlas.onViolationsUpdated();
-    }
+    (window as any).Atlas.emit('violationsUpdated', vils);
 };
 
 (window as any).updateViolationCount = (count: number) => {
@@ -77,36 +86,20 @@ export const menu = document.getElementById('host-menu') as HTMLElement;
 };
 
 (window as any).updateConsole = (entry: any) => {
-    if ((window as any).Atlas.logConsole) {
-        (window as any).Atlas.logConsole(entry);
-    } else {
-        const lvl = entry.level as 'log' | 'warn' | 'error' | 'info' | 'debug';
-        if (console[lvl]) {
-            console[lvl]('[Atlas Bridge]', entry.message);
-        }
-    }
+    (window as any).Atlas.emit('consoleLog', entry);
 };
 
 (window as any).updateTraffic = (reqs: any[]) => {
-    if ((window as any).Atlas.logNetworkRequest) {
-        // Clear old ones and push new block or just trigger a refresh
-        (window as any).Atlas.networkRequests = reqs;
-        if ((window as any).Atlas.onNetworkTrafficUpdated) {
-            (window as any).Atlas.onNetworkTrafficUpdated(reqs);
-        }
-    }
+    (window as any).Atlas.networkRequests = reqs;
+    (window as any).Atlas.emit('networkTrafficUpdated', reqs);
 };
 
 (window as any).updateStorage = (metrics: any) => {
     (window as any).__ATLAS_STORAGE__ = metrics;
-    if ((window as any).Atlas.onStorageUpdated) {
-        (window as any).Atlas.onStorageUpdated();
-    }
+    (window as any).Atlas.emit('storageUpdated', metrics);
 };
 
 (window as any).updateLinks = (links: any) => {
     (window as any).__ATLAS_LINKS__ = links;
-    if ((window as any).Atlas.onLinksUpdated) {
-        (window as any).Atlas.onLinksUpdated();
-    }
+    (window as any).Atlas.emit('linksUpdated', links);
 };

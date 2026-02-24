@@ -1,7 +1,7 @@
 (function () {
-    let containerEl = null;
+    let containerEl: HTMLElement | null = null;
 
-    const formatBytes = (bytes) => {
+    const formatBytes = (bytes: number) => {
         if (bytes === 0) return '0 B';
         const k = 1024;
         const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -13,10 +13,10 @@
         if (!containerEl) return;
         containerEl.innerHTML = '';
 
-        const resources = performance.getEntriesByType('resource');
-        const totalSize = resources.reduce((acc, res) => acc + (res.transferSize || 0), 0);
-        
-        const createBar = (label, value, total, color) => {
+        const atlas = window as any;
+        const metrics = atlas.__ATLAS_STORAGE__ || { totalTransfer: 0, resources: [], domSize: 0, localStorageSize: 0, sessionStorageSize: 0, cookieSize: 0, breakdown: { images: 0, scripts: 0, styles: 0, fonts: 0, other: 0 } };
+
+        const createBar = (label: string, value: number, total: number, color: string) => {
             const pct = Math.min(100, (value / total) * 100) || 0;
             const row = document.createElement('div');
             row.style.cssText = 'margin-bottom:12px;';
@@ -30,36 +30,42 @@
         const summary = document.createElement('div');
         summary.style.cssText = 'background:rgba(255,255,255,0.02); padding:15px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); margin-bottom:16px;';
         summary.innerHTML = '<div style="font-weight:800; color:#fff; font-size:13px; margin-bottom:12px;">Storage Summary</div>';
-        
-        const lsSize = JSON.stringify(localStorage).length;
-        const ssSize = JSON.stringify(sessionStorage).length;
-        
-        summary.appendChild(createBar('Transfer Size (Session)', totalSize, 1024 * 1024 * 10, '#3b82f6'));
-        summary.appendChild(createBar('LocalStorage', lsSize, 1024 * 1024 * 5, '#10b981'));
-        summary.appendChild(createBar('SessionStorage', ssSize, 1024 * 1024 * 5, '#f59e0b'));
+
+        summary.appendChild(createBar('Transfer Size (Session)', metrics.totalTransfer, 1024 * 1024 * 10, '#3b82f6'));
+        summary.appendChild(createBar('LocalStorage', metrics.localStorageSize, 1024 * 1024 * 5, '#10b981'));
+        summary.appendChild(createBar('SessionStorage', metrics.sessionStorageSize, 1024 * 1024 * 5, '#f59e0b'));
+        summary.appendChild(createBar('Cookie Size', metrics.cookieSize, 1024 * 10, '#a78bfa'));
         containerEl.appendChild(summary);
 
         const heavy = document.createElement('div');
         heavy.style.cssText = 'background:rgba(255,255,255,0.02); padding:15px; border-radius:10px; border:1px solid rgba(255,255,255,0.06);';
-        heavy.innerHTML = '<div style="font-weight:800; color:#fff; font-size:13px; margin-bottom:12px;">Top 10 Heavy Resources</div>';
-        
-        const sorted = resources.sort((a, b) => (b.transferSize || 0) - (a.transferSize || 0)).slice(0, 10);
-        sorted.forEach(res => {
+        heavy.innerHTML = '<div style="font-weight:800; color:#fff; font-size:13px; margin-bottom:12px;">Recent Heavy Resources</div>';
+
+        const resList = metrics.resources || [];
+        resList.forEach((res: any) => {
             const item = document.createElement('div');
             item.style.cssText = 'font-size:11px; color:#71717a; font-family:"JetBrains Mono", monospace; display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.02);';
-            const name = res.name.split('/').pop() || 'index';
+            const name = res.name || 'resource';
             item.innerHTML = '<span style="color:#e4e4e7; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:10px;">' + name + '</span>' +
-                '<span style="flex-shrink:0">' + formatBytes(res.transferSize || 0) + '</span>';
+                '<span style="flex-shrink:0">' + formatBytes(res.size || 0) + '</span>';
             heavy.appendChild(item);
         });
+        if (resList.length === 0) {
+            heavy.innerHTML += '<div style="color:#52525b; font-size:11px; font-style:italic; padding-top:10px; text-align:center;">No resource data yet.</div>';
+        }
         containerEl.appendChild(heavy);
     };
 
-    window.Atlas.addTool('Storage', function () {
+    const atlas = (window as any).Atlas;
+    atlas.on('storageUpdated', () => {
+        renderStorage();
+    });
+
+    atlas.addTool('Storage', function () {
         containerEl = document.createElement('div');
         containerEl.style.cssText = 'padding:15px; display:flex; flex-direction:column; height:100%; overflow-y:auto; background:transparent;';
         renderStorage();
         return containerEl;
     }, renderStorage);
 })();
-export {};
+export { };

@@ -26,7 +26,7 @@
     const atlas = (window as any).Atlas;
 
     // Receive bridged logs from the Guest page via setup-api.ts / browser.ts
-    atlas.logConsole = (entry: any) => {
+    atlas.on('consoleLog', (entry: any) => {
         const level = entry.level || 'log';
         const msg = entry.message || '';
 
@@ -50,7 +50,7 @@
 
         if (logs.length > 500) logs.shift();
         renderLogs();
-    };
+    });
 
     window.addEventListener('error', (e) => {
         logs.push({

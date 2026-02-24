@@ -193,6 +193,7 @@ export function createNetworkInterceptor(
 
                 const buffer = await response.arrayBuffer();
                 const duration = Date.now() - startTime;
+                const size = buffer.byteLength;
 
                 // Performance check
                 const perfViolation = performanceTracker.check(url.pathname, duration, targetPage.url());
@@ -223,6 +224,7 @@ export function createNetworkInterceptor(
                     method: request.method(),
                     status: response.status,
                     type: headers['x-atlas-audit'] ? 'Audit' : request.resourceType(),
+                    size,
                     time: duration,
                     reqHeaders: JSON.parse(JSON.stringify(request.headers())),
                     resHeaders: JSON.parse(JSON.stringify(resHeaders)),

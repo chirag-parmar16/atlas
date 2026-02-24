@@ -51,9 +51,9 @@
     const atlas = (window as any).Atlas;
 
     // React to live violation updates
-    atlas.onViolationsUpdated = () => {
+    atlas.on('violationsUpdated', () => {
         renderSecurity();
-    };
+    });
 
     atlas.addTool('Security', function () {
         containerEl = document.createElement('div');
