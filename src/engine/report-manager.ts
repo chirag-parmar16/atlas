@@ -46,7 +46,7 @@ export class ReportManager {
 
     // In-memory log — prevents race conditions from concurrent read-modify-write
     private entries: Violation[] = [];
-    private flushTimer: any = null;
+    private flushTimer: NodeJS.Timeout | null = null;
 
     public getViolations(): Violation[] {
         return this.entries;
@@ -62,12 +62,12 @@ export class ReportManager {
             // Handle tree format (new) — reconstruct flat entries
             if (parsed.journey && Array.isArray(parsed.journey)) {
                 const flat: Violation[] = [];
-                parsed.journey.forEach((page: any) => {
+                parsed.journey.forEach((page: { url: string; timestamp: number; violations?: { source: string; message: string; level?: number; timestamp: number; resourceUrl?: string; metadata?: Record<string, unknown> }[]; subPages?: { url: string; timestamp: number; }[] }) => {
                     flat.push({ type: 'navigation', source: 'Browser', message: `Visited: ${page.url}`, timestamp: page.timestamp, url: page.url });
-                    page.violations?.forEach((v: any) => {
+                    page.violations?.forEach((v) => {
                         flat.push({ type: 'violation', source: v.source, message: v.message, level: v.level, timestamp: v.timestamp, url: v.resourceUrl || page.url, metadata: v.metadata });
                     });
-                    page.subPages?.forEach((sp: any) => {
+                    page.subPages?.forEach((sp) => {
                         flat.push({ type: 'navigation', source: 'Browser', message: `Visited: ${sp.url}`, timestamp: sp.timestamp, url: sp.url });
                     });
                 });
@@ -149,7 +149,7 @@ export class ReportManager {
             time: string;
             duration: string;
             metrics?: { loadTime: number; storage: number };
-            violations: any[];
+            violations: Record<string, unknown>[];
             subPages: { url: string; timestamp: number; time: string }[];
         }[] = [];
 

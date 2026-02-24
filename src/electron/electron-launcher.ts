@@ -85,7 +85,7 @@ export async function launchElectron(domain: string, port: number): Promise<Elec
     // Resolve the Electron binary
     let electronBin: string;
     try {
-        electronBin = require('electron') as any;
+        electronBin = require('electron') as string;
     } catch {
         throw new Error(
             '[Atlas] Failed to locate Electron binary. Ensure electron is installed: npm install electron'

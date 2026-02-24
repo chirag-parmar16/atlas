@@ -250,6 +250,73 @@ atlas/
 
 ---
 
+## 🛠️ Developer Guide
+
+### How to Run Locally
+
+To contribute to Atlas, follow these steps to set up your local development environment:
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/chirag-parmar16/atlas.git
+   cd atlas
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   # Atlas uses Vite for the UI and tsc for the engine
+   ```
+
+3. **Build the project:**
+   ```bash
+   npm run build
+   # This compiles both the UI and the Node.js backend
+   ```
+
+4. **Link the CLI for local testing:**
+   ```bash
+   npm link
+   # You can now use the `atlas` command globally, pointing to your local clone
+   ```
+
+5. **Run the Sandbox:**
+   Navigate to any web project and run `atlas run`. It will use your local modifications!
+
+---
+
+### How to Add a New Tool or Collector
+
+Atlas is designed to be highly modular. Developing a new tool involves two parts: extracting data from the engine/page (Collector) and rendering it in the Electron HUD (Tool).
+
+**Step 1: Create the Data Collector (Backend)**
+If your tool requires observing network, DOM, or storage, intercept the data inside `src/browser/browser.ts` or add a new module.
+Use the **Pipeline** to broadcast data:
+```typescript
+pipeline.emit('myNewTool:data', { metrics: 123 });
+```
+
+**Step 2: Create the Tool UI Component (Frontend)**
+Add a new script file in `src/tools/` (e.g., `my-tool.ts`) and register your tool tab dynamically using `window.Atlas.addTool`:
+```typescript
+window.Atlas.addTool('My Tool', function() {
+    const container = document.createElement('div');
+    container.innerHTML = '<h1>My Custom Tool</h1><p id="metrics">Waiting...</p>';
+    
+    // Listen to data tracked by the engine
+    window.addEventListener('myNewTool:data', (e) => {
+        container.querySelector('#metrics').innerText = e.detail.metrics;
+    });
+    
+    return container;
+}, function onSelect() {
+    // Optional: Code to run every time the user clicks this tab
+});
+```
+Make sure to include your new script tag inside `src/electron/index.html`!
+
+---
+
 ## 📄 License
 
 MIT © Chirag Parmar

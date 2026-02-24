@@ -86,7 +86,7 @@ export async function run() {
     console.log('');
 
     const configPath = path.join(projectPath, 'atlas.config.json');
-    let atlasConfig: any = {};
+    let atlasConfig: { targetDomain?: string, disabledTabs?: string[] } = {};
     if (fs.existsSync(configPath)) {
         try {
             atlasConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -122,7 +122,7 @@ export async function run() {
 
     // --- SETUP PHASE ---
     let serverPort: number = 0;
-    let serverCleanup: any = null;
+    let serverCleanup: (() => void) | undefined | null = null;
     let finalDomain: string = '';
 
     const hasPackageJson = fs.existsSync(path.join(projectPath, 'package.json'));
@@ -158,6 +158,7 @@ export async function run() {
             console.log(YELLOW('   MODE MANUAL') + GRAY(' • No package.json detected'));
             console.log('');
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const prompts: any[] = [];
             if (!atlasConfig.targetDomain) {
                 prompts.push({
@@ -186,8 +187,8 @@ export async function run() {
             serverPort = answers.port;
             if (!finalDomain) finalDomain = answers.domain;
         }
-    } catch (err: any) {
-        if (err?.name === 'ExitPromptError') process.exit(0);
+    } catch (err: unknown) {
+        if ((err as Error).name === 'ExitPromptError') process.exit(0);
         throw err;
     }
 
@@ -255,7 +256,8 @@ export async function run() {
         if (reportManager) {
             await reportManager.flushToDisk();
             await reportManager.generateMarkdownReport();
-            if (recorder && recorder.getSession()) await recorder.generateLog(projectPath, recorder.getSession());
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            if (recorder && recorder.getSession()) await recorder.generateLog(projectPath, recorder.getSession() as any);
         }
 
         console.log(`   ${NEON_GREEN('✓')} ${chalk.white('Reports saved to')} ${CYAN('atlas-reports/')}`);

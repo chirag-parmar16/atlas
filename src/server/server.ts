@@ -55,9 +55,23 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 }
 
                 // 3. Start
-                let npmArgs = ['start'];
-                if (!pkg.scripts?.start && pkg.scripts?.dev) {
-                    npmArgs = ['run', 'dev'];
+                let cmd = 'npm';
+                let args = ['start'];
+                if (pkg.scripts?.dev && !pkg.scripts?.start) {
+                    args = ['run', 'dev'];
+                } else if (!pkg.scripts?.start && !pkg.scripts?.dev) {
+                    if (fs.existsSync(path.join(projectPath, 'server.js'))) {
+                        cmd = 'node';
+                        args = ['server.js'];
+                    } else if (pkg.main && fs.existsSync(path.join(projectPath, pkg.main))) {
+                        cmd = 'node';
+                        args = [pkg.main];
+                    } else if (fs.existsSync(path.join(projectPath, 'index.js'))) {
+                        cmd = 'node';
+                        args = ['index.js'];
+                    } else {
+                        throw new Error(`Cannot start project: No 'start' or 'dev' script found in package.json, and no server.js or index.js entry point detected.`);
+                    }
                 }
 
                 // Find Port: BUG-003 — Minimize race window by resolving as quickly as possible
@@ -70,18 +84,30 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 });
 
                 const port = await getFreePort();
-                onLog(`[Atlas] Spawning app on port ${port}...`);
+                onLog(`[Atlas] Spawning app (${cmd} ${args.join(' ')}) on port ${port}...`);
 
-                const child = spawn('npm', npmArgs, {
+                const child = spawn(cmd, args, {
                     cwd: projectPath,
                     env: { ...process.env, PORT: port.toString(), NODE_ENV: 'production' },
                     shell: true,
                     stdio: 'pipe'
                 });
 
+                let lastLogs: string[] = [];
+                const addLog = (msg: string) => {
+                    lastLogs.push(msg);
+                    if (lastLogs.length > 10) lastLogs.shift();
+                };
+
                 // Pipe Logs
-                child.stdout?.on('data', (d) => onLog(d.toString().trim()));
-                child.stderr?.on('data', (d) => onLog(`[ERR] ${d.toString().trim()}`));
+                child.stdout?.on('data', (d) => {
+                    const msg = d.toString().trim();
+                    if (msg) { addLog(msg); onLog(msg); }
+                });
+                child.stderr?.on('data', (d) => {
+                    const msg = d.toString().trim();
+                    if (msg) { addLog(`[ERR] ${msg}`); onLog(`[ERR] ${msg}`); }
+                });
 
                 // Wait for readiness
                 const checkInterval = setInterval(() => {
@@ -165,7 +191,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 child.on('exit', (code) => {
                     if (code !== null && code !== 0) {
                         clearInterval(checkInterval);
-                        reject(new Error(`Server process exited early with code ${code}`));
+                        reject(new Error(`Server process exited early with code ${code}.\nLast Logs:\n${lastLogs.join('\n')}`));
                     }
                 });
             } catch (e) {

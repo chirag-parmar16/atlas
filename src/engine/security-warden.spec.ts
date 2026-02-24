@@ -1,0 +1,71 @@
+import { scanForPII, maskPII, isInsecureCORS } from './security-warden';
+
+describe('SecurityWarden', () => {
+    describe('scanForPII', () => {
+        it('should detect credit card numbers', () => {
+            const text = "Payment processed with card: 4111 1111 1111 1111.";
+            const results = scanForPII(text);
+            expect(results.length).toBe(1);
+            expect(results[0].type).toBe('CreditCard');
+            expect(results[0].matches[0]).toBe('4111 1111 1111 1111');
+        });
+
+        it('should detect auth tokens', () => {
+            const text = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWI...";
+            const results = scanForPII(text);
+            expect(results.length).toBe(1);
+            expect(results[0].type).toBe('AuthToken');
+        });
+
+        it('should detect emails in non-HTML content', () => {
+            const jsonText = '{"user": "test@example.com"}';
+            const results = scanForPII(jsonText, false);
+            const emailLeak = results.find(r => r.type === 'Email');
+            expect(emailLeak).toBeDefined();
+            expect(emailLeak?.matches[0]).toBe('test@example.com');
+        });
+
+        it('should ignore emails in HTML content to prevent noise', () => {
+            const htmlText = '<footer>Contact us at support@example.com</footer>';
+            const results = scanForPII(htmlText, true);
+            const emailLeak = results.find(r => r.type === 'Email');
+            expect(emailLeak).toBeUndefined();
+        });
+
+        it('should strip URLs to prevent false positive numbers', () => {
+            const text = 'Check out this https://site.com/photo-12345678901234.img';
+            const results = scanForPII(text);
+            expect(results).toHaveLength(0);
+        });
+    });
+
+    describe('maskPII', () => {
+        it('should mask sensitive data, keeping first 4 and last 4 characters', () => {
+            const cc = '4111222233334444';
+            expect(maskPII(cc)).toBe('4111****4444');
+        });
+
+        it('should just return **** for short strings', () => {
+            expect(maskPII('12345')).toBe('****');
+        });
+    });
+
+    describe('isInsecureCORS', () => {
+        it('should flag wildcard domains as insecure', () => {
+            expect(isInsecureCORS('*')).toBe(true);
+        });
+
+        it('should flag "null" domains as insecure', () => {
+            expect(isInsecureCORS('null')).toBe(true);
+        });
+
+        it('should allow valid strict domains', () => {
+            expect(isInsecureCORS('https://my-secure-site.com')).toBe(false);
+        });
+
+        it('should return false for missing headers', () => {
+            expect(isInsecureCORS(undefined)).toBe(false);
+            expect(isInsecureCORS(null)).toBe(false);
+        });
+    });
+});

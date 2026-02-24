@@ -64,7 +64,7 @@ export class Pipeline {
      * Subscribe to a pipeline event.
      */
     on<K extends keyof PipelineEvents>(event: K, listener: PipelineEvents[K]): this {
-        this.emitter.on(event, listener as any);
+        this.emitter.on(event, listener as unknown as (...args: unknown[]) => void);
         return this;
     }
 
@@ -72,7 +72,7 @@ export class Pipeline {
      * Subscribe to a pipeline event (one time).
      */
     once<K extends keyof PipelineEvents>(event: K, listener: PipelineEvents[K]): this {
-        this.emitter.once(event, listener as any);
+        this.emitter.once(event, listener as unknown as (...args: unknown[]) => void);
         return this;
     }
 
@@ -87,7 +87,7 @@ export class Pipeline {
      * Remove a listener.
      */
     off<K extends keyof PipelineEvents>(event: K, listener: PipelineEvents[K]): this {
-        this.emitter.off(event, listener as any);
+        this.emitter.off(event, listener as unknown as (...args: unknown[]) => void);
         return this;
     }
 

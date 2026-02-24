@@ -5,6 +5,7 @@
  * UPDATED: Added sticky headers, removed horizontal scroll, 
  * improved transparency, and refined grid layout.
  */
+import { NETWORK_STATUS_COLORS } from '../styles/tabs.css';
 
 export function buildNetworksScript(): string {
     return `

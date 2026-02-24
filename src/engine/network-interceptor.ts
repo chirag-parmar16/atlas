@@ -45,7 +45,7 @@ export function createNetworkInterceptor(
     const { domain, localPort } = config;
 
     // --- STATE ---
-    let currentSecurityMode: 'Standard' | 'Strict' = 'Standard';
+    let currentSecurityMode: 'Standard' | 'Strict' | 'Offline' = 'Standard';
     let stressConfig: ChaosConfig = { enabled: false, errorRate: 0, latencyRate: 0, dropRate: 0 };
     let lastNavPathname: string = '';
     let isCleanedUp = false;
@@ -57,19 +57,19 @@ export function createNetworkInterceptor(
     const exposeControls = async () => {
         try {
             await page.exposeFunction('setSecurityMode', (mode: string) => {
-                currentSecurityMode = mode as 'Standard' | 'Strict';
+                currentSecurityMode = mode as 'Standard' | 'Strict' | 'Offline';
             });
         } catch (e) { /* Already exposed */ }
 
         try {
-            await page.exposeFunction('atlasRecordViolationSrv', (violation: any) => {
-                callbacks.onViolation(violation);
+            await page.exposeFunction('atlasRecordViolationSrv', (violation: unknown) => {
+                callbacks.onViolation(violation as Violation);
             });
         } catch (e) { }
 
         try {
-            await page.exposeFunction('setStressConfig', (config: any) => {
-                stressConfig = config;
+            await page.exposeFunction('setStressConfig', (config: unknown) => {
+                stressConfig = config as ChaosConfig;
             });
         } catch (e) { }
 
@@ -99,8 +99,8 @@ export function createNetworkInterceptor(
     };
 
     // History arrays (kept for backward compat with current Renderer polling)
-    const requestLogHistory: any[] = [];
-    const currentPageViolations: any[] = [];
+    const requestLogHistory: NetworkRequest[] = [];
+    const currentPageViolations: Violation[] = [];
 
     // --- REQUEST HANDLER ---
     const handleRequest = async (request: HTTPRequest, targetPage: Page) => {
@@ -187,7 +187,7 @@ export function createNetworkInterceptor(
 
                 const response = await fetch(localUrl, {
                     method: request.method(),
-                    headers: headers as any,
+                    headers: headers as HeadersInit,
                     body: request.postData()
                 });
 
@@ -200,10 +200,10 @@ export function createNetworkInterceptor(
                     callbacks.onViolation(perfViolation);
                 }
 
-                const resHeaders: any = Object.fromEntries(response.headers.entries());
+                const resHeaders: Record<string, string | string[]> = Object.fromEntries(response.headers.entries());
 
-                if (typeof (response.headers as any).getSetCookie === 'function') {
-                    const cookies = (response.headers as any).getSetCookie();
+                if (typeof (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie === 'function') {
+                    const cookies = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie!();
                     if (cookies && cookies.length > 0) {
                         resHeaders['set-cookie'] = cookies;
                     }
@@ -289,20 +289,20 @@ export function createNetworkInterceptor(
 
                 // Push to browser UI (backward compat during migration)
                 if (!page.isClosed()) {
-                    page.evaluate((d) => {
+                    page.evaluate((d: NetworkRequest) => {
                         try {
-                            // @ts-ignore
+                            // @ts-expect-error
                             if (window.Atlas && window.Atlas.logNetworkRequest) window.Atlas.logNetworkRequest(d);
-                            // @ts-ignore
+                            // @ts-expect-error
                             else { window.__ATLAS_NETWORK_QUEUE__ = window.__ATLAS_NETWORK_QUEUE__ || []; window.__ATLAS_NETWORK_QUEUE__.push(d); }
                         } catch (e) { }
-                    }, networkEvent as any).catch(() => { });
+                    }, networkEvent).catch(() => { });
                 }
 
                 // CORS strictness check
                 if (currentSecurityMode === 'Strict') {
                     const acao = resHeaders['access-control-allow-origin'];
-                    if (isInsecureCORS(acao)) {
+                    if (isInsecureCORS(acao as string | undefined)) {
                         delete resHeaders['access-control-allow-origin'];
                         callbacks.onViolation({
                             source: 'Security Warden',
@@ -322,7 +322,7 @@ export function createNetworkInterceptor(
                 });
 
             } catch (error) {
-                const errorMsg = (error as any).message || 'Unknown Error';
+                const errorMsg = (error as Record<string, unknown>).message || 'Unknown Error';
                 const errorHtml = `
                     <html>
                     <head>
@@ -389,7 +389,7 @@ export function createNetworkInterceptor(
     };
 
     // --- WEBSOCKET PROXY ---
-    let wsProxyServer: any;
+    let wsProxyServer: import('ws').Server | null = null;
     let wsProxyPort = 0;
 
     const initWsProxy = async () => {
@@ -399,12 +399,12 @@ export function createNetworkInterceptor(
             wsProxyServer = new WebSocketServer({ port: 0 });
 
             wsProxyServer.on('listening', () => {
-                wsProxyPort = (wsProxyServer.address() as any).port;
+                wsProxyPort = (wsProxyServer?.address() as import('ws').AddressInfo)?.port || 0;
                 resolve();
             });
 
-            wsProxyServer.on('connection', (clientWs: any, req: any) => {
-                const reqUrl = new URL(req.url, 'http://localhost');
+            wsProxyServer.on('connection', (clientWs: import('ws').WebSocket, req: import('http').IncomingMessage) => {
+                const reqUrl = new URL(req.url!, 'http://localhost');
                 const targetUrlEncoded = reqUrl.searchParams.get('__target');
 
                 if (!targetUrlEncoded) { clientWs.close(); return; }
@@ -423,7 +423,7 @@ export function createNetworkInterceptor(
                     return;
                 }
 
-                if (currentSecurityMode === 'Offline' as any) { clientWs.close(); return; }
+                if (currentSecurityMode === 'Offline') { clientWs.close(); return; }
 
                 const targetWs = new WebSocket(targetUrl);
 
@@ -432,7 +432,7 @@ export function createNetworkInterceptor(
                 targetWs.on('close', () => clientWs.close());
                 clientWs.on('close', () => targetWs.close());
 
-                const sendMessage = (ws: any, data: any, isBinary: boolean) => {
+                const sendMessage = (ws: import('ws').WebSocket, data: unknown, isBinary: boolean) => {
                     let latency = 0;
                     if (stressConfig.enabled) {
                         if (stressConfig.dropRate > 0 && Math.random() * 100 < stressConfig.dropRate) return;
@@ -441,14 +441,16 @@ export function createNetworkInterceptor(
                         }
                     }
                     if (latency > 0) {
-                        setTimeout(() => { if (ws.readyState === WebSocket.OPEN) ws.send(data, { binary: isBinary }); }, latency);
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        setTimeout(() => { if (ws.readyState === 1) ws.send(data as any, { binary: isBinary }); }, latency);
                     } else {
-                        if (ws.readyState === WebSocket.OPEN) ws.send(data, { binary: isBinary });
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        if (ws.readyState === 1) ws.send(data as any, { binary: isBinary });
                     }
                 };
 
-                targetWs.on('message', (data: any, isBinary: boolean) => sendMessage(clientWs, data, isBinary));
-                clientWs.on('message', (data: any, isBinary: boolean) => sendMessage(targetWs, data, isBinary));
+                targetWs.on('message', (data: unknown, isBinary: boolean) => sendMessage(clientWs, data, isBinary));
+                clientWs.on('message', (data: unknown, isBinary: boolean) => sendMessage(targetWs, data, isBinary));
             });
         });
     };
@@ -468,7 +470,7 @@ export function createNetworkInterceptor(
         }
     };
 
-    const setSecurityMode = (mode: 'Standard' | 'Strict') => { currentSecurityMode = mode; };
+    const setSecurityMode = (mode: 'Standard' | 'Strict' | 'Offline') => { currentSecurityMode = mode; };
     const setStressConfig = (config: ChaosConfig) => { stressConfig = config; };
     const getRequestHistory = () => requestLogHistory;
     const getViolations = () => currentPageViolations;

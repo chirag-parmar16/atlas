@@ -6,7 +6,10 @@
  * structured code underneath.
  */
 
-
+// Shell components
+export { UI_SHELL, buildShellScript } from './shell';
+export { LOADER, buildLoaderScript } from './loader';
+export { CLOSER, buildCloserScript } from './closer';
 
 // Tab components  
 export { LINKS, buildLinksScript } from './links';

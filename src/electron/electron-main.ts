@@ -56,6 +56,9 @@ app.on('ready', () => {
     mainWindow.maximize();
     mainWindow.show();
 
+    // Open DevTools for debugging UI tools failure
+    // mainWindow.webContents.openDevTools({ mode: 'detach' });
+
     // Remove the application menu
     mainWindow.setMenu(null);
 
@@ -79,8 +82,8 @@ app.on('ready', () => {
     // Get domain/port from env for the HUD
     const domain = process.env.ATLAS_DOMAIN || 'unknown';
     const port = process.env.ATLAS_PORT || '0';
-    // Resolve index.html path - check script directory (dist) then fallback to src
-    let indexPath = path.join(__dirname, 'index.html');
+    // Resolve index.html path - point to Vite build output in dist/electron
+    let indexPath = path.join(__dirname, '..', '..', 'electron', 'index.html');
     if (!require('fs').existsSync(indexPath)) {
         indexPath = path.join(process.cwd(), 'src', 'electron', 'index.html');
     }
@@ -94,26 +97,6 @@ app.on('ready', () => {
     // Handle window close
     mainWindow.on('closed', () => {
         mainWindow = null;
-    });
-
-    // IPC Handler to serve tool scripts to the HUD
-    ipcMain.handle('get-atlas-tools', () => {
-        // We import them here to avoid top-level complexity
-        const {
-            LINKS, RECORDER, EXTRAS, CONSOLE_TOOL, NETWORKS, APPLICATION, STORAGE, STABILITY, SECURITY_MONITOR
-        } = require('../tools/components/index');
-
-        return {
-            'Console': CONSOLE_TOOL,
-            'Networks': NETWORKS,
-            'Application': APPLICATION,
-            'Storage': STORAGE,
-            'Stability': STABILITY,
-            'Security': SECURITY_MONITOR,
-            'Links': LINKS,
-            'Recorder': RECORDER,
-            'Extras': EXTRAS
-        };
     });
 });
 

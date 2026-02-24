@@ -11,7 +11,7 @@ import { ReportManager } from './report-manager';
 
 export function attachRecorder(page: Page, reportManager: ReportManager) {
     const projectPath = process.cwd();
-    const sessionEvents: any[] = [];
+    const sessionEvents: Record<string, unknown>[] = [];
 
     // Session State
     let currentSession: {
@@ -24,7 +24,7 @@ export function attachRecorder(page: Page, reportManager: ReportManager) {
     let lastSessionInfo: { id: string, parts: string[], startTime: number, endTime: number } | null = null;
 
     // Video Recorder Instance
-    let recorder: any = null;
+    let recorder: { start: (path: string) => Promise<void>, stop: () => Promise<void> } | null = null;
 
     // Manual Control API
     const init = async () => {
@@ -44,7 +44,7 @@ export function attachRecorder(page: Page, reportManager: ReportManager) {
 
             try {
                 recorder = new PuppeteerScreenRecorder(page, { fps: 30 });
-                await recorder.start(videoPath);
+                await recorder!.start(videoPath);
 
                 // Inject Cursor if missing
                 await injectCursor();
@@ -136,7 +136,6 @@ export function attachRecorder(page: Page, reportManager: ReportManager) {
                 if (recorder && currentSession.activeVideoPath) {
                     await recorder.stop();
                     currentSession.parts.push(currentSession.activeVideoPath);
-                    currentSession.activeVideoPath = null;
                     recorder = null;
                 }
                 // No Overlay: User requested native view.
@@ -147,7 +146,7 @@ export function attachRecorder(page: Page, reportManager: ReportManager) {
             }
         });
 
-        await page.exposeFunction('atlasRecordEvent', async (event: any) => {
+        await page.exposeFunction('atlasRecordEvent', async (event: Record<string, unknown>) => {
             sessionEvents.push(event);
         });
 
@@ -155,7 +154,7 @@ export function attachRecorder(page: Page, reportManager: ReportManager) {
 
     const getSession = () => currentSession || lastSessionInfo;
 
-    const generateLog = async (_targetDir: string, sessionData: any) => {
+    const generateLog = async (_targetDir: string, sessionData: { id: string, parts: string[] } | null | undefined) => {
         if (!sessionData || sessionData.parts.length === 0) return null;
 
         const { video: finalVideoPath, videoDir } = reportManager.getReportPaths();

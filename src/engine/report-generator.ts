@@ -5,7 +5,7 @@ export interface ReportData {
     timestamp: string;
     domain: string;
     duration: string;
-    violations: any[];
+    violations: Record<string, unknown>[];
     videoPath?: string;
     metadata: {
         userAgent: string;

@@ -13,7 +13,7 @@ export interface Violation {
     level?: number;       // 0=INFO, 1=WARN, 2=ERROR
     timestamp: number;
     url: string;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
     metrics?: { loadTime: number; storage: number };
 }
 

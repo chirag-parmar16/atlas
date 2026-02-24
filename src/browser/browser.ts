@@ -1,4 +1,5 @@
-import puppeteer from 'puppeteer-core';
+import puppeteer, { Page } from 'puppeteer-core';
+import { NetworkRequest, Violation, ChaosConfig } from '../engine/state';
 import { launchElectron, killElectron } from '../electron/electron-launcher';
 import { ChildProcess } from 'child_process';
 import path from 'path';
@@ -18,14 +19,14 @@ import { createPipeline } from '../pipeline/pipeline';
 export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = []): Promise<{
     broadcastLog: (msg: string) => void,
     close: () => Promise<void>,
-    process: any,
+    process: ChildProcess,
     reportManager: ReportManager,
-    recorder: { generateLog: (targetDir: string, sessionData: any) => Promise<string | null>, getSession: () => any }
+    recorder: { generateLog: (targetDir: string, sessionData: { id: string, parts: string[] } | null | undefined) => Promise<string | null>, getSession: () => unknown } | null
 }> {
     console.log('[Atlas] Launching Browser Orchestrator...');
     const reportManager = new ReportManager(projectPath, `localhost:${localPort}`);
-    let recorderInstance: any = null;
-    const networkManagers: any[] = [];
+    let recorderInstance: { generateLog: (targetDir: string, sessionData: { id: string, parts: string[] } | null | undefined) => Promise<string | null>, getSession: () => unknown, init: () => Promise<void> } | null = null;
+    const networkManagers: { cleanup: () => Promise<void> }[] = [];
 
     // --- Pipeline (Bloodline): Event Bus ---
     const pipeline = createPipeline();
@@ -45,7 +46,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         } catch (e) { }
     });
 
-    const requests: any[] = [];
+    const requests: NetworkRequest[] = [];
     pipeline.on('network:request', async (req) => {
         requests.push(req);
         if (requests.length > 50) requests.shift();
@@ -77,8 +78,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     // Helper to scan for links (Zero Injection - just query via evaluate)
     const scanLinks = async () => {
+        if (!page || page.isClosed()) return;
         try {
-            const links = await mainWindow.evaluate(() => {
+            const links = await page.evaluate(() => {
                 return Array.from(document.querySelectorAll('a[href]')).map(a => ({
                     href: (a as HTMLAnchorElement).href,
                     text: a.textContent?.trim() || ''
@@ -101,6 +103,40 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     setInterval(scanLinks, 10000); // Periodic refresh
 
+    // Helper to collect storage metrics
+    const collectStorage = async () => {
+        if (!page || page.isClosed()) return;
+        try {
+            const metrics = await page.evaluate(() => {
+                const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+                const breakdown = { images: 0, scripts: 0, styles: 0, fonts: 0, other: 0 };
+                let totalTransfer = 0;
+
+                resources.forEach(r => {
+                    totalTransfer += r.transferSize || 0;
+                    if (r.initiatorType === 'img' || r.name.match(/\.(png|jpe?g|gif|webp|svg)$/)) breakdown.images += r.transferSize || 0;
+                    else if (r.initiatorType === 'script' || r.name.endsWith('.js')) breakdown.scripts += r.transferSize || 0;
+                    else if (r.initiatorType === 'css' || r.name.endsWith('.css')) breakdown.styles += r.transferSize || 0;
+                    else if (r.initiatorType === 'font' || r.name.match(/\.(woff2?|ttf|otf)$/)) breakdown.fonts += r.transferSize || 0;
+                    else breakdown.other += r.transferSize || 0;
+                });
+
+                return {
+                    domSize: document.documentElement.innerHTML.length,
+                    localStorageSize: Object.keys(localStorage).reduce((sum, key) => sum + (localStorage.getItem(key)?.length || 0), 0),
+                    sessionStorageSize: Object.keys(sessionStorage).reduce((sum, key) => sum + (sessionStorage.getItem(key)?.length || 0), 0),
+                    cookieSize: document.cookie.length,
+                    totalTransfer,
+                    resources: resources.slice(-5).map(r => ({ name: r.name.split('/').pop() || '', size: r.transferSize, type: r.initiatorType, duration: r.duration })),
+                    breakdown
+                };
+            });
+            pipeline.emit('storage:metrics', metrics);
+        } catch (e) { }
+    };
+
+    setInterval(collectStorage, 5000); // Periodic storage refresh
+
     // 1. Launch Electron (replaces Chrome)
     let electronProcess: ChildProcess;
     let electronDebugPort: number;
@@ -117,7 +153,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         console.log(`[Atlas] Connected to Electron via CDP`);
     } catch (e) {
         console.error(`\n\x1b[31m[CRITICAL] Failed to launch Electron!\x1b[0m`);
-        console.error((e as any).message);
+        console.error((e as Error).message);
         process.exit(1);
     }
 
@@ -179,14 +215,13 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // page.on('pageerror', (err: any) => console.error(`[Browser Error] ${err.toString()}`));
 
     // Generic Tool Injection
-    // @ts-ignore
-    const setupPage = async (targetPage: any) => {
+    const setupPage = async (targetPage: Page) => {
 
         // 1. Network Interceptor via Engine (wired through Pipeline)
         await targetPage.setCacheEnabled(false);
         const netInterceptor = createNetworkInterceptor(targetPage, { domain, localPort }, {
-            onViolation: (v: any) => pipeline.emit('violation', v),
-            onNetworkEvent: (r: any) => pipeline.emit('network:request', r),
+            onViolation: (v: Violation) => pipeline.emit('violation', v),
+            onNetworkEvent: (r: NetworkRequest) => pipeline.emit('network:request', r),
             onLog: logger,
             onNavigation: (url: string) => pipeline.emit('navigation', { url, timestamp: Date.now() })
         });
@@ -194,7 +229,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         networkManagers.push(netInterceptor);
 
         // 2. Report Manager Binding (violations flow via Pipeline)
-        await targetPage.exposeFunction('atlasLogViolation', async (violation: any) => {
+        await targetPage.exposeFunction('atlasLogViolation', async (violation: Omit<Violation, 'type'>) => {
             pipeline.emit('violation', violation);
         });
 
@@ -246,7 +281,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 if (targetPage.isClosed()) return;
                 try {
                     const metrics = await targetPage.evaluate(() => {
-                        const timing = performance.getEntriesByType('navigation')[0] as any;
+                        const timing = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
                         const loadTime = timing ? (timing.loadEventEnd || timing.domComplete || 0) : 0;
 
                         // 2. Storage
@@ -329,7 +364,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                     return null;
                 });
             },
-            atlasRecordEvent: async (event: any) => {
+            atlasRecordEvent: async (event: unknown) => {
                 if (recorderInstance) {
                     // Logic to forward to recorder instance or log directly
                     // Note: session-recorder init already exposes this on the page
@@ -339,7 +374,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 console.log(`[Atlas] Security Warden mode set to: ${mode}`);
                 pipeline.emit('action:security-mode', mode);
             },
-            setStressConfig: async (config: any) => {
+            setStressConfig: async (config: ChaosConfig) => {
                 console.log(`[Atlas] Stress testing config updated`, config);
                 pipeline.emit('action:stress', config);
             }

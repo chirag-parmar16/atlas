@@ -16,6 +16,8 @@
   ],
   "exclude": [
     "node_modules",
-    "projects"
+    "projects",
+    "src/electron/ui",
+    "src/electron/renderer.ts"
   ]
 }

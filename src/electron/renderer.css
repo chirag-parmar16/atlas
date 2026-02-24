@@ -1,0 +1,248 @@
+* { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            background: #000;
+            color: #d4d4d8;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- SCREENSHOT-PERFECT HUD --- */
+        .hud-bar {
+            height: 40px;
+            background: linear-gradient(to bottom, #121212, #0d0d0d);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            z-index: 100;
+            user-select: none;
+            -webkit-app-region: drag;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        
+        .hud-nav-btns { 
+            display: flex; 
+            gap: 12px; 
+            margin-right: 15px;
+            -webkit-app-region: no-drag; 
+        }
+        
+        .hud-nav-btn {
+            background: transparent; border: none; color: #52525b;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: color 0.15s;
+        }
+        .hud-nav-btn:hover { color: #fff; }
+        .hud-nav-btn svg { width: 14px; height: 14px; }
+        
+        .hud-label { 
+            font-weight: 800; color: #fff; font-size: 13px; 
+            margin-right: 15px; letter-spacing: -0.2px; 
+            display: flex; align-items: center; gap: 8px;
+            text-shadow: 0 0 15px rgba(255,255,255,0.1);
+        }
+        .hud-label .dot { 
+            width: 8px; height: 8px; 
+            background: #10b981; border-radius: 50%; 
+            box-shadow: 0 0 12px #10b981, 0 0 4px #10b981; 
+            animation: pulse-dot 2s infinite ease-in-out;
+        }
+        @keyframes pulse-dot {
+            0% { box-shadow: 0 0 12px #10b981, 0 0 4px #10b981; opacity: 1; }
+            50% { box-shadow: 0 0 20px #10b981, 0 0 8px #10b981; opacity: 0.8; }
+            100% { box-shadow: 0 0 12px #10b981, 0 0 4px #10b981; opacity: 1; }
+        }
+
+        .hud-url-bar {
+            flex: 1; display: flex; align-items: center; gap: 10px;
+            background: linear-gradient(to bottom, #1c1c1f, #18181b); 
+            border: 1px solid rgba(255,255,255,0.08); 
+            border-radius: 6px;
+            padding: 0 12px; height: 28px; min-width: 0;
+            -webkit-app-region: no-drag;
+            box-shadow: inset 0 1px 4px rgba(0,0,0,0.4);
+        }
+        
+        .hud-url-lock { color: #10b981; flex-shrink: 0; }
+        
+        .hud-url-input {
+            flex: 1; background: transparent; border: none; outline: none;
+            color: #d4d4d8; font-family: 'Inter', sans-serif;
+            font-size: 13px; width: 100%;
+        }
+        
+        .hud-route-tag {
+            display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+            background: #1c1c1f; padding: 2px 8px; border-radius: 4px;
+            border: 1px solid #27272a; font-size: 11px; margin: 0 10px;
+            -webkit-app-region: no-drag;
+        }
+        .hud-route-tag .tag-domain { color: #3b82f6; font-weight: 500; }
+        .hud-route-tag .tag-arrow { color: #52525b; font-size: 10px; }
+        .hud-route-tag .tag-port { color: #f59e0b; font-weight: 500; }
+        
+        .hud-right { 
+            display: flex; 
+            align-items: stretch;
+            height: 100%;
+            -webkit-app-region: no-drag;
+        }
+
+        .win-control-btn {
+            background: transparent; border: none; color: #a1a1aa;
+            width: 46px; height: 100%; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s, color 0.15s;
+        }
+        .win-control-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+        .win-control-btn.close:hover { background: #e81123; color: #fff; }
+        .win-control-btn svg { width: 12px; height: 12px; }
+
+        /* Content */
+        .main-content {
+            flex: 1;
+            background: #000;
+            position: relative;
+        }
+        webview {
+            width: 100%;
+            height: 100%;
+            background: #fff;
+        }
+
+        /* --- HOST-BASED FLOATING PILL --- */
+        .pill-btn {
+            position: fixed;
+            background: rgba(20, 20, 20, 0.90); backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1); color: white;
+            padding: 8px 16px; border-radius: 9999px; cursor: grab;
+            font-weight: 600; font-size: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            display: flex; align-items: center; gap: 8px; transition: transform 0.1s;
+            user-select: none;
+            z-index: 20000;
+        }
+        .pill-btn:active { cursor: grabbing; transform: scale(0.98); }
+        .pill-btn:hover { background: rgba(30, 30, 30, 0.95); }
+        
+        .bottom-accent {
+            position: fixed; bottom: 0; left: 0; width: 100%; height: 4px;
+            background: #fcee0a; z-index: 10000; pointer-events: none;
+            box-shadow: 0 -4px 15px rgba(252, 238, 10, 0.4), 0 0 30px rgba(252, 238, 10, 0.2);
+        }
+        .pill-btn.has-violations .pill-status-icon { color: #ef4444; }
+        .pill-btn.pulse { animation: pill-pulse 0.4s ease-out; }
+
+        /* --- HOST-BASED EXPANDABLE MENU --- */
+        .menu {
+            position: fixed; 
+            bottom: 70px; right: 20px; /* Fixed spacing from pill */
+            width: 700px;
+            height: 480px;
+            background: rgba(13, 13, 13, 0.96); backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.6);
+            display: flex; flex-direction: column; 
+            opacity: 0; pointer-events: none; 
+            transform: scale(0.95);
+            transition: opacity 0.2s, transform 0.2s;
+            z-index: 15000;
+            overflow: hidden;
+        }
+        .menu.visible { opacity: 1; pointer-events: auto; transform: scale(1); }
+        
+        .menu .watermark {
+            position: absolute; bottom: -20px; right: -20px; width: 300px; height: 300px;
+            z-index: 0; opacity: 0.03; pointer-events: none; color: #10b981;
+        }
+
+        .tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); position:relative; z-index:1; }
+        .tab {
+            flex: 1; padding: 10px; text-align: center; cursor: pointer; color: #fff; font-size: 12px;
+            background: transparent; border: none; opacity: 0.6; transition: opacity 0.2s;
+        }
+        .tab:hover { opacity: 0.9; }
+        .tab.active { opacity: 1; border-bottom: 2px solid #10b981; font-weight: bold; background: rgba(255,255,255,0.05); }
+        
+        .content { flex: 1; overflow-y: hidden; padding: 0; position: relative; z-index:1; }
+        .panel { display: none; height: 100%; flex-direction: column; gap: 0; }
+        .panel.active { display: flex; }
+
+        /* --- LIST STYLES FOR MENU --- */
+        .data-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; }
+        .data-item {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .data-item:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.15); }
+        .data-item .item-meta { display: flex; justify-content: space-between; font-size: 11px; opacity: 0.6; }
+        .data-item .item-msg { font-weight: 500; word-break: break-all; }
+        .item-traffic { flex-direction: row; align-items: center; justify-content: space-between; }
+        .item-traffic .method { color: #fcee0a; font-weight: 700; margin-right: 8px; }
+        .item-traffic .url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .item-traffic .status { font-family: 'JetBrains Mono', monospace; }
+        .status-ok { color: #10b981; }
+        .status-err { color: #ef4444; }
+
+        /* --- OVERVIEW TAB STYLES --- */
+        .overview-stats { display: flex; gap: 12px; margin-bottom: 24px; }
+        .stat-box {
+            flex: 1; background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px; padding: 16px;
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+        }
+        .stat-val { font-size: 24px; font-weight: 800; color: #fff; font-family: 'JetBrains Mono', monospace; }
+        .stat-lbl { font-size: 11px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 1px; }
+
+        .session-info {
+            background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;
+        }
+        .info-row { display: flex; justify-content: space-between; font-size: 12px; }
+        .info-row span:first-child { color: #a1a1aa; }
+        .info-row span:last-child { font-weight: 600; }
+
+        /* --- CONSOLE/LOG STYLES --- */
+        .log-item {
+            padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.03);
+            font-family: 'JetBrains Mono', monospace; font-size: 11px;
+            display: flex; gap: 8px; flex-direction: column;
+        }
+        .log-header { display: flex; justify-content: space-between; font-size: 10px; opacity: 0.6; }
+        .log-msg { word-break: break-all; white-space: pre-wrap; }
+        .log-error { border-left: 2px solid #ef4444; background: rgba(239, 68, 68, 0.05); }
+        .log-warn { border-left: 2px solid #f59e0b; background: rgba(245, 158, 11, 0.05); }
+
+        /* --- STORAGE STYLES --- */
+        .storage-bar-group { margin-bottom: 16px; }
+        .storage-label { display: flex; justify-content: space-between; font-size: 11px; color: #a1a1aa; margin-bottom: 4px; }
+        .storage-bar-bg { height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; }
+        .storage-bar-fill { height: 100%; transition: width 0.5s; border-radius: 3px; }
+
+        /* --- LINKS STYLES --- */
+        .link-item {
+            display: flex; align-items: center; gap: 8px; padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.02); font-size: 11px;
+        }
+        .link-icon { color: #10b981; font-weight: bold; }
+        .link-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #a1a1aa; }
+
+        /* --- RECORDER STYLES --- */
+        .recorder-controls { display: flex; gap: 8px; margin-top: 16px; }
+        .recorder-btn {
+            flex: 1; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.05); color: #fff; font-size: 11px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+        }
+        .recorder-btn:hover { background: rgba(255,255,255,0.1); }
+        .recorder-btn.active { background: #ef4444; border-color: #ef4444; }
