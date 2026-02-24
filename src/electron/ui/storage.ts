@@ -13,53 +13,66 @@
         if (!containerEl) return;
         containerEl.innerHTML = '';
 
-        const atlas = window as any;
-        const metrics = atlas.__ATLAS_STORAGE__ || { totalTransfer: 0, resources: [], domSize: 0, localStorageSize: 0, sessionStorageSize: 0, cookieSize: 0, breakdown: { images: 0, scripts: 0, styles: 0, fonts: 0, other: 0 } };
+        const atlasData = (window as any).__ATLAS_STORAGE__ || {
+            totalTransfer: 0,
+            resources: [],
+            domSize: 0,
+            localStorageSize: 0,
+            sessionStorageSize: 0,
+            cookieSize: 0
+        };
 
         const createBar = (label: string, value: number, total: number, color: string) => {
             const pct = Math.min(100, (value / total) * 100) || 0;
             const row = document.createElement('div');
-            row.style.cssText = 'margin-bottom:12px;';
-            row.innerHTML = '<div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px; color:#a1a1aa;">' +
-                '<span>' + label + '</span><span>' + formatBytes(value) + '</span></div>' +
-                '<div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;">' +
-                '<div style="height:100%; background:' + color + '; width:' + pct + '%; transition:width 0.5s;"></div></div>';
+            row.style.cssText = 'margin-bottom:16px;';
+            row.innerHTML = `<div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:10px; font-weight:700; font-family:'Inter', sans-serif;">` +
+                `<span style="color:#d4d4d8;">${label}</span>` +
+                `<span style="color:${color}; font-family:'JetBrains Mono', monospace; font-weight:800;">${formatBytes(value)}</span>` +
+                `</div>` +
+                `<div style="height:5px; background:rgba(0,0,0,0.3); border-radius:10px; overflow:hidden; border:1px solid rgba(255,255,255,0.04);">` +
+                `<div style="height:100%; background:${color}; width:${pct}%; transition:width 0.6s cubic-bezier(0.16, 1, 0.3, 1); box-shadow:0 0 10px ${color}66; border-radius:10px;"></div></div>`;
             return row;
         };
 
         const summary = document.createElement('div');
-        summary.style.cssText = 'background:rgba(255,255,255,0.02); padding:15px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); margin-bottom:16px;';
-        summary.innerHTML = '<div style="font-weight:800; color:#fff; font-size:13px; margin-bottom:12px;">Storage Summary</div>';
+        summary.style.cssText = 'background:rgba(0,0,0,0.2); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); margin-bottom:12px;';
+        summary.innerHTML = '<div style="font-weight:900; color:#fff; font-size:12px; margin-bottom:16px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:10px;">Global Metrics</div>';
 
-        summary.appendChild(createBar('Transfer Size (Session)', metrics.totalTransfer, 1024 * 1024 * 10, '#3b82f6'));
-        summary.appendChild(createBar('LocalStorage', metrics.localStorageSize, 1024 * 1024 * 5, '#10b981'));
-        summary.appendChild(createBar('SessionStorage', metrics.sessionStorageSize, 1024 * 1024 * 5, '#f59e0b'));
-        summary.appendChild(createBar('Cookie Size', metrics.cookieSize, 1024 * 10, '#a78bfa'));
+        summary.appendChild(createBar('Data Transferred', atlasData.totalTransfer, 1024 * 1024 * 20, '#3b82f6'));
+        summary.appendChild(createBar('Local Persistence', atlasData.localStorageSize, 1024 * 1024 * 10, '#10b981'));
+        summary.appendChild(createBar('Session Cache', atlasData.sessionStorageSize, 1024 * 1024 * 5, '#f59e0b'));
+        summary.appendChild(createBar('Browser Cookies', atlasData.cookieSize, 1024 * 100, '#a78bfa'));
         containerEl.appendChild(summary);
 
         const heavy = document.createElement('div');
-        heavy.style.cssText = 'background:rgba(255,255,255,0.02); padding:15px; border-radius:10px; border:1px solid rgba(255,255,255,0.06);';
-        heavy.innerHTML = '<div style="font-weight:800; color:#fff; font-size:13px; margin-bottom:12px;">Recent Heavy Resources</div>';
+        heavy.style.cssText = 'background:rgba(0,0,0,0.2); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);';
+        heavy.innerHTML = '<div style="font-weight:900; color:#fff; font-size:12px; margin-bottom:12px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:10px;">Resource Allocation</div>';
 
-        const resList = metrics.resources || [];
-        resList.forEach((res: any) => {
-            const item = document.createElement('div');
-            item.style.cssText = 'font-size:11px; color:#71717a; font-family:"JetBrains Mono", monospace; display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.02);';
-            const name = res.name || 'resource';
-            item.innerHTML = '<span style="color:#e4e4e7; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:10px;">' + name + '</span>' +
-                '<span style="flex-shrink:0">' + formatBytes(res.size || 0) + '</span>';
-            heavy.appendChild(item);
-        });
+        const resList = atlasData.resources || [];
         if (resList.length === 0) {
-            heavy.innerHTML += '<div style="color:#52525b; font-size:11px; font-style:italic; padding-top:10px; text-align:center;">No resource data yet.</div>';
+            heavy.innerHTML += '<div style="color:#52525b; font-size:11px; font-style:italic; padding:20px 0; text-align:center; font-family:\'Inter\', sans-serif;">Collecting resource impact data...</div>';
+        } else {
+            const listWrap = document.createElement('div');
+            listWrap.style.cssText = 'display:flex; flex-direction:column; gap:2px;';
+            resList.forEach((res: any) => {
+                const item = document.createElement('div');
+                item.style.cssText = 'font-size:11px; color:#a1a1aa; font-family:"JetBrains Mono", monospace; display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03); opacity:0.9; cursor:default;';
+                item.onmouseover = () => item.style.color = '#fff';
+                item.onmouseout = () => item.style.color = '#a1a1aa';
+                const name = res.name || 'unnamed-resource';
+                const basename = name.split('/').pop() || name;
+                item.innerHTML = `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:12px; font-weight:500;">${basename}</span>` +
+                    `<span style="flex-shrink:0; font-weight:700; color:#d4d4d8;">${formatBytes(res.size || 0)}</span>`;
+                listWrap.appendChild(item);
+            });
+            heavy.appendChild(listWrap);
         }
         containerEl.appendChild(heavy);
     };
 
     const atlas = (window as any).Atlas;
-    atlas.on('storageUpdated', () => {
-        renderStorage();
-    });
+    atlas.on('storageUpdated', () => renderStorage());
 
     atlas.addTool('Storage', function () {
         containerEl = document.createElement('div');

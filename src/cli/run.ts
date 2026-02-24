@@ -29,13 +29,17 @@ function getUptime(): string {
 
 function isViolation(msg: string): boolean {
     const m = msg.toLowerCase();
-    return m.includes('violation') || m.includes('security') || m.includes('pii') ||
-        m.includes('leak') || m.includes('err') || m.includes('failed');
+    // Use regex with word boundaries to avoid partial matches like "override" containing "err"
+    const hasError = /\[err\]/i.test(msg) || /error:/i.test(msg) || /\bfailed\b/i.test(m);
+    const hasSecurity = m.includes('violation') || m.includes('security') || m.includes('pii') ||
+        m.includes('leak') || m.includes('broken link');
+
+    return hasError || hasSecurity;
 }
 
 function isRequest(msg: string): boolean {
     const m = msg.toLowerCase();
-    return m.includes('fetch') || m.includes('200 ok') || m.includes('request');
+    return m.includes('200 ok') || m.includes('[fetch]') || (m.includes('request') && !m.includes('failed'));
 }
 
 function getPrefix(): string {

@@ -82,20 +82,76 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         } catch (e) { }
     });
 
-    // Helper to scan for links (Zero Injection - just query via evaluate)
+    // Link Accessibility Cache (to avoid re-checking every 10s)
+    const linkStatusCache = new Map<string, { ok: boolean, timestamp: number }>();
+
+    // Helper to scan for links and validate them
     const scanLinks = async () => {
         if (!page || page.isClosed()) return;
         try {
-            const links = await page.evaluate(() => {
-                return Array.from(document.querySelectorAll('a[href]')).map(a => ({
-                    href: (a as HTMLAnchorElement).href,
-                    text: a.textContent?.trim() || ''
-                }));
+            const rawLinks = await page.evaluate(() => {
+                return Array.from(document.querySelectorAll('a[href]'))
+                    .map(a => ({
+                        href: (a as HTMLAnchorElement).href,
+                        text: a.textContent?.trim() || ''
+                    }))
+                    .filter(l => l.href.startsWith('http')); // Only validate HTTP links
             });
+
+            const uniqueLinks = Array.from(new Set(rawLinks.map(l => l.href))).map(href => rawLinks.find(l => l.href === href)!);
+            const accessibleLinks: { href: string, text: string }[] = [];
+
+            for (const link of uniqueLinks) {
+                const cached = linkStatusCache.get(link.href);
+                // Cache valid for 5 minutes
+                if (cached && (Date.now() - cached.timestamp < 300000)) {
+                    if (cached.ok) accessibleLinks.push(link);
+                    continue;
+                }
+
+                try {
+                    // Use a short timeout for link validation
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 5000);
+
+                    const res = await fetch(link.href, {
+                        method: 'HEAD',
+                        signal: controller.signal,
+                        headers: { 'User-Agent': ua }
+                    }).catch(() => fetch(link.href, { method: 'GET', signal: controller.signal, headers: { 'User-Agent': ua } })); // Fallback to GET
+
+                    clearTimeout(timeout);
+
+                    const ok = res.ok;
+                    linkStatusCache.set(link.href, { ok, timestamp: Date.now() });
+
+                    if (ok) {
+                        accessibleLinks.push(link);
+                    } else {
+                        pipeline.emit('violation', {
+                            source: 'Scalability',
+                            message: `Broken Link detected: ${link.href} (Status: ${res.status})`,
+                            level: 1, // WARN
+                            timestamp: Date.now(),
+                            url: page.url()
+                        });
+                    }
+                } catch (e) {
+                    linkStatusCache.set(link.href, { ok: false, timestamp: Date.now() });
+                    pipeline.emit('violation', {
+                        source: 'Scalability',
+                        message: `Broken Link detected: ${link.href} (Connection Failed)`,
+                        level: 1, // WARN
+                        timestamp: Date.now(),
+                        url: page.url()
+                    });
+                }
+            }
+
             await mainWindow.evaluate((ls) => {
                 // @ts-ignore
                 if (window.updateLinks) window.updateLinks(ls);
-            }, links);
+            }, accessibleLinks);
         } catch (e) { }
     };
 
@@ -107,6 +163,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             // Reset HUD state on navigation
             currentPageViolations = [];
             currentPageRequests.length = 0;
+            // Clear link cache on navigation to new page? 
+            // Better keep it for session global but maybe clear on domain change?
+            // For now keep it simple.
             await syncHUD();
 
             setTimeout(scanLinks, 2000); // Wait for page load
