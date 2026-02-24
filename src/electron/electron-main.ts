@@ -22,9 +22,10 @@ if (debugPort > 0) {
     app.commandLine.appendSwitch('remote-debugging-port', String(debugPort));
 }
 
-// Disable hardware acceleration for stability in headless-like environments
+// Disable hardware acceleration and site-isolation for stability with CDP
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('ignore-certificate-errors');
+app.commandLine.appendSwitch('disable-site-isolation-trials');
 
 let mainWindow: BrowserWindow | null = null;
 

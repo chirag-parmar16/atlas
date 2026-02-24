@@ -287,7 +287,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     // Generic Tool Injection
     const setupPage = async (targetPage: Page) => {
-
+        console.log(`[Atlas] [DEBUG] setupPage start for: ${targetPage.url()}`);
         // 1. Network Interceptor via Engine (wired through Pipeline)
         await targetPage.setCacheEnabled(false);
         const netInterceptor = createNetworkInterceptor(targetPage, { domain, localPort }, {
@@ -296,7 +296,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             onLog: logger,
             onNavigation: (url: string) => pipeline.emit('navigation', { url, timestamp: Date.now() })
         });
+        console.log(`[Atlas] [DEBUG] Initializing netInterceptor...`);
         await netInterceptor.init();
+        console.log(`[Atlas] [DEBUG] netInterceptor initialized.`);
         networkManagers.push(netInterceptor);
 
         // 1.5. Bridge Guest Console & Errors to Pipeline
@@ -496,9 +498,17 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 pipeline.emit('action:stress', config);
             }
         };
+        console.log(`[Atlas] [DEBUG] Exposing bridge functions to guest and host...`);
         for (const [name, fn] of Object.entries(bridgeFunctions)) {
-            try { await targetPage.exposeFunction(name, fn); } catch (e) { /* Already exposed */ }
+            try {
+                await targetPage.exposeFunction(name, fn);
+                // Also expose to Host HUD (mainWindow) so UI can trigger them
+                if (mainWindow && !mainWindow.isClosed()) {
+                    await mainWindow.exposeFunction(name, fn);
+                }
+            } catch (e) { /* Already exposed */ }
         }
+        console.log(`[Atlas] [DEBUG] setupPage complete for: ${targetPage.url()}`);
     };
 
     // 4. Attach Modules (Initial Page)
@@ -507,7 +517,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     // 3. Navigation Lock & Multi-Tab Support
     browser.on('targetcreated', async (target) => {
-        if (target.type() === 'page') {
+        const url = target.url();
+        const type = target.type();
+        if ((type === 'page' || type === 'webview') && !url.includes('index.html')) {
+            console.log(`[Atlas] New target created (${type}): ${url}`);
             const newPage = await target.page();
             if (newPage && newPage !== page) {
                 try {
@@ -516,6 +529,8 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
                     // Setup isolated tools for new tab
                     await setupPage(newPage);
+                    console.log(`[Atlas] [DEBUG] Updating global page reference to: ${newPage.url()}`);
+                    page = newPage;
 
 
 
@@ -528,27 +543,54 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     });
 
     // 6. Navigation
-    try {
-        const isLocal =
-            domain.includes('localhost') ||
-            domain.startsWith('127.') ||
-            domain.endsWith('.local') ||
-            domain.endsWith('.test') ||
-            !domain.includes('.'); // Single word like 'test', 'dev'
+    const maxRetries = 3;
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const isLocal =
+                domain.includes('localhost') ||
+                domain.startsWith('127.') ||
+                domain.endsWith('.local') ||
+                domain.endsWith('.test') ||
+                !domain.includes('.'); // Single word like 'test', 'dev'
 
-        const protocol = isLocal ? 'http://' : 'https://';
+            const protocol = isLocal ? 'http://' : 'https://';
+            const url = `${protocol}${domain}`;
 
-        console.log(`[Atlas] Navigating to ${protocol}${domain}...`);
+            if (i === 0) console.log(`[Atlas] Navigating to ${url}...`);
+            else console.log(`[Atlas] Navigation retry ${i}/${maxRetries} to ${url}...`);
 
-        await page.goto(`${protocol}${domain}`, {
-            waitUntil: 'domcontentloaded'
-        });
+            await page.goto(url, {
+                waitUntil: 'domcontentloaded',
+                timeout: 30000
+            });
 
-        // Explicitly log the starting page to ensure it's ALWAYS Step 1
-        await reportManager.logNavigation(page.url());
+            // Explicitly log the starting page to ensure it's ALWAYS Step 1
+            await reportManager.logNavigation(page.url());
+            break; // Success!
 
-    } catch (e) {
-        console.error("Navigation failed", e);
+        } catch (e) {
+            const err = e as Error;
+            console.warn(`[Atlas] Navigation attempt ${i + 1} failed: ${err.message}`);
+
+            if (err.message.includes('Session closed') || err.message.includes('Target closed') || err.message.includes('detached Frame')) {
+                // Process swap or target loss occurred. 
+                console.log(`[Atlas] [DEBUG] Session/Target/Frame lost. Attempting to re-find guest page...`);
+                await new Promise(r => setTimeout(r, 2000));
+
+                // Re-find the webview target by checking all pages
+                const allPages = await browser.pages();
+                const newGuestPage = allPages.find(p => p !== mainWindow && !p.url().includes('index.html'));
+
+                if (newGuestPage) {
+                    page = newGuestPage;
+                    console.log(`[Atlas] [DEBUG] Re-attached to fresh guest page: ${page.url()}`);
+                    // Ensure tools are set up on this fresh page (if not already done by targetcreated)
+                    await setupPage(page);
+                }
+            } else if (i === maxRetries - 1) {
+                console.error("Navigation failed after all retries", e);
+            }
+        }
     }
 
     // 7. Browser Disconnect Handler — graceful cleanup when browser is closed manually
@@ -561,7 +603,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // 8. Bridge & Cleanup Interface
     const broadcastLog = (msg: string) => {
         try {
-            if (!page.isClosed()) {
+            if (page && !page.isClosed()) {
                 page.evaluate((m: string) => {
                     window.dispatchEvent(new CustomEvent('atlas-console-log', {
                         detail: { type: 'log', message: `[Server] ${m}`, time: new Date().toLocaleTimeString() }

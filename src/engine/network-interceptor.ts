@@ -395,6 +395,7 @@ export function createNetworkInterceptor(
     let wsProxyPort = 0;
 
     const initWsProxy = async () => {
+        console.log(`[Atlas] [DEBUG] initWsProxy start...`);
         const { WebSocketServer, WebSocket } = await import('ws');
 
         return new Promise<void>((resolve) => {
@@ -402,6 +403,7 @@ export function createNetworkInterceptor(
 
             wsProxyServer.on('listening', () => {
                 wsProxyPort = (wsProxyServer?.address() as import('ws').AddressInfo)?.port || 0;
+                console.log(`[Atlas] [DEBUG] WS Proxy listening on port: ${wsProxyPort}`);
                 resolve();
             });
 
@@ -459,9 +461,13 @@ export function createNetworkInterceptor(
 
     // --- PUBLIC API ---
     const init = async () => {
+        console.log(`[Atlas] [DEBUG] netInterceptor.init start...`);
         await initWsProxy();
+        console.log(`[Atlas] [DEBUG] netInterceptor.init: WS Proxy ready.`);
         await exposeControls();
+        console.log(`[Atlas] [DEBUG] netInterceptor.init: Controls exposed.`);
         await attach(page);
+        console.log(`[Atlas] [DEBUG] netInterceptor.init complete.`);
     };
 
     const cleanup = async () => {

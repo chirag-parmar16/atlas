@@ -98,8 +98,84 @@ webview.addEventListener('did-navigate-in-page', (e: any) => {
     urlInput.value = formatDisplayURL(e.url);
 });
 
-// Initial recorder state
-if ((window as any).updateRecorder) (window as any).updateRecorder({ isRecording: false });
+// --- RECORDER UI LOGIC ---
+let recordingStartTime = 0;
+let recordingInterval: any = null;
+let isRecordingPaused = false;
+
+(window as any).updateRecorder = (state: { isRecording: boolean, paused?: boolean }) => {
+    const recDot = document.getElementById('pill-rec-indicator');
+    const recTimer = document.getElementById('pill-rec-timer');
+    const pillLabel = document.getElementById('pill-label');
+    const pillControls = document.getElementById('pill-controls');
+    const pauseBtn = document.getElementById('pill-pause-btn');
+
+    if (state.isRecording) {
+        pill.classList.add('recording');
+        if (recDot) recDot.style.display = 'block';
+        if (recTimer) recTimer.style.display = 'block';
+        if (pillLabel) pillLabel.style.display = 'none';
+        if (pillControls) pillControls.style.display = 'flex';
+
+        // Auto-close menu if open
+        if (menu.classList.contains('visible')) toggleMenu();
+
+        if (!recordingInterval) {
+            recordingStartTime = Date.now();
+            recordingInterval = setInterval(updateRecordingTimer, 1000);
+        }
+    } else {
+        pill.classList.remove('recording');
+        if (recDot) recDot.style.display = 'none';
+        if (recTimer) recTimer.style.display = 'none';
+        if (pillLabel) pillLabel.style.display = 'block';
+        if (pillControls) pillControls.style.display = 'none';
+
+        if (recordingInterval) {
+            clearInterval(recordingInterval);
+            recordingInterval = null;
+        }
+    }
+
+    if (state.paused !== undefined) {
+        isRecordingPaused = state.paused;
+        if (pauseBtn) {
+            pauseBtn.innerHTML = isRecordingPaused
+                ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>'
+                : '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
+        }
+    }
+};
+
+function updateRecordingTimer() {
+    if (isRecordingPaused) return;
+    const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+    const m = Math.floor(elapsed / 60);
+    const s = elapsed % 60;
+    const timerEl = document.getElementById('pill-rec-timer');
+    if (timerEl) timerEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// Initial state
+(window as any).updateRecorder({ isRecording: false });
+
+// Pill Control Listeners
+(document.getElementById('pill-pause-btn') as HTMLElement).onclick = async (e) => {
+    e.stopPropagation(); // Don't drag/toggle menu
+    isRecordingPaused = !isRecordingPaused;
+    if ((window as any).atlasTogglePause) {
+        await (window as any).atlasTogglePause(isRecordingPaused);
+        (window as any).updateRecorder({ isRecording: true, paused: isRecordingPaused });
+    }
+};
+
+(document.getElementById('pill-stop-btn') as HTMLElement).onclick = async (e) => {
+    e.stopPropagation();
+    if ((window as any).atlasStopRecording) {
+        await (window as any).atlasStopRecording();
+        (window as any).updateRecorder({ isRecording: false });
+    }
+};
 
 // --- DRAG LOGIC ---
 let isDragging = false;
