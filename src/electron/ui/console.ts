@@ -28,7 +28,13 @@
         debug: { color: '#a78bfa', bg: 'rgba(167, 139, 250, 0.05)', icon: '◦', label: 'DEBUG', badge: '#a78bfa' }
     };
 
-    const atlas = window.Atlas;
+    interface Window {
+        Atlas: {
+            on: (event: string, cb: Function) => void;
+            addTool: (name: string, cb: () => HTMLElement, onRender?: () => void) => void;
+        };
+    }
+    const atlas = (window as unknown as Window).Atlas;
 
     const throttledRender = () => {
         if (renderTimeout) return;
