@@ -59,43 +59,57 @@ export function createNetworkInterceptor(
             await page.exposeFunction('setSecurityMode', (mode: string) => {
                 currentSecurityMode = mode as 'Standard' | 'Strict' | 'Offline';
             });
-        } catch (e) { /* Already exposed */ }
+        } catch (e) {
+            // Already exposed - safe to ignore
+        }
 
         try {
             await page.exposeFunction('atlasRecordViolationSrv', (violation: unknown) => {
                 callbacks.onViolation(violation as Violation);
             });
-        } catch (e) { }
+        } catch (e) {
+            // Already exposed
+        }
 
         try {
             await page.exposeFunction('setStressConfig', (config: unknown) => {
                 stressConfig = config as ChaosConfig;
             });
-        } catch (e) { }
+        } catch (e) {
+            // Already exposed
+        }
 
         try {
             await page.exposeFunction('getNetworkHistory', () => {
                 return requestLogHistory;
             });
-        } catch (e) { }
+        } catch (e) {
+            // Already exposed
+        }
 
         try {
             await page.exposeFunction('clearNetworkHistory', () => {
                 requestLogHistory.length = 0;
             });
-        } catch (e) { }
+        } catch (e) {
+            // Already exposed
+        }
 
         try {
             await page.exposeFunction('getFullViolationHistory', () => {
                 return currentPageViolations;
             });
-        } catch (e) { }
+        } catch (e) {
+            // Already exposed
+        }
 
         try {
             await page.exposeFunction('clearViolationHistory', () => {
                 currentPageViolations.length = 0;
             });
-        } catch (e) { }
+        } catch (e) {
+            // Already exposed
+        }
     };
 
     // History arrays (kept for backward compat with current Renderer polling)
@@ -297,8 +311,10 @@ export function createNetworkInterceptor(
                             if (window.Atlas && window.Atlas.logNetworkRequest) window.Atlas.logNetworkRequest(d);
                             // @ts-expect-error
                             else { window.__ATLAS_NETWORK_QUEUE__ = window.__ATLAS_NETWORK_QUEUE__ || []; window.__ATLAS_NETWORK_QUEUE__.push(d); }
-                        } catch (e) { }
-                    }, networkEvent).catch(() => { });
+                        } catch (e) {
+                            console.error('[Atlas] Guest evaluation failed in proxy:', (e as Error).message);
+                        }
+                    }, networkEvent).catch(() => { /* Page closed unexpectedly */ });
                 }
 
                 // CORS strictness check
@@ -474,7 +490,9 @@ export function createNetworkInterceptor(
         if (isCleanedUp) return;
         isCleanedUp = true;
         if (wsProxyServer) {
-            try { wsProxyServer.close(); } catch (e) { }
+            try { wsProxyServer.close(); } catch (e) {
+                console.error('[Atlas] WS Proxy Server cleanup error:', (e as Error).message);
+            }
         }
     };
 

@@ -13,6 +13,26 @@ import { ReportManager } from '../engine/report-manager';
 // Pipeline (Bloodline)
 import { createPipeline } from '../pipeline/pipeline';
 
+// Pipeline Event Types
+export interface PipelineEventPayload {
+    'violation': Violation;
+    'network:request': NetworkRequest & { tabId?: string };
+    'console:log': { level: string, message: string, timestamp: number, stack?: string, tabId?: string };
+    'storage:metrics': {
+        domSize: number;
+        localStorageSize: number;
+        sessionStorageSize: number;
+        cookieSize: number;
+        totalTransfer: number;
+        resources: any[];
+        breakdown: any;
+        tabId?: string;
+    };
+    'action:security-mode': string;
+    'action:stress': ChaosConfig;
+    'navigation': { url: string, timestamp: number, tabId?: string };
+}
+
 // UI Suite (Structured)
 
 
@@ -106,7 +126,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 // @ts-ignore
                 if (window.addNetworkRequest) window.addNetworkRequest(request, tId);
             }, r, req.tabId || '');
-        } catch (e) { }
+        } catch (e) {
+            console.error('[Atlas] Failed to push network request to UI:', (e as Error).message);
+        }
     });
 
     pipeline.on('console:log', async (entry: any) => {
@@ -115,7 +137,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 // @ts-ignore
                 if (window.updateConsole) window.updateConsole(e, tId);
             }, entry, entry.tabId || '');
-        } catch (e) { }
+        } catch (e) {
+            console.error('[Atlas] Failed to push console log to UI:', (e as Error).message);
+        }
     });
 
     pipeline.on('storage:metrics', async (m: any) => {
@@ -124,7 +148,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 // @ts-ignore
                 if (window.updateStorage) window.updateStorage(metrics, tId);
             }, m, m.tabId || '');
-        } catch (e) { }
+        } catch (e) {
+            console.error('[Atlas] Failed to push storage metrics to UI:', (e as Error).message);
+        }
     });
 
     // When renderer switches tabs it sets a global flag in electron-main (via IPC)
@@ -209,7 +235,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 // @ts-ignore
                 if (window.updateLinks) window.updateLinks(ls, tabId);
             }, accessibleLinks, tId);
-        } catch (e) { }
+        } catch (e) {
+            console.error('[Atlas] Link scan evaluation failed:', (e as Error).message);
+        }
     };
 
     const scanAllLinks = async () => {
@@ -234,10 +262,14 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                     break;
                 }
             }
-        } catch (e) { }
+        } catch (e) {
+            console.error('[Atlas] Navigation pipeline handler error:', (e as Error).message);
+        }
     });
 
-    setInterval(scanAllLinks, 30000); // Periodic refresh all pages Every 30s
+    // Instead of periodic setInterval, we can attach this to active pages specifically
+    // but leaving it loosely coupled is fine for now, we just reduce frequency
+    setInterval(scanAllLinks, 60000); // Periodic refresh all pages Every 60s instead of 30s
 
     // Helper to collect storage metrics
     const collectStorage = async () => {
@@ -268,10 +300,15 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 };
             });
             pipeline.emit('storage:metrics', metrics);
-        } catch (e) { }
+        } catch (e) {
+            // Silent catch during page unloads is okay, but let's log debug if needed
+            if ((e as Error).message.includes('Target closed') === false) {
+                console.error('[Atlas] Storage metrics collection failed:', (e as Error).message);
+            }
+        }
     };
 
-    setInterval(collectStorage, 5000); // Periodic storage refresh
+    setInterval(collectStorage, 15000); // Decelerated storage refresh (15s instead of 5s)
 
     // 2. Check FFmpeg Availability (Required for Session Recording)
     let ffmpegAvailable = false;
@@ -529,8 +566,8 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 if (onBrowserClose) onBrowserClose();
                 else { await close(); process.exit(0); }
             },
-            atlasGoBack: async () => { try { await targetPage.goBack(); } catch (e) { } },
-            atlasGoForward: async () => { try { await targetPage.goForward(); } catch (e) { } },
+            atlasGoBack: async () => { try { await targetPage.goBack(); } catch (e) { console.error("GoBack failed", e) } },
+            atlasGoForward: async () => { try { await targetPage.goForward(); } catch (e) { console.error("GoForward failed", e) } },
             atlasMinimizeWindow: async () => {
                 try {
                     const session = await targetPage.target().createCDPSession();
@@ -567,7 +604,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             try {
                 await targetPage.exposeFunction(name, fn);
             } catch (e) {
-                // Already exposed
+                // Function already exposed - safe to ignore on navigations
             }
         }
         console.log(`[Atlas] [DEBUG] setupPage complete for: ${targetPage.url()}`);
@@ -588,7 +625,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                     await newPage.setUserAgent(ua);
                     await setupPage(newPage);
                     page = newPage;
-                } catch (e) { }
+                } catch (e) {
+                    console.error('[Atlas] Error setting up new target page:', (e as Error).message);
+                }
             }
         }
     });
