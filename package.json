@@ -23,12 +23,12 @@
   },
   "build": {
     "appId": "com.atlas.sandbox",
-    "productName": "Atlas",
+    "productName": "Atlas-Sandbox",
     "directories": {
       "output": "release"
     },
     "files": [
-      "dist/**/*",
+      "dist",
       "entry.js",
       "package.json"
     ],
