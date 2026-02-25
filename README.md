@@ -14,6 +14,7 @@ Atlas is distributed as a standalone Windows executable.
 
 1. **Download the latest `.exe` installer** from the [GitHub Releases page](https://github.com/chirag-parmar16/atlas/releases).
 2. **Double-click** the installer. Atlas will automatically install and configure your system `PATH`.
+   * *Note: Since Atlas is an open-source tool without a paid corporate code-signing certificate, **Windows Defender SmartScreen** may flag it as "unrecognized". To install, click **More info** -> **Run anyway**.*
 3. You can now use the `atlas` command globally from any terminal!
 
 *Note: Your projects must be running on Node.js v18+.*
