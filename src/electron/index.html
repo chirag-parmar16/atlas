@@ -8,10 +8,23 @@
 </head>
 <body>
     <div id="atlas-tab-bar">
-        <!-- Tabs injected by tab-manager.ts -->
-        <button id="atlas-new-tab-btn" title="New Tab">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </button>
+        <div class="atlas-tab-scroll-container" id="atlas-tab-scroll-container">
+            <!-- Tabs injected by tab-manager.ts -->
+            <button id="atlas-new-tab-btn" title="New Tab">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+        </div>
+        <div class="hud-right">
+            <button class="win-control-btn" id="win-min-btn" title="Minimize">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            <button class="win-control-btn" id="win-max-btn" title="Maximize">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <button class="win-control-btn close" id="win-close-btn" title="Close Session">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
     </div>
     <div class="hud-bar">
         <div class="hud-nav-btns">
@@ -34,17 +47,6 @@
             <span class="tag-domain" id="tag-domain">annapurna.org</span>
             <span class="tag-arrow">→</span>
             <span class="tag-port" id="tag-port">:5501</span>
-        </div>
-        <div class="hud-right">
-            <button class="win-control-btn" id="win-min-btn" title="Minimize">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            </button>
-            <button class="win-control-btn" id="win-max-btn" title="Maximize">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            </button>
-            <button class="win-control-btn close" id="win-close-btn" title="Close Session">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
         </div>
     </div>
     <div class="main-content" id="webview-container">

@@ -22,7 +22,7 @@ loadTools();
 
 console.log('[Atlas] Host HUD Initialized');
 const urlInput = document.getElementById('hud-url-input') as HTMLInputElement;
-const tabBar = document.getElementById('atlas-tab-bar') as HTMLElement;
+const tabBar = document.getElementById('atlas-tab-scroll-container') as HTMLElement;
 const webviewContainer = document.getElementById('webview-container') as HTMLElement;
 
 // Parse Domain/Port from URL params
