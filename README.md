@@ -18,6 +18,14 @@ Atlas is distributed as a standalone Windows executable.
 
 *Note: Your projects must be running on Node.js v18+.*
 
+### ⚠️ Troubleshooting Installation (IDE Terminals)
+If you installed Atlas while your IDE (like VS Code) was already open, the integrated terminal may not instantly recognize the `atlas` command because it caches old environment variables.
+
+To fix this, you can fully restart your IDE, OR run this command in your PowerShell terminal to hot-reload the `PATH`:
+```powershell
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+```
+
 ---
 
 ## 💻 Usage
