@@ -1,4 +1,5 @@
 #!/bin/bash
+export FORCE_COLOR=1
 export ELECTRON_RUN_AS_NODE=1
 export ATLAS_PACKAGED=true
 
