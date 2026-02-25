@@ -1,22 +1,9 @@
-/**
- * Atlas Engine — Network Interceptor
- * 
- * CDP-based request interception, domain masking, chaos injection,
- * response capture, and WebSocket proxying.
- * 
- * Extracted from: src/network/network-manager.ts
- * Uses: security-warden.ts (PII scanning), performance-tracker.ts (anomaly detection)
- * 
- * This is the core proxy engine. It intercepts every request from the
- * browser, rewrites domain-masked URLs to localhost, applies chaos
- * (stress testing), captures response bodies, and runs security scans.
- */
-
 import { Page, HTTPRequest } from 'puppeteer-core';
 import { URL } from 'url';
 import { Violation, NetworkRequest, ChaosConfig } from './state';
-import { scanForPII, maskPII, isInsecureCORS } from './security-warden';
 import { PerformanceTracker } from './performance-tracker';
+import { ChaosEngine } from './chaos-engine';
+import { SecurityScanner } from './security-scanner';
 
 // Re-export for compatibility
 export { NetworkRequest };
@@ -45,19 +32,19 @@ export function createNetworkInterceptor(
     const { domain, localPort } = config;
 
     // --- STATE ---
-    let currentSecurityMode: 'Standard' | 'Strict' | 'Offline' = 'Standard';
-    let stressConfig: ChaosConfig = { enabled: false, errorRate: 0, latencyRate: 0, dropRate: 0 };
     let lastNavPathname: string = '';
     let isCleanedUp = false;
 
     // Engine modules
     const performanceTracker = new PerformanceTracker();
+    const chaosEngine = new ChaosEngine();
+    const securityScanner = new SecurityScanner();
 
     // --- EXPOSED FUNCTIONS (Puppeteer bridge) ---
     const exposeControls = async () => {
         try {
             await page.exposeFunction('setSecurityMode', (mode: string) => {
-                currentSecurityMode = mode as 'Standard' | 'Strict' | 'Offline';
+                securityScanner.setMode(mode as 'Standard' | 'Strict' | 'Offline');
             });
         } catch (e) {
             // Already exposed - safe to ignore
@@ -73,7 +60,7 @@ export function createNetworkInterceptor(
 
         try {
             await page.exposeFunction('setStressConfig', (config: unknown) => {
-                stressConfig = config as ChaosConfig;
+                chaosEngine.setConfig(config as ChaosConfig);
             });
         } catch (e) {
             // Already exposed
@@ -142,32 +129,8 @@ export function createNetworkInterceptor(
         }
 
         // 1. Chaos / Stress Injection
-        if (stressConfig.enabled) {
-            if (stressConfig.dropRate > 0 && Math.random() * 100 < stressConfig.dropRate) {
-                await request.abort('failed');
-                return;
-            }
-            if (stressConfig.errorRate > 0 && Math.random() * 100 < stressConfig.errorRate) {
-                const stressViolation: Violation = {
-                    source: 'Stress Testing',
-                    message: `Stress 500 Error Injection on ${url.pathname}`,
-                    level: 2,
-                    timestamp: Date.now(),
-                    url: urlString
-                };
-                callbacks.onViolation(stressViolation);
-
-                await request.respond({
-                    status: 500,
-                    contentType: 'text/html',
-                    body: '<h1>500 Internal Server Error (Atlas Stress Injection)</h1><p>This error was intentionally injected by the Atlas Stress Engine.</p>'
-                });
-                return;
-            }
-            if (stressConfig.latencyRate > 0 && Math.random() * 100 < stressConfig.latencyRate) {
-                const delay = 2000 + Math.random() * 3000;
-                await new Promise(resolve => setTimeout(resolve, delay));
-            }
+        if (await chaosEngine.inject(request, callbacks.onViolation)) {
+            return;
         }
 
         // 2. Protocol pass-through
@@ -258,38 +221,30 @@ export function createNetworkInterceptor(
                     });
                 }
 
-                // Capture body for text responses
+                // Capture body and scan for PII
                 try {
                     const contentType = response.headers.get('content-type') || '';
                     if (contentType.includes('json') || contentType.includes('text') || contentType.includes('xml')) {
                         const str = Buffer.from(buffer).toString('utf-8');
 
                         if (str.length > 1000000) {
-                            // Skip PII scan on very large files (>1MB)
                             networkEvent.body = str.substring(0, 5000) + '... (Truncated Very Large File)';
                         } else {
                             networkEvent.body = str.length > 100000 ? str.substring(0, 100000) + '... (Truncated)' : str;
 
-                            // PII Detection
                             const isSamePageNav = request.isNavigationRequest() && isMainFrame && !isNewPage;
                             const isHtmlPage = contentType.includes('html');
-                            const leaks = isSamePageNav ? [] : scanForPII(str, isHtmlPage);
 
-                            if (leaks.length > 0) {
-                                callbacks.onLog(`[Atlas Security] 🎯 Found ${leaks.length} PII leaks in ${url.pathname} (${contentType})`);
-
-                                leaks.forEach(leak => {
-                                    // Audit fix: mask PII in violation messages
-                                    const maskedMatches = leak.matches.map(m => maskPII(m));
-                                    callbacks.onViolation({
-                                        source: 'Security Warden',
-                                        message: `PII Leak(${leak.type}) detected in ${url.pathname}: ${maskedMatches.join(', ')}`,
-                                        level: 2,
-                                        timestamp: Date.now(),
-                                        url: urlString
-                                    });
-                                });
-                            }
+                            securityScanner.scanResponse(
+                                url.pathname,
+                                urlString,
+                                str,
+                                contentType,
+                                isHtmlPage,
+                                isSamePageNav,
+                                callbacks.onViolation,
+                                callbacks.onLog
+                            );
                         }
                     } else {
                         networkEvent.body = `[Binary Data: ${contentType}]`;
@@ -318,19 +273,7 @@ export function createNetworkInterceptor(
                 }
 
                 // CORS strictness check
-                if (currentSecurityMode === 'Strict') {
-                    const acao = resHeaders['access-control-allow-origin'];
-                    if (isInsecureCORS(acao as string | undefined)) {
-                        delete resHeaders['access-control-allow-origin'];
-                        callbacks.onViolation({
-                            source: 'Security Warden',
-                            message: `Blocked insecure CORS wildcard(*) on ${url.pathname}`,
-                            level: 2,
-                            timestamp: Date.now(),
-                            url: urlString
-                        });
-                    }
-                }
+                securityScanner.checkCORS(url.pathname, urlString, resHeaders, callbacks.onViolation);
 
                 await request.respond({
                     status: response.status,
@@ -411,7 +354,6 @@ export function createNetworkInterceptor(
     let wsProxyPort = 0;
 
     const initWsProxy = async () => {
-        console.log(`[Atlas] [DEBUG] initWsProxy start...`);
         const { WebSocketServer, WebSocket } = await import('ws');
 
         return new Promise<void>((resolve) => {
@@ -419,7 +361,6 @@ export function createNetworkInterceptor(
 
             wsProxyServer.on('listening', () => {
                 wsProxyPort = (wsProxyServer?.address() as import('ws').AddressInfo)?.port || 0;
-                console.log(`[Atlas] [DEBUG] WS Proxy listening on port: ${wsProxyPort}`);
                 resolve();
             });
 
@@ -443,7 +384,7 @@ export function createNetworkInterceptor(
                     return;
                 }
 
-                if (currentSecurityMode === 'Offline') { clientWs.close(); return; }
+                if (securityScanner.shouldBlockWebSocket()) { clientWs.close(); return; }
 
                 const targetWs = new WebSocket(targetUrl);
 
@@ -454,6 +395,7 @@ export function createNetworkInterceptor(
 
                 const sendMessage = (ws: import('ws').WebSocket, data: unknown, isBinary: boolean) => {
                     let latency = 0;
+                    const stressConfig = chaosEngine.getConfig();
                     if (stressConfig.enabled) {
                         if (stressConfig.dropRate > 0 && Math.random() * 100 < stressConfig.dropRate) return;
                         if (stressConfig.latencyRate > 0 && Math.random() * 100 < stressConfig.latencyRate) {
@@ -477,13 +419,9 @@ export function createNetworkInterceptor(
 
     // --- PUBLIC API ---
     const init = async () => {
-        console.log(`[Atlas] [DEBUG] netInterceptor.init start...`);
         await initWsProxy();
-        console.log(`[Atlas] [DEBUG] netInterceptor.init: WS Proxy ready.`);
         await exposeControls();
-        console.log(`[Atlas] [DEBUG] netInterceptor.init: Controls exposed.`);
         await attach(page);
-        console.log(`[Atlas] [DEBUG] netInterceptor.init complete.`);
     };
 
     const cleanup = async () => {
@@ -496,8 +434,8 @@ export function createNetworkInterceptor(
         }
     };
 
-    const setSecurityMode = (mode: 'Standard' | 'Strict' | 'Offline') => { currentSecurityMode = mode; };
-    const setStressConfig = (config: ChaosConfig) => { stressConfig = config; };
+    const setSecurityMode = (mode: 'Standard' | 'Strict' | 'Offline') => { securityScanner.setMode(mode); };
+    const setStressConfig = (config: ChaosConfig) => { chaosEngine.setConfig(config); };
     const getRequestHistory = () => requestLogHistory;
     const getViolations = () => currentPageViolations;
 
