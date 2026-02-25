@@ -16,7 +16,7 @@ import { createPipeline } from '../pipeline/pipeline';
 // UI Suite (Structured)
 
 
-export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = []): Promise<{
+export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = [], projectName: string = ''): Promise<{
     broadcastLog: (msg: string) => void,
     close: () => Promise<void>,
     process: ChildProcess,
@@ -24,70 +24,129 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 }> {
     console.log('[Atlas] Launching Browser Orchestrator...');
     const reportManager = new ReportManager(projectPath, `localhost:${localPort}`);
+    let browser: any;
+    let electronProcess: ChildProcess;
+    let electronDebugPort: number;
+
+    try {
+        const electronResult = await launchElectron(domain, localPort, projectName);
+        electronProcess = electronResult.electronProcess;
+        electronDebugPort = electronResult.debugPort;
+
+        browser = await puppeteer.connect({
+            browserWSEndpoint: electronResult.wsEndpoint,
+            defaultViewport: null
+        });
+        console.log(`[Atlas] Connected to Electron via CDP`);
+    } catch (e) {
+        console.error(`\n\x1b[31m[CRITICAL] Failed to launch Electron!\x1b[0m`);
+        console.error((e as Error).message);
+        process.exit(1);
+    }
+
     const networkManagers: { cleanup: () => Promise<void> }[] = [];
     let page: Page | null = null;
+    const activePages = new Set<Page>();
+    const pageToTabId = new Map<Page, string>();
 
     // --- Pipeline (Bloodline): Event Bus ---
     const pipeline = createPipeline();
 
-    // Current page local state (for HUD display)
-    let currentPageViolations: Violation[] = [];
-    const currentPageRequests: NetworkRequest[] = [];
+    // Violations accumulate and sync to active tab via syncHUD
+    let currentViolations: { source: string, message: string, level: number, timestamp: number, url: string }[] = [];
 
     const syncHUD = async () => {
         try {
-            await mainWindow.evaluate((vc, vils, reqs) => {
+            checkTabSwitch();
+            const vils = currentViolations.slice();
+            await mainWindow.evaluate((count: number, v: any[]) => {
                 // @ts-ignore
-                if (window.updateViolationCount) window.updateViolationCount(vc);
+                if (window.updateViolationCount) window.updateViolationCount(count);
                 // @ts-ignore
-                if (window.updateViolations) window.updateViolations(vils);
-                // @ts-ignore
-                if (window.updateTraffic) window.updateTraffic(reqs);
-            }, currentPageViolations.length, currentPageViolations, currentPageRequests);
-        } catch (e) { }
+                if (window.updateViolations) window.updateViolations(v);
+            }, vils.length, vils);
+        } catch (e) {
+            console.error('[Atlas] syncHUD error:', (e as Error).message);
+        }
     };
 
     // Wire: violations → report manager & Host HUD
     pipeline.on('violation', async (v) => {
         try {
             await reportManager.logViolation(v);
-            currentPageViolations.push(v);
+            currentViolations.push({
+                source: String(v.source || ''),
+                message: String(v.message || ''),
+                level: Number(v.level || 0),
+                timestamp: Number(v.timestamp || Date.now()),
+                url: String(v.url || '')
+            });
             await syncHUD();
-        } catch (e) { }
+        } catch (e) {
+            console.error('[Atlas] violation handler error:', (e as Error).message);
+        }
     });
 
-    pipeline.on('network:request', async (req) => {
-        currentPageRequests.push(req);
-        if (currentPageRequests.length > 50) currentPageRequests.shift();
-        await syncHUD();
-    });
-
-    pipeline.on('console:log', async (entry) => {
+    // Network requests: push INDIVIDUALLY to renderer (per-tab store accumulates them)
+    // This ensures each request goes into whichever tab is active at that moment
+    // Network requests: push INDIVIDUALLY to renderer
+    pipeline.on('network:request', async (req: any) => {
         try {
-            await mainWindow.evaluate((e) => {
+            const r = {
+                id: String(req.id || Math.random().toString(36).substr(2, 8)),
+                url: String(req.url || ''),
+                method: String(req.method || 'GET'),
+                status: Number(req.status || 0),
+                type: String(req.type || 'Other'),
+                size: Number(req.size || 0),
+                time: Number(req.time || 0),
+                timestamp: Date.now()
+            };
+            await mainWindow.evaluate((request: any, tId: string) => {
                 // @ts-ignore
-                if (window.updateConsole) window.updateConsole(e);
-            }, entry);
+                if (window.addNetworkRequest) window.addNetworkRequest(request, tId);
+            }, r, req.tabId || '');
         } catch (e) { }
     });
 
-    pipeline.on('storage:metrics', async (m) => {
+    pipeline.on('console:log', async (entry: any) => {
         try {
-            await mainWindow.evaluate((metrics) => {
+            await mainWindow.evaluate((e: any, tId: string) => {
                 // @ts-ignore
-                if (window.updateStorage) window.updateStorage(metrics);
-            }, m);
+                if (window.updateConsole) window.updateConsole(e, tId);
+            }, entry, entry.tabId || '');
         } catch (e) { }
     });
+
+    pipeline.on('storage:metrics', async (m: any) => {
+        try {
+            await mainWindow.evaluate((metrics: any, tId: string) => {
+                // @ts-ignore
+                if (window.updateStorage) window.updateStorage(metrics, tId);
+            }, m, m.tabId || '');
+        } catch (e) { }
+    });
+
+    // When renderer switches tabs it sets a global flag in electron-main (via IPC)
+    // We poll it on every syncHUD tick and clear HUD data when a tab switch is detected
+    let lastKnownTabKey = '';
+    const checkTabSwitch = () => {
+        const currentKey = String((global as any).__atlasActiveTabUrl || '');
+        if (currentKey && currentKey !== lastKnownTabKey) {
+            lastKnownTabKey = currentKey;
+            currentViolations = [];
+        }
+    };
 
     // Link Accessibility Cache (to avoid re-checking every 10s)
     const linkStatusCache = new Map<string, { ok: boolean, timestamp: number }>();
 
     // Helper to scan for links and validate them
-    const scanLinks = async () => {
-        if (!page || page.isClosed()) return;
+    const scanLinks = async (targetPage: Page) => {
+        if (!targetPage || targetPage.isClosed()) return;
+        const tId = pageToTabId.get(targetPage) || '';
         try {
-            const rawLinks = await page.evaluate(() => {
+            const rawLinks = await targetPage.evaluate(() => {
                 return Array.from(document.querySelectorAll('a[href]'))
                     .map(a => ({
                         href: (a as HTMLAnchorElement).href,
@@ -131,7 +190,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                             message: `Broken Link detected: ${link.href} (Status: ${res.status})`,
                             level: 1, // WARN
                             timestamp: Date.now(),
-                            url: page.url()
+                            url: targetPage.url()
                         });
                     }
                 } catch (e) {
@@ -141,36 +200,44 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                         message: `Broken Link detected: ${link.href} (Connection Failed)`,
                         level: 1, // WARN
                         timestamp: Date.now(),
-                        url: page.url()
+                        url: targetPage.url()
                     });
                 }
             }
 
-            await mainWindow.evaluate((ls) => {
+            await mainWindow.evaluate((ls: any[], tabId: string) => {
                 // @ts-ignore
-                if (window.updateLinks) window.updateLinks(ls);
-            }, accessibleLinks);
+                if (window.updateLinks) window.updateLinks(ls, tabId);
+            }, accessibleLinks, tId);
         } catch (e) { }
     };
 
+    const scanAllLinks = async () => {
+        for (const p of activePages) {
+            if (!p.isClosed()) await scanLinks(p);
+        }
+    };
+
     // Trigger link scan on navigation and periodically
-    pipeline.on('navigation', async (entry) => {
+    pipeline.on('navigation', async (entry: any) => {
         try {
             await reportManager.logNavigation(entry.url);
 
-            // Reset HUD state on navigation
-            currentPageViolations = [];
-            currentPageRequests.length = 0;
-            // Clear link cache on navigation to new page? 
-            // Better keep it for session global but maybe clear on domain change?
-            // For now keep it simple.
+            // Reset violations on navigation
+            currentViolations = [];
             await syncHUD();
 
-            setTimeout(scanLinks, 2000); // Wait for page load
+            // Find the page for this navigation to trigger scan
+            for (const p of activePages) {
+                if (p.url() === entry.url) {
+                    setTimeout(() => scanLinks(p), 2000);
+                    break;
+                }
+            }
         } catch (e) { }
     });
 
-    setInterval(scanLinks, 10000); // Periodic refresh
+    setInterval(scanAllLinks, 30000); // Periodic refresh all pages Every 30s
 
     // Helper to collect storage metrics
     const collectStorage = async () => {
@@ -206,26 +273,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     setInterval(collectStorage, 5000); // Periodic storage refresh
 
-    // 1. Launch Electron (replaces Chrome)
-    let electronProcess: ChildProcess;
-    let electronDebugPort: number;
-    try {
-        const electronResult = await launchElectron(domain, localPort);
-        electronProcess = electronResult.electronProcess;
-        electronDebugPort = electronResult.debugPort;
-
-        // Connect puppeteer-core to Electron's CDP endpoint
-        var browser = await puppeteer.connect({
-            browserWSEndpoint: electronResult.wsEndpoint,
-            defaultViewport: null
-        });
-        console.log(`[Atlas] Connected to Electron via CDP`);
-    } catch (e) {
-        console.error(`\n\x1b[31m[CRITICAL] Failed to launch Electron!\x1b[0m`);
-        console.error((e as Error).message);
-        process.exit(1);
-    }
-
     // 2. Check FFmpeg Availability (Required for Session Recording)
     let ffmpegAvailable = false;
     try {
@@ -254,10 +301,18 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
     await mainWindow.setUserAgent(ua);
 
+    // Expose a function in the HOST WINDOW JS context so tab-manager.ts can call it.
+    // When user switches tabs, this clears HUD data so old tab's data is not shown for the new tab.
+    // exposeFunction creates a bridge: renderer JS → Node.js (browser.ts) — the correct pattern.
+    await mainWindow.exposeFunction('__atlasTabSwitched', () => {
+        currentViolations = [];
+        console.log('[Atlas] Tab switched — HUD violations cleared.');
+    }).catch(() => { }); // Ignore if already exposed (hot reload)
+
     console.log('[Atlas] Hub attached. Waiting for guest viewport...');
 
     // Wait for the webview target to be created by index.html
-    const webviewTarget = await browser.waitForTarget(t => {
+    const webviewTarget = await browser.waitForTarget((t: any) => {
         const type = t.type();
         const url = t.url();
         // Log all targets to help debug why the webview isn't being caught
@@ -265,7 +320,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             console.log(`[Atlas] Scanning target: ${type} (${url})`);
         }
         return type === 'webview' || (type === 'other' && url === 'about:blank');
-    }, { timeout: 15000 }).catch(err => {
+    }, { timeout: 15000 }).catch((err: any) => {
         console.error('[Atlas] FATAL: Timeout waiting for Guest page. Is the HUD visible?');
         throw err;
     });
@@ -285,14 +340,34 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     // Generic Tool Injection
     const setupPage = async (targetPage: Page) => {
+        if (activePages.has(targetPage)) return;
+        activePages.add(targetPage);
+
         console.log(`[Atlas] [DEBUG] setupPage start for: ${targetPage.url()}`);
+
+        // Fetch the tabId injected by Electron
+        let tabId = '';
+        try {
+            // Wait up to 2s for identity to be injected
+            for (let i = 0; i < 20; i++) {
+                tabId = await targetPage.evaluate(() => (window as any).__atlasTabId) || '';
+                if (tabId) break;
+                await new Promise(r => setTimeout(r, 100));
+            }
+        } catch (e) { }
+
+        if (tabId) {
+            pageToTabId.set(targetPage, tabId);
+            console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}`);
+        }
+
         // 1. Network Interceptor via Engine (wired through Pipeline)
         await targetPage.setCacheEnabled(false);
         const netInterceptor = createNetworkInterceptor(targetPage, { domain, localPort }, {
-            onViolation: (v: Violation) => pipeline.emit('violation', v),
-            onNetworkEvent: (r: NetworkRequest) => pipeline.emit('network:request', r),
+            onViolation: (v: Violation) => pipeline.emit('violation', { ...v, tabId }),
+            onNetworkEvent: (r: NetworkRequest) => pipeline.emit('network:request', { ...r, tabId }),
             onLog: logger,
-            onNavigation: (url: string) => pipeline.emit('navigation', { url, timestamp: Date.now() })
+            onNavigation: (url: string) => pipeline.emit('navigation', { url, timestamp: Date.now(), tabId })
         });
         console.log(`[Atlas] [DEBUG] Initializing netInterceptor...`);
         await netInterceptor.init();
@@ -319,6 +394,17 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 timestamp: Date.now(),
                 stack: ''
             });
+
+            // Console warnings count as low-severity violations (they are real bugs)
+            if (level === 'warn') {
+                pipeline.emit('violation', {
+                    source: 'Console',
+                    message: `[WARN] ${message}`,
+                    level: 1, // WARNING severity
+                    timestamp: Date.now(),
+                    url: targetPage.url()
+                });
+            }
         });
 
         targetPage.on('pageerror', (err: any) => {
@@ -431,6 +517,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // 5. Initial Log for this page
         await logNav();
 
+        // Start link scanning for this specific page
+        setTimeout(() => scanLinks(targetPage), 3000);
+
         // 6. Browser Bridge Functions (Close + Navigation)
         const bridgeFunctions: Record<string, Function> = {
             atlasCloseBrowser: async () => {
@@ -469,8 +558,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             setStressConfig: async (config: ChaosConfig) => {
                 console.log(`[Atlas] Stress testing config updated`, config);
                 pipeline.emit('action:stress', config);
-            }
+            },
+            atlasGetTabId: async () => tabId
         };
+
         console.log(`[Atlas] [DEBUG] Exposing bridge functions to guest...`);
         for (const [name, fn] of Object.entries(bridgeFunctions)) {
             try {
@@ -483,33 +574,30 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     };
 
     // 4. Attach Modules (Initial Page)
-    await setupPage(page);
-
+    if (page) await setupPage(page);
 
     // 3. Navigation Lock & Multi-Tab Support
-    browser.on('targetcreated', async (target) => {
+    browser.on('targetcreated', async (target: any) => {
         const url = target.url();
         const type = target.type();
-        if ((type === 'page' || type === 'webview') && !url.includes('index.html')) {
-            console.log(`[Atlas] New target created (${type}): ${url}`);
+        if ((type === 'page' || type === 'webview' || type === 'other') && !url.includes('index.html') && url !== 'about:blank') {
             const newPage = await target.page();
-            if (newPage && newPage !== page) {
+            if (newPage) {
                 try {
                     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
                     await newPage.setUserAgent(ua);
-
-                    // Setup isolated tools for new tab
                     await setupPage(newPage);
-                    console.log(`[Atlas] [DEBUG] Updating global page reference to: ${newPage.url()}`);
                     page = newPage;
-
-
-
-                    // REMOVED: Force Reload (Fixed Double Load)
-                } catch (e) {
-                    console.error("Failed to setup new page", e);
-                }
+                } catch (e) { }
             }
+        }
+    });
+
+    browser.on('targetdestroyed', async (target: any) => {
+        const p = await target.page();
+        if (p) {
+            activePages.delete(p);
+            pageToTabId.delete(p);
         }
     });
 
@@ -530,13 +618,13 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             if (i === 0) console.log(`[Atlas] Navigating to ${url}...`);
             else console.log(`[Atlas] Navigation retry ${i}/${maxRetries} to ${url}...`);
 
-            await page.goto(url, {
+            await page!.goto(url, {
                 waitUntil: 'domcontentloaded',
                 timeout: 30000
             });
 
             // Explicitly log the starting page to ensure it's ALWAYS Step 1
-            await reportManager.logNavigation(page.url());
+            await reportManager.logNavigation(page!.url());
             break; // Success!
 
         } catch (e) {
@@ -550,7 +638,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
                 // Re-find the webview target robustly
                 const targets = await browser.targets();
-                const newWebview = targets.find(t => {
+                const newWebview = targets.find((t: any) => {
                     const type = t.type();
                     const url = t.url();
                     return type === 'webview' || (type === 'other' && url === 'about:blank') || (type === 'page' && !url.includes('index.html'));
@@ -560,9 +648,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                     const newGuestPage = await newWebview.page();
                     if (newGuestPage) {
                         page = newGuestPage;
-                        console.log(`[Atlas] [DEBUG] Re-attached to fresh guest page: ${page.url()}`);
+                        console.log(`[Atlas] [DEBUG] Re-attached to fresh guest page: ${newGuestPage.url()}`);
                         // Ensure tools are set up on this fresh page (if not already done by targetcreated)
-                        await setupPage(page);
+                        await setupPage(newGuestPage);
                     }
                 }
             } else if (i === maxRetries - 1) {

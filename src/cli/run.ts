@@ -240,7 +240,8 @@ export async function run() {
         projectPath,
         (msg: string) => logToTerminal(msg),
         () => { performCleanup(); },
-        atlasConfig.disabledTabs || []
+        atlasConfig.disabledTabs || [],
+        projectName
     );
 
     performCleanup = async () => {

@@ -11,3 +11,12 @@ contextBridge.exposeInMainWorld('atlasNativeRecorder', {
     saveChunk: (sessionId: string, buffer: ArrayBuffer) => ipcRenderer.send('save-video-chunk', { sessionId, buffer }),
     finalize: (sessionId: string) => ipcRenderer.invoke('finalize-video', { sessionId })
 });
+
+// Forward main-process "open new tab" requests to the renderer's TabManager
+// Also lets renderer report back which tab URL it just activated
+contextBridge.exposeInMainWorld('atlasTabBridge', {
+    onOpenTab: (cb: (url: string) => void) => {
+        ipcRenderer.on('open-as-tab', (_event, url: string) => cb(url));
+    },
+    reportActiveTab: (url: string) => ipcRenderer.send('active-tab-url', url)
+});

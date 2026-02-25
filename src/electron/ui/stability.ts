@@ -100,7 +100,8 @@
 
             const atlas = (window as any).Atlas;
             const violations: Violation[] = (atlas && atlas.violations) || [];
-            const stabilityEvents = violations.filter(v => ['Runtime', 'Resource', 'Promise', 'Network', 'Stress Testing', 'Performance'].includes(v.source));
+            // Show all violation sources that indicate real problems (includes console warnings)
+            const stabilityEvents = violations.filter(v => ['Runtime', 'Resource', 'Promise', 'Network', 'Stress Testing', 'Performance', 'Console', 'Scalability'].includes(v.source));
 
             if (stabilityEvents.length === 0) {
                 monitor.innerHTML = '<div style="color:#52525b; text-align:center; padding-top:60px; font-style:italic; font-size:12px; font-family:\'Inter\',sans-serif;">No stability violations detected.</div>';

@@ -15,6 +15,7 @@ export interface Violation {
     url: string;
     metadata?: Record<string, unknown>;
     metrics?: { loadTime: number; storage: number };
+    tabId?: string;
 }
 
 // --- Console ---
@@ -23,6 +24,7 @@ export interface ConsoleEntry {
     message: string;
     timestamp: number;
     stack: string;
+    tabId?: string;
 }
 
 // --- Network ---
@@ -39,6 +41,7 @@ export interface NetworkRequest {
     resHeaders: Record<string, string>;
     body: string;
     _page: string;
+    tabId?: string;
 }
 
 // --- Navigation ---
@@ -49,6 +52,7 @@ export interface NavigationEntry {
         loadTime: number;
         storage: number;
     };
+    tabId?: string;
 }
 
 // --- Page Info (from Collectors) ---

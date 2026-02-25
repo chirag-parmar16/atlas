@@ -17,6 +17,7 @@ import fs from 'fs';
 
 // Get the debug port from environment variable (avoids Electron CLI parsing conflicts)
 const debugPort = parseInt(process.env.ATLAS_DEBUG_PORT || '0', 10);
+const projectName = process.env.ATLAS_PROJECT_NAME || '';
 
 // Enable remote debugging BEFORE app is ready
 if (debugPort > 0) {
@@ -49,7 +50,8 @@ app.on('ready', () => {
         },
         // Appearance
         backgroundColor: '#111111',
-        title: 'Atlas',
+        title: projectName ? `Atlas - ${projectName}` : 'Atlas',
+        icon: path.join(__dirname, 'assets', 'icon.png'),
         // Start in maximized state
         autoHideMenuBar: true,
     });
@@ -63,6 +65,18 @@ app.on('ready', () => {
 
     // Remove the application menu
     mainWindow.setMenu(null);
+
+    // --- INTERCEPT _blank LINKS: Route new windows as tabs in renderer ---
+    // When any webview inside Atlas tries to open a new window (target="_blank"),
+    // we intercept it in the main process (the ONLY reliable place) and tell
+    // the renderer to open it as a new tab instead.
+    mainWindow.webContents.on('did-attach-webview', (_event: any, webviewContents: any) => {
+        webviewContents.setWindowOpenHandler(({ url }: { url: string }) => {
+            // Tell renderer to open as a new tab
+            mainWindow?.webContents.send('open-as-tab', url);
+            return { action: 'deny' }; // Block native window creation
+        });
+    });
 
     // IPC Handlers for Window Controls
     ipcMain.on('window-minimize', () => {
@@ -79,6 +93,12 @@ app.on('ready', () => {
 
     ipcMain.on('window-close', () => {
         mainWindow?.close();
+    });
+
+    // Renderer reports which tab URL is currently active
+    // browser.ts reads this via a global so syncHUD can filter correctly
+    ipcMain.on('active-tab-url', (_event, url: string) => {
+        (global as any).__atlasActiveTabUrl = url;
     });
 
     // --- NATIVE SCREEN RECORDING IPC ---
@@ -196,7 +216,7 @@ app.on('ready', () => {
     console.log(`[Atlas] Loading Host HUD from: ${indexPath}`);
 
     // Load local index.html with identity params
-    mainWindow.loadURL(`${indexUrl}?domain=${encodeURIComponent(domain)}&port=${port}`);
+    mainWindow.loadURL(`${indexUrl}?domain=${encodeURIComponent(domain)}&port=${port}&projectName=${encodeURIComponent(projectName)}`);
 
     // Handle window close
     mainWindow.on('closed', () => {

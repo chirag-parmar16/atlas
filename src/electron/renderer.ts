@@ -1,4 +1,5 @@
 import { pill, pillCount, menu } from './setup-api';
+import { TabManager } from './tab-manager';
 
 // Dynamically import tools to ensure window.Atlas is initialized first
 async function loadTools() {
@@ -16,38 +17,55 @@ async function loadTools() {
 loadTools();
 
 console.log('[Atlas] Host HUD Initialized');
-const webview = document.getElementById('project-view') as any;
 const urlInput = document.getElementById('hud-url-input') as HTMLInputElement;
-
-webview.addEventListener('dom-ready', () => {
-    console.log('[Atlas] Guest webview process ready.');
-});
-const tagDomain = document.getElementById('tag-domain');
-const tagPort = document.getElementById('tag-port');
+const tabBar = document.getElementById('atlas-tab-bar') as HTMLElement;
+const webviewContainer = document.getElementById('webview-container') as HTMLElement;
 
 // Parse Domain/Port from URL params
+const tagDomain = document.getElementById('tag-domain');
+const tagPort = document.getElementById('tag-port');
 const params = new URLSearchParams(window.location.search);
-if (params.has('domain') && tagDomain) tagDomain.textContent = params.get('domain');
-if (params.has('port') && tagPort) tagPort.textContent = ':' + params.get('port');
+const initialDomain = params.get('domain') || '';
+const initialPort = params.get('port') || '';
+const projectName = params.get('projectName') || '';
+const initialUrl = initialPort ? `http://localhost:${initialPort}` : 'about:blank';
 
-// Window Control Handlers
-(document.getElementById('win-min-btn') as HTMLElement).onclick = () => (window as any).atlasControls.minimize();
-(document.getElementById('win-max-btn') as HTMLElement).onclick = () => (window as any).atlasControls.maximize();
-(document.getElementById('win-close-btn') as HTMLElement).onclick = () => (window as any).atlasControls.close();
+if (params.has('domain') && tagDomain) tagDomain.textContent = initialDomain;
+if (params.has('port') && tagPort) tagPort.textContent = ':' + initialPort;
 
-// Navigation Handlers
-(document.getElementById('hud-back-btn') as HTMLElement).onclick = () => webview.goBack();
-(document.getElementById('hud-fwd-btn') as HTMLElement).onclick = () => webview.goForward();
+// Apply Project Identity
+if (projectName) {
+    const fullTitle = `Atlas - ${projectName}`;
+    document.title = fullTitle;
 
-// URL Input Handler
-urlInput.onkeydown = (e) => {
-    if (e.key === 'Enter') {
-        let url = urlInput.value.trim();
-        if (!url.startsWith('http')) url = 'https://' + url;
-        webview.src = url;
-        urlInput.blur();
-    }
-};
+    const hudLabel = document.getElementById('hud-atlas-label');
+    if (hudLabel) hudLabel.textContent = fullTitle.toUpperCase();
+}
+
+// Initialize the Tab Manager with URL bar sync
+const tabManager = new TabManager(
+    webviewContainer,
+    tabBar,
+    // onActivate: sync the URL bar to the active tab
+    (tab) => {
+        urlInput.value = formatDisplayURL(tab.url);
+    },
+    // onClose
+    (_tab) => { }
+);
+
+// Create the initial tab pointing to the proxied project
+tabManager.createTab(initialUrl);
+
+// Expose tabManager globally so extras.ts can reach the active webview
+(window as any)._atlasTabManager = tabManager;
+
+// Listen for main-process new-window interceptions (target="_blank" links)
+// Main process blocks the native new window and tells us to open it as a tab instead
+(window as any).atlasTabBridge?.onOpenTab((url: string) => {
+    console.log(`[Atlas] Opening _blank link as tab: ${url}`);
+    tabManager.createTab(url);
+});
 
 // URL Formatter for Domain Masking
 function formatDisplayURL(rawUrl: string) {
@@ -65,39 +83,25 @@ function formatDisplayURL(rawUrl: string) {
     return display;
 }
 
-// Sync URL on navigation
-webview.addEventListener('did-start-navigation', (e: any) => {
-    if (e.isMainFrame) {
-        urlInput.value = formatDisplayURL(e.url);
-        if (e.url !== 'about:blank') {
-            webview.style.opacity = '1';
-        }
+// Window Control Handlers
+(document.getElementById('win-min-btn') as HTMLElement).onclick = () => (window as any).atlasControls.minimize();
+(document.getElementById('win-max-btn') as HTMLElement).onclick = () => (window as any).atlasControls.maximize();
+(document.getElementById('win-close-btn') as HTMLElement).onclick = () => (window as any).atlasControls.close();
+
+// Navigation Handlers
+(document.getElementById('hud-back-btn') as HTMLElement).onclick = () => tabManager.goBack();
+(document.getElementById('hud-fwd-btn') as HTMLElement).onclick = () => tabManager.goForward();
+
+// New Tab Button
+document.getElementById('atlas-new-tab-btn')!.onclick = () => tabManager.createTab('about:blank');
+
+// URL Input Handler
+urlInput.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+        tabManager.navigate(urlInput.value.trim());
+        urlInput.blur();
     }
-});
-
-webview.addEventListener('dom-ready', () => {
-    if (webview.getURL() !== 'about:blank') {
-        webview.style.opacity = '1';
-    }
-});
-
-webview.addEventListener('did-finish-load', () => {
-    if (webview.getURL() !== 'about:blank') {
-        webview.style.opacity = '1';
-    }
-});
-
-webview.addEventListener('did-navigate', (e: any) => {
-    urlInput.value = formatDisplayURL(e.url);
-    if (e.url !== 'about:blank') {
-        webview.style.opacity = '1';
-    }
-});
-
-webview.addEventListener('did-navigate-in-page', (e: any) => {
-    urlInput.value = formatDisplayURL(e.url);
-});
-
+};
 // --- RECORDER UI LOGIC ---
 let recordingStartTime = 0;
 let recordingInterval: any = null;

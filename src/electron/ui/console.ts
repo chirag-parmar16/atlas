@@ -54,6 +54,12 @@
         throttledRender();
     });
 
+    // Tab switch: clear console and re-render (new tab's logs will be re-emitted)
+    atlas.on('consoleCleared', () => {
+        logs.length = 0;
+        throttledRender();
+    });
+
     const renderLogs = () => {
         if (!listEl) return;
 

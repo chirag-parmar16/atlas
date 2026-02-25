@@ -126,11 +126,134 @@ body {
 
 /* Content */
 .main-content {
-    flex: 1;
+    /* Explicit height = 100vh minus HUD (40px) minus Tab Bar (32px) */
+    height: calc(100vh - 72px);
+    min-height: 0;
     background: #000;
     position: relative;
     overflow: hidden;
+    flex: 1; /* Fallback */
 }
+
+/* --- TAB BAR --- */
+#atlas-tab-bar {
+    height: 32px;
+    background: rgba(9, 9, 11, 0.98);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 2px;
+    padding: 0 4px;
+    -webkit-app-region: no-drag;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+#atlas-tab-bar::-webkit-scrollbar { height: 0; }
+
+.atlas-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+    min-width: 80px;
+    max-width: 180px;
+    flex-shrink: 0;
+    transition: background 0.15s;
+    color: #71717a;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid transparent;
+}
+
+.atlas-tab:hover {
+    background: rgba(255,255,255,0.05);
+    color: #d4d4d8;
+}
+
+.atlas-tab.active {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    border-color: rgba(255,255,255,0.1);
+}
+
+.atlas-tab-favicon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: #52525b;
+}
+
+.atlas-tab.active .atlas-tab-favicon { color: #3b82f6; }
+
+.atlas-tab-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.atlas-tab-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #52525b;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: all 0.15s;
+    padding: 0;
+}
+
+.atlas-tab:hover .atlas-tab-close,
+.atlas-tab.active .atlas-tab-close { opacity: 1; }
+.atlas-tab-close:hover { background: rgba(239,68,68,0.2); color: #ef4444; }
+
+#atlas-new-tab-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: #52525b;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    margin-left: 2px;
+}
+#atlas-new-tab-btn:hover { background: rgba(255,255,255,0.06); color: #d4d4d8; }
+
+/* Webview stack inside container */
+.atlas-webview {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    border: none;
+    outline: none;
+    /* Use visibility:hidden NOT display:none — display:none gives Electron a 0x0 viewport */
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.atlas-webview.active-tab {
+    visibility: visible;
+    pointer-events: auto;
+}
+
 webview {
     width: 100%;
     height: 100%;
