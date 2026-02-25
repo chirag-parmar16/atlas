@@ -1,5 +1,5 @@
-import puppeteer, { Page } from 'puppeteer-core';
-import { NetworkRequest, Violation, ChaosConfig } from '../engine/state';
+import puppeteer, { Page, Browser, Target } from 'puppeteer-core';
+import { NetworkRequest, Violation, ChaosConfig, ConsoleEntry, StorageMetrics } from '../engine/state';
 import { launchElectron, killElectron } from '../electron/electron-launcher';
 import { ChildProcess } from 'child_process';
 import path from 'path';
@@ -13,6 +13,10 @@ import { ReportManager } from '../engine/report-manager';
 // Pipeline (Bloodline)
 import { createPipeline } from '../pipeline/pipeline';
 
+// Collectors (Eyes & Ears)
+import { startStorageMetricsCollector } from '../collectors/storage-metrics';
+import { startLinkScanner, scanLinksForPage } from '../collectors/link-scanner';
+
 // Pipeline Event Types
 export interface PipelineEventPayload {
     'violation': Violation;
@@ -24,8 +28,8 @@ export interface PipelineEventPayload {
         sessionStorageSize: number;
         cookieSize: number;
         totalTransfer: number;
-        resources: any[];
-        breakdown: any;
+        resources: Record<string, unknown>[];
+        breakdown: Record<string, number>;
         tabId?: string;
     };
     'action:security-mode': string;
@@ -44,7 +48,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 }> {
     console.log('[Atlas] Launching Browser Orchestrator...');
     const reportManager = new ReportManager(projectPath, `localhost:${localPort}`);
-    let browser: any;
+    let browser: Browser;
     let electronProcess: ChildProcess;
     let electronDebugPort: number;
 
@@ -64,6 +68,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         process.exit(1);
     }
 
+    const allPages = await browser.pages();
+    const mainWindow = allPages[0];
+
     const networkManagers: { cleanup: () => Promise<void> }[] = [];
     let page: Page | null = null;
     const activePages = new Set<Page>();
@@ -79,7 +86,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         try {
             checkTabSwitch();
             const vils = currentViolations.slice();
-            await mainWindow.evaluate((count: number, v: any[]) => {
+            await mainWindow.evaluate((count: number, v: Record<string, unknown>[]) => {
                 // @ts-ignore
                 if (window.updateViolationCount) window.updateViolationCount(count);
                 // @ts-ignore
@@ -110,7 +117,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // Network requests: push INDIVIDUALLY to renderer (per-tab store accumulates them)
     // This ensures each request goes into whichever tab is active at that moment
     // Network requests: push INDIVIDUALLY to renderer
-    pipeline.on('network:request', async (req: any) => {
+    pipeline.on('network:request', async (req: Partial<NetworkRequest> & { tabId?: string }) => {
         try {
             const r = {
                 id: String(req.id || Math.random().toString(36).substr(2, 8)),
@@ -122,7 +129,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 time: Number(req.time || 0),
                 timestamp: Date.now()
             };
-            await mainWindow.evaluate((request: any, tId: string) => {
+            await mainWindow.evaluate((request: Partial<NetworkRequest>, tId: string) => {
                 // @ts-ignore
                 if (window.addNetworkRequest) window.addNetworkRequest(request, tId);
             }, r, req.tabId || '');
@@ -131,9 +138,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         }
     });
 
-    pipeline.on('console:log', async (entry: any) => {
+    pipeline.on('console:log', async (entry: Partial<ConsoleEntry> & { tabId?: string }) => {
         try {
-            await mainWindow.evaluate((e: any, tId: string) => {
+            await mainWindow.evaluate((e: Partial<ConsoleEntry>, tId: string) => {
                 // @ts-ignore
                 if (window.updateConsole) window.updateConsole(e, tId);
             }, entry, entry.tabId || '');
@@ -142,9 +149,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         }
     });
 
-    pipeline.on('storage:metrics', async (m: any) => {
+    pipeline.on('storage:metrics', async (m: StorageMetrics & { tabId?: string }) => {
         try {
-            await mainWindow.evaluate((metrics: any, tId: string) => {
+            await mainWindow.evaluate((metrics: StorageMetrics, tId: string) => {
                 // @ts-ignore
                 if (window.updateStorage) window.updateStorage(metrics, tId);
             }, m, m.tabId || '');
@@ -157,158 +164,42 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     // We poll it on every syncHUD tick and clear HUD data when a tab switch is detected
     let lastKnownTabKey = '';
     const checkTabSwitch = () => {
-        const currentKey = String((global as any).__atlasActiveTabUrl || '');
+        const currentKey = String((global as { __atlasActiveTabUrl?: string }).__atlasActiveTabUrl || '');
         if (currentKey && currentKey !== lastKnownTabKey) {
             lastKnownTabKey = currentKey;
             currentViolations = [];
         }
     };
 
-    // Link Accessibility Cache (to avoid re-checking every 10s)
-    const linkStatusCache = new Map<string, { ok: boolean, timestamp: number }>();
+    const userAgentStr = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
 
-    // Helper to scan for links and validate them
-    const scanLinks = async (targetPage: Page) => {
-        if (!targetPage || targetPage.isClosed()) return;
-        const tId = pageToTabId.get(targetPage) || '';
-        try {
-            const rawLinks = await targetPage.evaluate(() => {
-                return Array.from(document.querySelectorAll('a[href]'))
-                    .map(a => ({
-                        href: (a as HTMLAnchorElement).href,
-                        text: a.textContent?.trim() || ''
-                    }))
-                    .filter(l => l.href.startsWith('http')); // Only validate HTTP links
-            });
+    // Initialize Collectors
+    const cleanupLinkScanner = startLinkScanner(
+        () => activePages,
+        pageToTabId,
+        () => mainWindow,
+        pipeline,
+        userAgentStr
+    );
 
-            const uniqueLinks = Array.from(new Set(rawLinks.map(l => l.href))).map(href => rawLinks.find(l => l.href === href)!);
-            const accessibleLinks: { href: string, text: string }[] = [];
+    const cleanupStorageMetrics = startStorageMetricsCollector(
+        () => page,
+        pipeline,
+        15000
+    );
 
-            for (const link of uniqueLinks) {
-                const cached = linkStatusCache.get(link.href);
-                // Cache valid for 5 minutes
-                if (cached && (Date.now() - cached.timestamp < 300000)) {
-                    if (cached.ok) accessibleLinks.push(link);
-                    continue;
-                }
-
-                try {
-                    // Use a short timeout for link validation
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 5000);
-
-                    const res = await fetch(link.href, {
-                        method: 'HEAD',
-                        signal: controller.signal,
-                        headers: { 'User-Agent': ua }
-                    }).catch(() => fetch(link.href, { method: 'GET', signal: controller.signal, headers: { 'User-Agent': ua } })); // Fallback to GET
-
-                    clearTimeout(timeout);
-
-                    const ok = res.ok;
-                    linkStatusCache.set(link.href, { ok, timestamp: Date.now() });
-
-                    if (ok) {
-                        accessibleLinks.push(link);
-                    } else {
-                        pipeline.emit('violation', {
-                            source: 'Scalability',
-                            message: `Broken Link detected: ${link.href} (Status: ${res.status})`,
-                            level: 1, // WARN
-                            timestamp: Date.now(),
-                            url: targetPage.url()
-                        });
-                    }
-                } catch (e) {
-                    linkStatusCache.set(link.href, { ok: false, timestamp: Date.now() });
-                    pipeline.emit('violation', {
-                        source: 'Scalability',
-                        message: `Broken Link detected: ${link.href} (Connection Failed)`,
-                        level: 1, // WARN
-                        timestamp: Date.now(),
-                        url: targetPage.url()
-                    });
-                }
-            }
-
-            await mainWindow.evaluate((ls: any[], tabId: string) => {
-                // @ts-ignore
-                if (window.updateLinks) window.updateLinks(ls, tabId);
-            }, accessibleLinks, tId);
-        } catch (e) {
-            console.error('[Atlas] Link scan evaluation failed:', (e as Error).message);
-        }
-    };
-
-    const scanAllLinks = async () => {
-        for (const p of activePages) {
-            if (!p.isClosed()) await scanLinks(p);
-        }
-    };
-
-    // Trigger link scan on navigation and periodically
-    pipeline.on('navigation', async (entry: any) => {
+    // Trigger report manager and clear violations on navigation
+    pipeline.on('navigation', async (entry: { url: string, timestamp: number, tabId?: string }) => {
         try {
             await reportManager.logNavigation(entry.url);
 
             // Reset violations on navigation
             currentViolations = [];
             await syncHUD();
-
-            // Find the page for this navigation to trigger scan
-            for (const p of activePages) {
-                if (p.url() === entry.url) {
-                    setTimeout(() => scanLinks(p), 2000);
-                    break;
-                }
-            }
         } catch (e) {
             console.error('[Atlas] Navigation pipeline handler error:', (e as Error).message);
         }
     });
-
-    // Instead of periodic setInterval, we can attach this to active pages specifically
-    // but leaving it loosely coupled is fine for now, we just reduce frequency
-    setInterval(scanAllLinks, 60000); // Periodic refresh all pages Every 60s instead of 30s
-
-    // Helper to collect storage metrics
-    const collectStorage = async () => {
-        if (!page || page.isClosed()) return;
-        try {
-            const metrics = await page.evaluate(() => {
-                const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-                const breakdown = { images: 0, scripts: 0, styles: 0, fonts: 0, other: 0 };
-                let totalTransfer = 0;
-
-                resources.forEach(r => {
-                    totalTransfer += r.transferSize || 0;
-                    if (r.initiatorType === 'img' || r.name.match(/\.(png|jpe?g|gif|webp|svg)$/)) breakdown.images += r.transferSize || 0;
-                    else if (r.initiatorType === 'script' || r.name.endsWith('.js')) breakdown.scripts += r.transferSize || 0;
-                    else if (r.initiatorType === 'css' || r.name.endsWith('.css')) breakdown.styles += r.transferSize || 0;
-                    else if (r.initiatorType === 'font' || r.name.match(/\.(woff2?|ttf|otf)$/)) breakdown.fonts += r.transferSize || 0;
-                    else breakdown.other += r.transferSize || 0;
-                });
-
-                return {
-                    domSize: document.documentElement.innerHTML.length,
-                    localStorageSize: Object.keys(localStorage).reduce((sum, key) => sum + (localStorage.getItem(key)?.length || 0), 0),
-                    sessionStorageSize: Object.keys(sessionStorage).reduce((sum, key) => sum + (sessionStorage.getItem(key)?.length || 0), 0),
-                    cookieSize: document.cookie.length,
-                    totalTransfer,
-                    resources: resources.slice(-5).map(r => ({ name: r.name.split('/').pop() || '', size: r.transferSize, type: r.initiatorType, duration: r.duration })),
-                    breakdown
-                };
-            });
-            pipeline.emit('storage:metrics', metrics);
-        } catch (e) {
-            // Silent catch during page unloads is okay, but let's log debug if needed
-            if ((e as Error).message.includes('Target closed') === false) {
-                console.error('[Atlas] Storage metrics collection failed:', (e as Error).message);
-            }
-        }
-    };
-
-    setInterval(collectStorage, 15000); // Decelerated storage refresh (15s instead of 5s)
 
     // 2. Check FFmpeg Availability (Required for Session Recording)
     let ffmpegAvailable = false;
@@ -332,11 +223,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         console.warn(`You can continue without FFmpeg, but recording will be disabled.\n`);
     }
 
-    // 4. Setup Pages
-    const allPages = await browser.pages();
-    const mainWindow = allPages[0];
-    const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
-    await mainWindow.setUserAgent(ua);
+    await mainWindow.setUserAgent(userAgentStr);
 
     // Expose a function in the HOST WINDOW JS context so tab-manager.ts can call it.
     // When user switches tabs, this clears HUD data so old tab's data is not shown for the new tab.
@@ -349,7 +236,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     console.log('[Atlas] Hub attached. Waiting for guest viewport...');
 
     // Wait for the webview target to be created by index.html
-    const webviewTarget = await browser.waitForTarget((t: any) => {
+    const webviewTarget = await browser.waitForTarget((t: Target) => {
         const type = t.type();
         const url = t.url();
         // Log all targets to help debug why the webview isn't being caught
@@ -357,7 +244,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             console.log(`[Atlas] Scanning target: ${type} (${url})`);
         }
         return type === 'webview' || (type === 'other' && url === 'about:blank');
-    }, { timeout: 15000 }).catch((err: any) => {
+    }, { timeout: 15000 }).catch((err: Error) => {
         console.error('[Atlas] FATAL: Timeout waiting for Guest page. Is the HUD visible?');
         throw err;
     });
@@ -369,11 +256,11 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     }
 
     console.log('[Atlas] Guest page attached.');
-    await page.setUserAgent(ua);
+    await page.setUserAgent(userAgentStr);
 
     // DEBUG: Bridge Console (Silenced for cleaner terminal)
     // page.on('console', msg => console.log(`[Browser Console] ${msg.type().toUpperCase()}: ${msg.text()}`));
-    // page.on('pageerror', (err: any) => console.error(`[Browser Error] ${err.toString()}`));
+    // page.on('pageerror', (err: Error) => console.error(`[Browser Error] ${err.toString()}`));
 
     // Generic Tool Injection
     const setupPage = async (targetPage: Page) => {
@@ -387,7 +274,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         try {
             // Wait up to 2s for identity to be injected
             for (let i = 0; i < 20; i++) {
-                tabId = await targetPage.evaluate(() => (window as any).__atlasTabId) || '';
+                tabId = await targetPage.evaluate(() => (window as { __atlasTabId?: string }).__atlasTabId) || '';
                 if (tabId) break;
                 await new Promise(r => setTimeout(r, 100));
             }
@@ -413,7 +300,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
         // 1.5. Bridge Guest Console & Errors to Pipeline
         targetPage.on('console', async msg => {
-            const level = msg.type() as any;
+            const level = msg.type() as 'log' | 'warn' | 'error' | 'info' | 'debug';
             const allowedLevels = ['log', 'warn', 'error', 'info', 'debug'];
 
             // Evaluate arguments to get real values (handles objects, multiple args)
@@ -444,14 +331,15 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             }
         });
 
-        targetPage.on('pageerror', (err: any) => {
+        targetPage.on('pageerror', (err: unknown) => {
+            const error = err as Error;
             pipeline.emit('violation', {
                 source: 'Runtime',
-                message: err.message || String(err),
+                message: error.message || String(error),
                 level: 2, // ERROR
                 timestamp: Date.now(),
                 url: targetPage.url(),
-                metadata: { stack: err.stack }
+                metadata: { stack: error.stack }
             });
         });
 
@@ -554,9 +442,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // 5. Initial Log for this page
         await logNav();
 
-        // Start link scanning for this specific page
-        setTimeout(() => scanLinks(targetPage), 3000);
-
         // 6. Browser Bridge Functions (Close + Navigation)
         const bridgeFunctions: Record<string, Function> = {
             atlasCloseBrowser: async () => {
@@ -614,15 +499,15 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     if (page) await setupPage(page);
 
     // 3. Navigation Lock & Multi-Tab Support
-    browser.on('targetcreated', async (target: any) => {
+    browser.on('targetcreated', async (target: Target) => {
         const url = target.url();
         const type = target.type();
         if ((type === 'page' || type === 'webview' || type === 'other') && !url.includes('index.html') && url !== 'about:blank') {
             const newPage = await target.page();
             if (newPage) {
                 try {
-                    const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
-                    await newPage.setUserAgent(ua);
+                    const userAgentStr = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
+                    await newPage.setUserAgent(userAgentStr);
                     await setupPage(newPage);
                     page = newPage;
                 } catch (e) {
@@ -632,7 +517,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         }
     });
 
-    browser.on('targetdestroyed', async (target: any) => {
+    browser.on('targetdestroyed', async (target: Target) => {
         const p = await target.page();
         if (p) {
             activePages.delete(p);

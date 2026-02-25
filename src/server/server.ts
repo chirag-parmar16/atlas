@@ -157,7 +157,9 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                             });
                         }
                     });
-                    req.on('error', () => { });
+                    req.on('error', () => {
+                        // Server not HTTP-ready yet, ignore connection refused and keep polling
+                    });
                     req.end();
                 }, 500);
 
@@ -173,7 +175,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                         startupTimeout = parseInt(process.env.ATLAS_STARTUP_TIMEOUT);
                     }
                 } catch (e) {
-                    // Ignore config parsing errors, use default
+                    onLog(`[Atlas] Warning: Error parsing atlas.config.json, using default timeout ${startupTimeout}ms.`);
                 }
 
                 if (startupTimeout === 30000) {
@@ -184,7 +186,9 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     clearInterval(checkInterval);
                     // Fix: Reject cleanly instead of launching dead
                     reject(new Error(`Server start timed out (${startupTimeout}ms). Port did not become active.`));
-                    try { child.kill(); } catch (e) { }
+                    try { child.kill(); } catch (e) {
+                        onLog(`[Atlas] Warning: Failed to kill timed-out process: ${(e as Error).message}`);
+                    }
                 }, startupTimeout);
 
                 // Early Exit Watch

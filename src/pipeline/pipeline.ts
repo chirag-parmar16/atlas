@@ -64,7 +64,8 @@ export class Pipeline {
      * Subscribe to a pipeline event.
      */
     on<K extends keyof PipelineEvents>(event: K, listener: PipelineEvents[K]): this {
-        this.emitter.on(event, listener as unknown as (...args: unknown[]) => void);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.emitter.on(event, listener as (...args: any[]) => void);
         return this;
     }
 
@@ -72,7 +73,8 @@ export class Pipeline {
      * Subscribe to a pipeline event (one time).
      */
     once<K extends keyof PipelineEvents>(event: K, listener: PipelineEvents[K]): this {
-        this.emitter.once(event, listener as unknown as (...args: unknown[]) => void);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.emitter.once(event, listener as (...args: any[]) => void);
         return this;
     }
 
@@ -87,7 +89,8 @@ export class Pipeline {
      * Remove a listener.
      */
     off<K extends keyof PipelineEvents>(event: K, listener: PipelineEvents[K]): this {
-        this.emitter.off(event, listener as unknown as (...args: unknown[]) => void);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.emitter.off(event, listener as (...args: any[]) => void);
         return this;
     }
 
