@@ -215,8 +215,10 @@ app.on('ready', () => {
     const indexUrl = url.pathToFileURL(indexPath).toString();
     console.log(`[Atlas] Loading Host HUD from: ${indexPath}`);
 
+    const disabledTabs = process.env.ATLAS_DISABLED_TABS || '';
+
     // Load local index.html with identity params
-    mainWindow.loadURL(`${indexUrl}?domain=${encodeURIComponent(domain)}&port=${port}&projectName=${encodeURIComponent(projectName)}`);
+    mainWindow.loadURL(`${indexUrl}?domain=${encodeURIComponent(domain)}&port=${port}&projectName=${encodeURIComponent(projectName)}&disabledTabs=${encodeURIComponent(disabledTabs)}`);
 
     // Handle window close
     mainWindow.on('closed', () => {

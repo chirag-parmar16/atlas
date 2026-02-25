@@ -1,18 +1,22 @@
 import { pill, pillCount, menu } from './setup-api';
 import { TabManager } from './tab-manager';
 
-// Dynamically import tools to ensure window.Atlas is initialized first
+const params = new URLSearchParams(window.location.search);
+const disabledTabsStr = params.get('disabledTabs') || '';
+const disabledTabs = new Set(disabledTabsStr.split(',').map(t => t.trim().toLowerCase()).filter(Boolean));
+
+// Dynamically import tools only if not disabled
 async function loadTools() {
-    await import('./ui/links');
-    await import('./ui/console');
-    await import('./ui/networks');
-    await import('./ui/application');
-    await import('./ui/storage');
-    await import('./ui/stability');
-    await import('./ui/security-monitor');
-    await import('./ui/extras');
-    await import('./ui/recorder');
-    console.log('[Atlas] All UI Tools loaded dynamically.');
+    if (!disabledTabs.has('links')) await import('./ui/links');
+    if (!disabledTabs.has('console')) await import('./ui/console');
+    if (!disabledTabs.has('networks') && !disabledTabs.has('network')) await import('./ui/networks');
+    if (!disabledTabs.has('application')) await import('./ui/application');
+    if (!disabledTabs.has('storage')) await import('./ui/storage');
+    if (!disabledTabs.has('stability') && !disabledTabs.has('scalability')) await import('./ui/stability');
+    if (!disabledTabs.has('security-monitor') && !disabledTabs.has('security')) await import('./ui/security-monitor');
+    if (!disabledTabs.has('extras')) await import('./ui/extras');
+    if (!disabledTabs.has('recorder')) await import('./ui/recorder');
+    console.log('[Atlas] UI Tools filtering complete.');
 }
 loadTools();
 
@@ -24,7 +28,6 @@ const webviewContainer = document.getElementById('webview-container') as HTMLEle
 // Parse Domain/Port from URL params
 const tagDomain = document.getElementById('tag-domain');
 const tagPort = document.getElementById('tag-port');
-const params = new URLSearchParams(window.location.search);
 const initialDomain = params.get('domain') || '';
 const initialPort = params.get('port') || '';
 const projectName = params.get('projectName') || '';

@@ -79,7 +79,7 @@ function waitForCDP(port: number, timeoutMs: number = 30000): Promise<string> {
 /**
  * Launch Electron with remote debugging and return the CDP endpoint.
  */
-export async function launchElectron(domain: string, port: number, projectName: string = ''): Promise<ElectronLaunchResult> {
+export async function launchElectron(domain: string, port: number, projectName: string = '', disabledTabs: string[] = []): Promise<ElectronLaunchResult> {
     const debugPort = getRandomPort();
 
     // Resolve the Electron binary
@@ -110,7 +110,8 @@ export async function launchElectron(domain: string, port: number, projectName: 
             ATLAS_DEBUG_PORT: String(debugPort),
             ATLAS_DOMAIN: domain,
             ATLAS_PORT: String(port),
-            ATLAS_PROJECT_NAME: projectName
+            ATLAS_PROJECT_NAME: projectName,
+            ATLAS_DISABLED_TABS: disabledTabs.join(',')
         }
     });
 

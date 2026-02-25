@@ -29,7 +29,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     let electronDebugPort: number;
 
     try {
-        const electronResult = await launchElectron(domain, localPort, projectName);
+        const electronResult = await launchElectron(domain, localPort, projectName, disabledTabs);
         electronProcess = electronResult.electronProcess;
         electronDebugPort = electronResult.debugPort;
 
