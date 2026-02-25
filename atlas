@@ -1,0 +1,8 @@
+#!/bin/bash
+export ELECTRON_RUN_AS_NODE=1
+export ATLAS_PACKAGED=true
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# macOS/Linux paths would be different, but assuming Windows installer target primarily right now
+"$DIR/Atlas.exe" "$DIR/resources/app.asar/dist/atlas.js" "$@"

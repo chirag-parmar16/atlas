@@ -84,35 +84,46 @@ export async function launchElectron(domain: string, port: number, projectName: 
 
     // Resolve the Electron binary
     let electronBin: string;
-    try {
-        electronBin = require('electron') as string;
-    } catch {
-        throw new Error(
-            '[Atlas] Failed to locate Electron binary. Ensure electron is installed: npm install electron'
-        );
-    }
+    let electronMain: string;
 
-    // Resolve the electron-main entry point
-    // At runtime, __dirname = dist/src/electron/
-    // electron-main.ts compiles to dist/src/electron/electron-main.js
-    const electronMain = path.join(__dirname, 'electron-main.js');
+    if (process.env.ATLAS_PACKAGED) {
+        // If packaged, Atlas.exe IS the electron binary
+        electronBin = process.execPath;
+        // In packaged app, the entry script is already compiled into the app.asar, 
+        // passing no arguments causes it to run package.json main -> entry.js
+        electronMain = "";
+    } else {
+        try {
+            electronBin = require('electron') as string;
+            electronMain = path.join(__dirname, 'electron-main.js');
+        } catch {
+            throw new Error(
+                '[Atlas] Failed to locate Electron binary. Ensure electron is installed: npm install electron'
+            );
+        }
+    }
 
     console.log(`[Atlas] Launching Electron (debug port: ${debugPort})...`);
 
+    const envArgs = {
+        ...process.env,
+        ATLAS_DEBUG_PORT: String(debugPort),
+        ATLAS_DOMAIN: domain,
+        ATLAS_PORT: String(port),
+        ATLAS_PROJECT_NAME: projectName,
+        ATLAS_DISABLED_TABS: disabledTabs.join(','),
+        ATLAS_GUI_MODE: 'true'
+    };
+
+    // Crucial: When running from the CLI wrapper, we are in Node mode.
+    // We MUST turn this off for the child process so it boots the GUI.
+    delete (envArgs as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
+
     // Spawn Electron as child process
-    // Pass debug port via env var to avoid Electron's CLI parser intercepting it
-    const electronProcess = spawn(electronBin, [
-        electronMain
-    ], {
+    const spawnArgs = electronMain ? [electronMain] : [];
+    const electronProcess = spawn(electronBin, spawnArgs, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-            ...process.env,
-            ATLAS_DEBUG_PORT: String(debugPort),
-            ATLAS_DOMAIN: domain,
-            ATLAS_PORT: String(port),
-            ATLAS_PROJECT_NAME: projectName,
-            ATLAS_DISABLED_TABS: disabledTabs.join(',')
-        }
+        env: envArgs
     });
 
     // Forward Electron stderr/stdout for debugging
