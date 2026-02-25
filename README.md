@@ -10,13 +10,13 @@ It acts as a "flight simulator" for web developers, letting you fly your app in 
 
 ## 🚀 Installation
 
-Atlas is available as a global NPM package.
+Atlas is distributed as a standalone Windows executable.
 
-```bash
-npm install -g atlas-sandbox
-```
+1. **Download the latest `.exe` installer** from the [GitHub Releases page](https://github.com/chirag-parmar16/atlas/releases).
+2. **Double-click** the installer. Atlas will automatically install and configure your system `PATH`.
+3. You can now use the `atlas` command globally from any terminal!
 
-*Note: You need Node.js v18+ installed on your system.*
+*Note: Your projects must be running on Node.js v18+.*
 
 ---
 
@@ -141,34 +141,30 @@ Atlas injects a **Shadow DOM overlay** into the browser window with full style i
 
 Atlas is built with a **layered event-driven architecture**. The Electron shell provides the container, while the Pipeline (typed event bus) serves as the central nervous system connecting all layers.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────┐
-│  Layer 1: CLI Interface (atlas.ts, init.ts, run.ts)      │
+│  Layer 1: CLI Interface (atlas.cmd → atlas.ts)           │
 ├──────────────────────────────────────────────────────────┤
 │  Layer 2: Infrastructure (server.ts, browser.ts)         │
 ├──────────────────────────────────────────────────────────┤
 │  Layer 3: Engine (Brain)                                 │
 │  ├─ network-interceptor.ts   CDP proxy + domain masking  │
 │  ├─ security-warden.ts       PII scanning + CORS checks  │
-│  ├─ performance-tracker.ts   Latency anomaly detection    │
-│  ├─ session-recorder.ts      Multi-part video capture     │
-│  ├─ report-manager.ts        Journey reports (JSON + MD)  │
-│  └─ state.ts                 Centralized type definitions │
+│  ├─ performance-tracker.ts   Latency anomaly detection   │
+│  ├─ chaos-engine.ts          Load stressor injection     │
+│  ├─ session-recorder.ts      Native desktop capture      │
+│  ├─ report-manager.ts        Journey reports (JSON + MD) │
+│  └─ state.ts                 Centralized definitions     │
 ├──────────────────────────────────────────────────────────┤
 │  Layer 4: Pipeline (pipeline.ts) — Typed Event Bus       │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 5: Transport                                      │
-│  ├─ injector.ts              Shadow DOM builder           │
-│  ├─ ws-server.ts             WebSocket state broadcaster  │
-│  ├─ dispatcher.ts            Action router                │
-│  ├─ ui-server.ts             Express static file server   │
-│  └─ protocol.ts              Versioned message types      │
+│  Layer 5: Electron Shell Architecture                    │
+│  ├─ electron-main.ts         App lifecycle & native IPC  │
+│  └─ renderer.ts              HUD Overlay (Shadow DOM)    │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 6: UI (shell.ts + 9 tool panels)                  │
+│  Layer 6: UI (9 Dynamic Tool Panels + Drag & Drop Pill)  │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 7: Renderer (app.js, styles.css, index.html)      │
-├──────────────────────────────────────────────────────────┤
-│  Layer 8: Collectors (page info, storage, navigation)    │
+│  Layer 7: Collectors (link-scanner, storage-metrics)     │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -189,56 +185,23 @@ Atlas is built with a **layered event-driven architecture**. The Electron shell 
 
 ## 📁 Project Structure
 
-```
+```text
 atlas/
-├── atlas.ts                     # CLI entry point (commander)
-├── package.json                 # NPM package config
-├── tsconfig.json                # TypeScript config
-├── diagrams/                    # Architecture diagrams (Mermaid)
-│   ├── 01_context_dfd.md
-│   ├── 02_er_diagram.md
-│   ├── 03_use_case_diagram.md
-│   ├── 04_class_diagram.md
-│   ├── 05_interaction_diagram.md
-│   ├── 06_data_dictionary.md
-│   └── 07_system_flow_diagram.md
-└── src/
-    ├── cli/                     # CLI commands
-    │   ├── init.ts              # atlas init — project setup
-    │   └── run.ts               # atlas run — session runner
-    ├── server/                  # Server management
-    │   └── server.ts            # npm/static server spawning
-    ├── browser/                 # Browser control
-    │   └── browser.ts           # Puppeteer orchestrator
-    ├── engine/                  # Core engine modules
-    │   ├── index.ts             # Public API re-exports
-    │   ├── state.ts             # Centralized types & state
-    │   ├── network-interceptor.ts # CDP proxy engine
-    │   ├── security-warden.ts   # PII + CORS scanning
-    │   ├── performance-tracker.ts # Latency anomaly detection
-    │   ├── session-recorder.ts  # Video capture
-    │   ├── report-manager.ts    # Journey report generation
-    │   └── report-generator.ts  # Legacy report generator
-    ├── pipeline/                # Event bus
-    │   └── pipeline.ts          # Typed EventEmitter
-    ├── collectors/              # Page data collectors
-    │   └── index.ts             # Navigation, storage, page info
-    ├── transport/               # Communication layer
-    │   ├── index.ts             # Public API
-    │   ├── protocol.ts          # Message type definitions
-    │   ├── injector.ts          # Shadow DOM builder
-    │   ├── ws-server.ts         # WebSocket state broadcaster
-    │   ├── dispatcher.ts        # Action router
-    │   └── ui-server.ts         # Express static server
-    ├── ui/                      # Injected UI components
-    │   ├── index.ts             # Entry point
-    │   ├── injection.ts         # Puppeteer injection module
-    │   ├── components/          # 13 component scripts
-    │   └── styles/              # 5 CSS modules
-    └── renderer/                # Standalone renderer app
-        ├── index.html           # Renderer HTML shell
-        ├── app.js               # Shadow DOM application
-        └── styles.css           # Renderer stylesheet
+├── atlas.ts                     # CLI Commander entry
+├── package.json                 # electron-builder & dependencies
+├── src/
+│   ├── cli/                     # CLI commands (init/run)
+│   ├── server/                  # Project auto-detection
+│   ├── browser/                 # Puppeteer orchestrator
+│   ├── engine/                  # Core modules (interceptor, chaos, security)
+│   ├── pipeline/                # Typed Event Bus
+│   ├── collectors/              # Link scanning & storage metrics
+│   └── electron/                # Standalone GUI Shell
+│       ├── electron-main.ts     # Main Process (Recording/IPC)
+│       ├── renderer.ts          # HUD Orchestrator
+│       ├── index.html           # UI Layout
+│       └── ui/                  # Dynamic Tool Components
+└── entry.js                     # Electron/CLI packaged router
 ```
 
 ---
