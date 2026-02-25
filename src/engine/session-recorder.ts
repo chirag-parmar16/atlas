@@ -149,7 +149,7 @@ export function attachRecorder(page: Page, reportManager: ReportManager) {
                 // @ts-ignore
                 if (window.__removeAtlasCursor) window.__removeAtlasCursor();
             });
-        } catch (e) { }
+        } catch (e) { console.warn('[Atlas] Failed to remove cursor from page', e); }
 
         currentSession = null;
         recorder = null;
@@ -191,7 +191,10 @@ export function attachRecorder(page: Page, reportManager: ReportManager) {
             const part = sessionData.parts[0];
             try {
                 await fs.copyFile(part, finalVideoPath);
-            } catch (e) { return null; }
+            } catch (e) {
+                console.error('[Atlas] Failed to copy single video part:', e);
+                return null;
+            }
         } else {
             console.log(`[Atlas] ⏳ Merging ${sessionData.parts.length} video parts into: ${path.basename(finalVideoPath)}`);
             const listFile = path.join(videoDir, `merge-${timestamp}.txt`);

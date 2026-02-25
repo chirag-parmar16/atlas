@@ -32,6 +32,7 @@
 
             const header = document.createElement('div');
             header.style.cssText = 'font-weight:800; color:#fff; font-size:12px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:10px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; text-transform:uppercase; letter-spacing:0.05em;';
+            header.textContent = ''; // Clear if needed, though we set innerHTML below
             header.innerHTML = `<span>${title}</span>` +
                 `<span style="background:${color}22; color:${color}; padding:2px 10px; border-radius:12px; font-size:10px; border:1px solid ${color}44; font-weight:900;">${list.length}</span>`;
             section.appendChild(header);
@@ -61,7 +62,14 @@
         createSection('Anchor Fragments', self, '#f59e0b');
     };
 
-    const atlas = window.Atlas;
+    interface Window {
+        Atlas: {
+            on: (event: string, cb: Function) => void;
+            addTool: (name: string, cb: () => HTMLElement, onRender?: () => void) => void;
+        };
+        __ATLAS_LINKS__: LinkEntry[];
+    }
+    const atlas = (window as unknown as Window).Atlas;
     atlas.on('linksUpdated', () => renderLinks());
 
     atlas.addTool('Links', function () {

@@ -1,6 +1,7 @@
 /**
  * @jest-environment jsdom
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe('Links UI', () => {
     let mockOn: jest.Mock;
@@ -29,9 +30,14 @@ describe('Links UI', () => {
             addTool: mockAddTool
         };
 
-        // Mock window.location.search
-        delete (window as any).location;
-        (window as any).location = { search: '?domain=example.com' };
+        // Mock URLSearchParams to return the expected domain
+        const mockGet = jest.fn().mockImplementation((key: string) => {
+            if (key === 'domain') return 'example.com';
+            return null;
+        });
+        (window as any).URLSearchParams = jest.fn().mockImplementation(() => ({
+            get: mockGet
+        }));
 
         jest.isolateModules(() => {
             require('./links');

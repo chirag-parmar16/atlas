@@ -1,3 +1,12 @@
+declare global {
+    interface Window {
+        Atlas: {
+            addTool: (name: string, cb: () => HTMLElement, onRender?: () => void) => void;
+        };
+        startNativeRecording: () => Promise<boolean>;
+    }
+}
+
 (function () {
     let containerEl: HTMLElement | null = null;
 
@@ -28,7 +37,7 @@
                 if (typeof window.startNativeRecording === 'function') {
                     started = await window.startNativeRecording();
                 }
-            } catch (e) { }
+            } catch (e) { console.error('[Atlas] Native recording failed to start:', e); }
 
             if (started) {
                 btn.innerText = 'RECORDING ACTIVE';
@@ -56,7 +65,6 @@
         containerEl.appendChild(utils);
     };
 
-    // @ts-ignore
     window.Atlas.addTool('Extras', function () {
         containerEl = document.createElement('div');
         containerEl.style.cssText = 'padding:20px; display:flex; flex-direction:column; height:100%; background:transparent; justify-content:center;';
@@ -65,3 +73,4 @@
     }, renderRecorder);
 })();
 export { };
+

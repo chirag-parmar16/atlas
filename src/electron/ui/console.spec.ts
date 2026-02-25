@@ -1,6 +1,7 @@
 /**
  * @jest-environment jsdom
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe('Console UI', () => {
     let mockOn: jest.Mock;

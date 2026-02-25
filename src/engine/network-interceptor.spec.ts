@@ -1,3 +1,7 @@
+/**
+ * @jest-environment node
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createNetworkInterceptor, NetworkInterceptorConfig, NetworkInterceptorCallbacks } from './network-interceptor';
 import { Page, HTTPRequest, Frame } from 'puppeteer-core';
 
@@ -70,8 +74,13 @@ describe('NetworkInterceptor', () => {
         });
     });
 
+    let interceptor: any;
+    afterEach(async () => {
+        if (interceptor) await interceptor.cleanup();
+    });
+
     test('should initialize and attach to page', async () => {
-        const interceptor = createNetworkInterceptor(mockPage, config, callbacks);
+        interceptor = createNetworkInterceptor(mockPage, config, callbacks);
         await interceptor.init();
 
         expect(mockPage.exposeFunction).toHaveBeenCalledWith('setSecurityMode', expect.any(Function));
@@ -81,7 +90,7 @@ describe('NetworkInterceptor', () => {
     });
 
     test('should proxy requests matching the masked domain to localhost', async () => {
-        const interceptor = createNetworkInterceptor(mockPage, config, callbacks);
+        interceptor = createNetworkInterceptor(mockPage, config, callbacks);
         await interceptor.init();
 
         // Get the registered request handler
@@ -101,7 +110,7 @@ describe('NetworkInterceptor', () => {
     });
 
     test('should passthrough non-domain requests (like CDNs)', async () => {
-        const interceptor = createNetworkInterceptor(mockPage, config, callbacks);
+        interceptor = createNetworkInterceptor(mockPage, config, callbacks);
         await interceptor.init();
 
         mockRequest.url.mockReturnValue('https://cdn.example.org/style.css');
@@ -116,7 +125,7 @@ describe('NetworkInterceptor', () => {
 
     test('should emit violation on proxy connection error', async () => {
         mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
-        const interceptor = createNetworkInterceptor(mockPage, config, callbacks);
+        interceptor = createNetworkInterceptor(mockPage, config, callbacks);
         await interceptor.init();
 
         const requestHandler = (mockPage.on as jest.Mock).mock.calls.find(call => call[0] === 'request')[1];
@@ -129,7 +138,7 @@ describe('NetworkInterceptor', () => {
     });
 
     test('should block external navigation on main frame', async () => {
-        const interceptor = createNetworkInterceptor(mockPage, config, callbacks);
+        interceptor = createNetworkInterceptor(mockPage, config, callbacks);
         await interceptor.init();
 
         mockRequest.url.mockReturnValue('https://malicious.com');
@@ -144,7 +153,7 @@ describe('NetworkInterceptor', () => {
     });
 
     test('should apply stress injection if configured', async () => {
-        const interceptor = createNetworkInterceptor(mockPage, config, callbacks);
+        interceptor = createNetworkInterceptor(mockPage, config, callbacks);
         interceptor.setStressConfig({ enabled: true, errorRate: 100, latencyRate: 0, dropRate: 0, latencySpike: 0, mockOffline: false, dropPackets: false } as any);
         await interceptor.init();
 

@@ -1,6 +1,7 @@
 /**
  * @jest-environment jsdom
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe('Stability UI', () => {
     let mockOn: jest.Mock;
@@ -52,11 +53,13 @@ describe('Stability UI', () => {
         const container = registeredToolFn();
         expect(container.innerHTML).toContain('Error Rate (500s)');
         expect(container.innerHTML).toContain('Latency Spikes (2-5s)');
-        expect(container.innerHTML).toContain('Enable Stress Injection');
+        const btn = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Enable Stress Injection'));
+        expect(btn).toBeTruthy();
     });
 
     test('should invoke setStressConfig when Enable Stress Injection is clicked', () => {
         const container = registeredToolFn();
+        document.body.appendChild(container);
 
         // Find inputs and set values
         const inputs = Array.from(container.querySelectorAll('input[type="range"]'));
@@ -69,8 +72,8 @@ describe('Stability UI', () => {
         errorInput.dispatchEvent(new Event('input'));
         latencyInput.dispatchEvent(new Event('input'));
 
-        const injectBtn = container.querySelector('button:last-child') as HTMLButtonElement;
-        expect(injectBtn.innerText).toBe('Enable Stress Injection');
+        const injectBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Enable Stress Injection')) as HTMLButtonElement;
+        expect(injectBtn.textContent).toBe('Enable Stress Injection');
 
         injectBtn.click();
 
@@ -82,7 +85,7 @@ describe('Stability UI', () => {
             dropPackets: false
         });
 
-        expect(injectBtn.innerText).toBe('Stress Active');
+        expect(injectBtn.textContent).toBe('Stress Active');
     });
 
     test('should switch to live monitor tab and display violations', () => {
@@ -96,7 +99,7 @@ describe('Stability UI', () => {
         ];
 
         // Click LIVE MONITOR tab
-        const monitorTabBtn = Array.from(container.querySelectorAll('button')).find(b => b.innerText.includes('LIVE MONITOR')) as HTMLButtonElement;
+        const monitorTabBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('LIVE MONITOR')) as HTMLButtonElement;
         monitorTabBtn.click();
 
         // The content should now show the monitor list
@@ -109,7 +112,7 @@ describe('Stability UI', () => {
         const container = registeredToolFn();
 
         // Go to live monitor
-        const monitorTabBtn = Array.from(container.querySelectorAll('button')).find(b => b.innerText.includes('LIVE MONITOR')) as HTMLButtonElement;
+        const monitorTabBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('LIVE MONITOR')) as HTMLButtonElement;
         monitorTabBtn.click();
 
         expect(container.innerHTML).toContain('No stability violations detected');

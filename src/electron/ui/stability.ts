@@ -19,7 +19,7 @@
             const btn = document.createElement('button');
             const key = label.toLowerCase().replace(' ', '');
             const active = activeSubTab === key;
-            btn.innerText = label;
+            btn.textContent = label;
             btn.style.cssText = `flex:1; padding:12px; border:none; background:transparent; color:${active ? '#10b981' : '#71717a'}; font-size:11px; font-weight:800; cursor:pointer; transition:all 0.2s; letter-spacing:0.05em; position:relative;`;
 
             if (active) {
@@ -59,7 +59,7 @@
                 const input = s.querySelector('input') as HTMLInputElement;
                 const valDisplay = s.querySelector('#val-' + id) as HTMLElement;
                 if (input && valDisplay) {
-                    input.oninput = () => { valDisplay.innerText = input.value + '%'; };
+                    input.oninput = () => { valDisplay.textContent = input.value + '%'; };
                 }
                 return s;
             };
@@ -69,17 +69,17 @@
 
             const injectBtn = document.createElement('button');
             injectBtn.style.cssText = 'margin-top:12px; padding:16px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.1); color:#fff; border-radius:8px; font-weight:900; cursor:pointer; transition:all 0.2s; text-transform:uppercase; font-size:13px; letter-spacing:1.5px;';
-            injectBtn.innerText = 'Enable Stress Injection';
+            injectBtn.textContent = 'Enable Stress Injection';
             injectBtn.onmouseover = () => injectBtn.style.background = 'rgba(255,255,255,0.12)';
             injectBtn.onmouseout = () => injectBtn.style.background = 'rgba(255,255,255,0.08)';
 
             injectBtn.onclick = () => {
-                const errInput = document.getElementById('error-rate') as HTMLInputElement;
-                const latInput = document.getElementById('latency-spike') as HTMLInputElement;
-                const errorRate = parseInt(errInput.value || '0');
-                const latencySpike = parseInt(latInput.value || '0');
+                const errInput = containerEl?.querySelector('#error-rate') as HTMLInputElement;
+                const latInput = containerEl?.querySelector('#latency-spike') as HTMLInputElement;
+                const errorRate = parseInt(errInput?.value || '0');
+                const latencySpike = parseInt(latInput?.value || '0');
 
-                injectBtn.innerText = 'Stress Active';
+                injectBtn.textContent = 'Stress Active';
                 injectBtn.style.borderColor = '#10b981';
                 injectBtn.style.color = '#10b981';
 
@@ -125,7 +125,15 @@
         containerEl.appendChild(content);
     };
 
-    const atlas = (window as unknown as { Atlas: { on: (event: string, cb: () => void) => void, addTool: (name: string, cb: () => HTMLElement, onRender?: () => void) => void } }).Atlas;
+    interface Window {
+        Atlas: {
+            on: (event: string, cb: Function) => void;
+            addTool: (name: string, cb: () => HTMLElement, onRender?: () => void) => void;
+            violations: Violation[];
+        };
+        setStressConfig?: (c: { errorRate: number; jitter: number; latencySpike: number; mockOffline: boolean; dropPackets: boolean; }) => void;
+    }
+    const atlas = (window as unknown as Window).Atlas;
 
     atlas.on('violationsUpdated', () => {
         if (activeSubTab === 'livemonitor') renderStability();
