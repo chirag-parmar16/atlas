@@ -10,7 +10,7 @@
         if (!containerEl) return;
         containerEl.innerHTML = '';
 
-        const linksData: LinkEntry[] = (window as any).__ATLAS_LINKS__ || [];
+        const linksData: LinkEntry[] = (window as unknown as { __ATLAS_LINKS__: LinkEntry[] }).__ATLAS_LINKS__ || [];
         const internal: LinkEntry[] = [], external: LinkEntry[] = [], self: LinkEntry[] = [];
 
         const params = new URLSearchParams(window.location.search);
@@ -61,7 +61,7 @@
         createSection('Anchor Fragments', self, '#f59e0b');
     };
 
-    const atlas = (window as any).Atlas;
+    const atlas = window.Atlas;
     atlas.on('linksUpdated', () => renderLinks());
 
     atlas.addTool('Links', function () {

@@ -93,7 +93,7 @@ export async function scanLinksForPage(
         if (!mainWindow.isClosed()) {
             await mainWindow.evaluate((ls: ExtractedLink[], tId: string) => {
                 // Define the expected interface for the host UI window
-                const atlasWindow = window as Window & { updateLinks?: (links: ExtractedLink[], tabId: string) => void };
+                const atlasWindow = window as unknown as Window & { updateLinks?: (links: ExtractedLink[], tabId: string) => void };
                 if (atlasWindow.updateLinks) {
                     atlasWindow.updateLinks(ls, tId);
                 }
@@ -128,7 +128,7 @@ export function startLinkScanner(
 ): () => void {
 
     // Subscribe to navigation events to trigger an immediate scan for the navigated page
-    const navScanListener = (entry: any) => {
+    const navScanListener = (entry: { url: string }) => {
         const mainWindow = getMainWindow();
         if (!mainWindow) return;
 

@@ -2,31 +2,35 @@ name: Atlas CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    steps:
-    - uses: actions/checkout@v3
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
 
-    - name: Use Node.js
-      uses: actions/setup-node@v3
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
       with:
-        node-version: '18.x'
+        node-version: ${{ matrix.node-version }}
         cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
 
-    - name: Run Linter
+    - name: Run ESLint
       run: npm run lint
 
-    - name: Run Tests
-      run: npm run test
+    - name: Run Unit Tests
+      run: npm test
 
-    - name: Build Project
+    - name: Build Application
       run: npm run build

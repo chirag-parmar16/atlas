@@ -1,3 +1,20 @@
+interface WebviewEvent extends Event {
+    url?: string;
+    isMainFrame?: boolean;
+    title?: string;
+    favicons?: string[];
+}
+declare global {
+    interface Window {
+        atlasTabBridge?: {
+            reportActiveTab: (url: string) => void;
+            onOpenTab: (cb: (url: string) => void) => void;
+        };
+        __atlasSwapTab: (tabId: string) => void;
+        __atlasDeleteTab: (tabId: string) => void;
+    }
+}
+
 /**
  * Atlas Tab Manager
  * 
@@ -13,9 +30,17 @@
  *   - new-window interception → opens _blank links as new tabs
  */
 
+interface ElectronWebview extends HTMLElement {
+    src: string;
+    goBack: () => void;
+    goForward: () => void;
+    reload: () => void;
+    executeJavaScript: (code: string) => Promise<unknown>;
+}
+
 interface AtlasTab {
     id: string;
-    webview: HTMLElement & { [key: string]: any };
+    webview: ElectronWebview;
     tabEl: HTMLElement;
     url: string;
     title: string;
@@ -49,7 +74,7 @@ export class TabManager {
         const id = `tab-${++this.tabCounter}`;
 
         // 1. Create the webview
-        const webview = document.createElement('webview') as any;
+        const webview = document.createElement('webview') as ElectronWebview;
         webview.id = `webview-${id}`;
         webview.className = 'atlas-webview';
         webview.setAttribute('src', url);
@@ -73,7 +98,11 @@ export class TabManager {
 
         // Insert before the new-tab button
         const newTabBtn = this.tabBar.querySelector('#atlas-new-tab-btn');
-        this.tabBar.insertBefore(tabEl, newTabBtn);
+        if (newTabBtn) {
+            this.tabBar.insertBefore(tabEl, newTabBtn);
+        } else {
+            this.tabBar.appendChild(tabEl);
+        }
 
         const tab: AtlasTab = { id, webview, tabEl, url, title: 'New Tab' };
         this.tabs.set(id, tab);
@@ -115,11 +144,13 @@ export class TabManager {
         this.activeTabId = id;
 
         // Tell browser.ts which URL is active
-        (window as any).atlasTabBridge?.reportActiveTab(target.url || '');
+        if (window.atlasTabBridge) {
+            window.atlasTabBridge.reportActiveTab(target.url || '');
+        }
 
         // Swap renderer to this tab's stored data bucket (Chrome-style, zero flicker)
-        if (typeof (window as any).__atlasSwapTab === 'function') {
-            (window as any).__atlasSwapTab(id);
+        if (typeof window.__atlasSwapTab === 'function') {
+            window.__atlasSwapTab(id);
         }
 
         this.onActivate(target);
@@ -141,8 +172,8 @@ export class TabManager {
         this.onClose(tab);
 
         // Delete this tab's data bucket
-        if (typeof (window as any).__atlasDeleteTab === 'function') {
-            (window as any).__atlasDeleteTab(id);
+        if (typeof window.__atlasDeleteTab === 'function') {
+            window.__atlasDeleteTab(id);
         }
 
         // If this was the last tab, open a blank one
@@ -190,43 +221,55 @@ export class TabManager {
         });
 
         // Intercept new-window (target="_blank") → open as tab
-        webview.addEventListener('new-window', (e: any) => {
-            e.preventDefault();
-            const newTab = this.createTab(e.url);
-            console.log(`[Atlas] New tab opened from _blank link: ${e.url}`);
+        webview.addEventListener('new-window', (e: Event) => {
+            const webviewEvent = e as WebviewEvent;
+            webviewEvent.preventDefault();
+            if (webviewEvent.url) {
+                this.createTab(webviewEvent.url);
+                console.log(`[Atlas] New tab opened from _blank link: ${webviewEvent.url}`);
+            }
         });
 
         // URL updates
-        webview.addEventListener('did-start-navigation', (e: any) => {
-            if (e.isMainFrame) {
-                tab.url = e.url;
+        webview.addEventListener('did-start-navigation', (e: Event) => {
+            const webviewEvent = e as WebviewEvent;
+            if (webviewEvent.isMainFrame && webviewEvent.url) {
+                tab.url = webviewEvent.url;
                 if (this.activeTabId === tab.id) this.onActivate(tab);
             }
         });
 
-        webview.addEventListener('did-navigate', (e: any) => {
-            tab.url = e.url;
-            if (this.activeTabId === tab.id) this.onActivate(tab);
+        webview.addEventListener('did-navigate', (e: Event) => {
+            const webviewEvent = e as WebviewEvent;
+            if (webviewEvent.url) {
+                tab.url = webviewEvent.url;
+                if (this.activeTabId === tab.id) this.onActivate(tab);
+            }
         });
 
-        webview.addEventListener('did-navigate-in-page', (e: any) => {
-            tab.url = e.url;
-            if (this.activeTabId === tab.id) this.onActivate(tab);
+        webview.addEventListener('did-navigate-in-page', (e: Event) => {
+            const webviewEvent = e as WebviewEvent;
+            if (webviewEvent.url) {
+                tab.url = webviewEvent.url;
+                if (this.activeTabId === tab.id) this.onActivate(tab);
+            }
         });
 
         // Title updates
-        webview.addEventListener('page-title-updated', (e: any) => {
-            tab.title = e.title || tab.url;
+        webview.addEventListener('page-title-updated', (e: Event) => {
+            const webviewEvent = e as WebviewEvent;
+            tab.title = webviewEvent.title || tab.url;
             const titleEl = tabEl.querySelector('.atlas-tab-title');
             if (titleEl) titleEl.textContent = this.truncate(tab.title, 22);
         });
 
         // Favicon updates
-        webview.addEventListener('page-favicon-updated', (e: any) => {
-            if (e.favicons?.length > 0) {
+        webview.addEventListener('page-favicon-updated', (e: Event) => {
+            const webviewEvent = e as WebviewEvent;
+            if (webviewEvent.favicons && webviewEvent.favicons.length > 0) {
                 const faviconEl = tabEl.querySelector('.atlas-tab-favicon');
                 if (faviconEl) {
-                    faviconEl.innerHTML = `<img src="${e.favicons[0]}" width="12" height="12" style="border-radius:2px;" onerror="this.style.display='none'">`;
+                    faviconEl.innerHTML = `<img src="${webviewEvent.favicons[0]}" width="12" height="12" style="border-radius:2px;" onerror="this.style.display='none'">`;
                 }
             }
         });

@@ -13,7 +13,7 @@
         if (!containerEl) return;
         containerEl.innerHTML = '';
 
-        const atlasData = (window as any).__ATLAS_STORAGE__ || {
+        const atlasData = window.__ATLAS_STORAGE__ || {
             totalTransfer: 0,
             resources: [],
             domSize: 0,
@@ -55,7 +55,7 @@
         } else {
             const listWrap = document.createElement('div');
             listWrap.style.cssText = 'display:flex; flex-direction:column; gap:2px;';
-            resList.forEach((res: any) => {
+            resList.forEach((res: { name: string; duration: number; size: number }) => {
                 const item = document.createElement('div');
                 item.style.cssText = 'font-size:11px; color:#a1a1aa; font-family:"JetBrains Mono", monospace; display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03); opacity:0.9; cursor:default;';
                 item.onmouseover = () => item.style.color = '#fff';
@@ -71,7 +71,7 @@
         containerEl.appendChild(heavy);
     };
 
-    const atlas = (window as any).Atlas;
+    const atlas = window.Atlas;
     atlas.on('storageUpdated', () => renderStorage());
 
     atlas.addTool('Storage', function () {

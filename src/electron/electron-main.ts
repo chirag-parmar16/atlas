@@ -10,7 +10,7 @@
  * used by all Atlas Engine/Transport/UI modules.
  */
 
-import { app, BrowserWindow, ipcMain, desktopCapturer } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, Event, WebContents } from 'electron';
 import path from 'path';
 import url from 'url';
 import fs from 'fs';
@@ -70,7 +70,7 @@ app.on('ready', () => {
     // When any webview inside Atlas tries to open a new window (target="_blank"),
     // we intercept it in the main process (the ONLY reliable place) and tell
     // the renderer to open it as a new tab instead.
-    mainWindow.webContents.on('did-attach-webview', (_event: any, webviewContents: any) => {
+    mainWindow.webContents.on('did-attach-webview', (_event: Event, webviewContents: WebContents) => {
         webviewContents.setWindowOpenHandler(({ url }: { url: string }) => {
             // Tell renderer to open as a new tab
             mainWindow?.webContents.send('open-as-tab', url);
@@ -98,7 +98,7 @@ app.on('ready', () => {
     // Renderer reports which tab URL is currently active
     // browser.ts reads this via a global so syncHUD can filter correctly
     ipcMain.on('active-tab-url', (_event, url: string) => {
-        (global as any).__atlasActiveTabUrl = url;
+        (global as { __atlasActiveTabUrl?: string }).__atlasActiveTabUrl = url;
     });
 
     // --- NATIVE SCREEN RECORDING IPC ---
@@ -163,12 +163,12 @@ app.on('ready', () => {
                         // VP9 in webm to MP4 usually requires re-encoding or just stream copying if supported
                         const cmd = `"${ffmpegPath}" -i "${webmPath}" -c copy "${mp4Path}"`;
 
-                        exec(cmd, (err: any) => {
+                        exec(cmd, (err: Error | null) => {
                             if (err) {
                                 // If copy fails (codec mismatch), try re-encoding
                                 console.log(`[Atlas] Direct copy failed, re-encoding to MP4...`);
                                 const reencodeCmd = `"${ffmpegPath}" -i "${webmPath}" "${mp4Path}"`;
-                                exec(reencodeCmd, (err2: any) => {
+                                exec(reencodeCmd, (err2: Error | null) => {
                                     if (!err2) {
                                         console.log(`[Atlas] Native Recording Saved: ${mp4Path}`);
                                         try { fs.unlinkSync(webmPath); } catch (e) { }

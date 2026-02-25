@@ -83,11 +83,14 @@
                 injectBtn.style.borderColor = '#10b981';
                 injectBtn.style.color = '#10b981';
 
-                const win = window as any;
+                const win = window as unknown as { setStressConfig?: (c: { errorRate: number; jitter: number; latencySpike: number; mockOffline: boolean; dropPackets: boolean; }) => void };
                 if (win.setStressConfig) {
                     win.setStressConfig({
                         errorRate: errorRate / 100,
-                        latencySpike: latencySpike / 100
+                        latencySpike: latencySpike / 100,
+                        jitter: 0,
+                        mockOffline: false,
+                        dropPackets: false
                     });
                 }
             };
@@ -98,7 +101,7 @@
             const monitor = document.createElement('div');
             monitor.style.cssText = 'display:flex; flex-direction:column; gap:6px;';
 
-            const atlas = (window as any).Atlas;
+            const atlas = (window as unknown as { Atlas: { violations: Violation[] } }).Atlas;
             const violations: Violation[] = (atlas && atlas.violations) || [];
             // Show all violation sources that indicate real problems (includes console warnings)
             const stabilityEvents = violations.filter(v => ['Runtime', 'Resource', 'Promise', 'Network', 'Stress Testing', 'Performance', 'Console', 'Scalability'].includes(v.source));
@@ -122,7 +125,7 @@
         containerEl.appendChild(content);
     };
 
-    const atlas = (window as any).Atlas;
+    const atlas = (window as unknown as { Atlas: { on: (event: string, cb: () => void) => void, addTool: (name: string, cb: () => HTMLElement, onRender?: () => void) => void } }).Atlas;
 
     atlas.on('violationsUpdated', () => {
         if (activeSubTab === 'livemonitor') renderStability();

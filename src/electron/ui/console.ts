@@ -11,9 +11,10 @@
     const logs: LogEntry[] = [];
     let activeFilter: string = 'all';
     let listEl: HTMLElement | null = null;
-    let renderTimeout: any = null;
+    let renderTimeout: number | null = null;
     let expandedLogId: string | null = null;
     const countEls: Record<string, HTMLElement> = {};
+    const filterBtns: Record<string, HTMLElement> = {};
 
     const ICONS = {
         TRASH: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>'
@@ -27,7 +28,7 @@
         debug: { color: '#a78bfa', bg: 'rgba(167, 139, 250, 0.05)', icon: '◦', label: 'DEBUG', badge: '#a78bfa' }
     };
 
-    const atlas = (window as any).Atlas;
+    const atlas = window.Atlas;
 
     const throttledRender = () => {
         if (renderTimeout) return;
@@ -37,7 +38,7 @@
         });
     };
 
-    atlas.on('consoleLog', (entry: any) => {
+    atlas.on('consoleLog', (entry: { level: string; message: string; stack?: string; timestamp?: number }) => {
         const level = entry.level || 'log';
         const msg = entry.message || '';
         if (msg.includes('[Atlas]') || msg.includes('%c[Atlas]')) return;
@@ -124,6 +125,11 @@
                     stackEl.style.cssText = 'background:rgba(239, 68, 68, 0.05); padding:16px; border-radius:8px; border:1px solid rgba(239, 68, 68, 0.2); color:#ef4444; font-size:10px; overflow-x:auto; font-family:\'JetBrains Mono\', monospace; line-height:1.6; margin:0;';
                     stackEl.textContent = entry.stack;
                     details.appendChild(stackEl);
+                } else {
+                    const noStack = document.createElement('div');
+                    noStack.style.cssText = 'color:#52525b; font-style:italic; font-size:10px; margin-top:12px; padding:10px; text-align:center; background:rgba(255,255,255,0.02); border-radius:6px;';
+                    noStack.textContent = 'No stack trace available.';
+                    details.appendChild(noStack);
                 }
                 rowWrapper.appendChild(details);
             }
@@ -154,8 +160,15 @@
             countSpan.innerText = '0';
             countEls[key] = countSpan;
             btn.appendChild(countSpan);
+            filterBtns[key] = btn;
+
             btn.onclick = () => {
                 activeFilter = key;
+                Object.keys(filterBtns).forEach(k => {
+                    const isActive = activeFilter === k;
+                    filterBtns[k].style.background = isActive ? 'rgba(255,255,255,0.1)' : 'transparent';
+                    filterBtns[k].style.color = isActive ? '#fff' : '#71717a';
+                });
                 renderLogs();
             };
             filterBar.appendChild(btn);

@@ -17,7 +17,7 @@
         const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
         const cookies = document.cookie.split(';').filter(c => c.trim().length > 0);
 
-        const createSection = (title: string, items: any[], icon: string, color: string) => {
+        const createSection = (title: string, items: (string | HTMLElement)[], icon: string, color: string) => {
             const section = document.createElement('div');
             section.style.cssText = 'margin-bottom:12px; background:rgba(0,0,0,0.2); padding:14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); transition: border-color 0.2s;';
             section.onmouseover = () => section.style.borderColor = 'rgba(255,255,255,0.1)';
@@ -58,7 +58,7 @@
         createSection('App Cookies', cookies, ICONS.COOKIE, '#a78bfa');
     };
 
-    (window as any).Atlas.addTool('Application', function () {
+    window.Atlas.addTool('Application', function () {
         containerEl = document.createElement('div');
         containerEl.style.cssText = 'padding:15px; display:flex; flex-direction:column; height:100%; overflow-y:auto; background:transparent;';
         renderApplication();

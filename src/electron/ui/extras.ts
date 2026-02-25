@@ -25,8 +25,8 @@
         btn.onclick = async () => {
             let started = false;
             try {
-                if (typeof (window as any).startNativeRecording === 'function') {
-                    started = await (window as any).startNativeRecording();
+                if (typeof window.startNativeRecording === 'function') {
+                    started = await window.startNativeRecording();
                 }
             } catch (e) { }
 

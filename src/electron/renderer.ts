@@ -1,6 +1,26 @@
 import { pill, pillCount, menu } from './setup-api';
 import { TabManager } from './tab-manager';
 
+declare global {
+    interface Window {
+        _atlasTabManager: TabManager;
+        atlasControls: {
+            minimize: () => void;
+            maximize: () => void;
+            close: () => void;
+        };
+        updateRecorder: (state: { isRecording: boolean; paused?: boolean }) => void;
+        startNativeRecording: () => Promise<boolean>;
+        stopNativeRecording: () => Promise<void>;
+        pauseNativeRecording: (paused: boolean) => void;
+        atlasNativeRecorder: {
+            getWindowSource: () => Promise<string>;
+            saveChunk: (id: string, buffer: ArrayBuffer) => void;
+            finalize: (id: string) => void;
+        };
+    }
+}
+
 const params = new URLSearchParams(window.location.search);
 const disabledTabsStr = params.get('disabledTabs') || '';
 const disabledTabs = new Set(disabledTabsStr.split(',').map(t => t.trim().toLowerCase()).filter(Boolean));
@@ -61,11 +81,11 @@ const tabManager = new TabManager(
 tabManager.createTab(initialUrl);
 
 // Expose tabManager globally so extras.ts can reach the active webview
-(window as any)._atlasTabManager = tabManager;
+window._atlasTabManager = tabManager;
 
 // Listen for main-process new-window interceptions (target="_blank" links)
 // Main process blocks the native new window and tells us to open it as a tab instead
-(window as any).atlasTabBridge?.onOpenTab((url: string) => {
+window.atlasTabBridge?.onOpenTab((url: string) => {
     console.log(`[Atlas] Opening _blank link as tab: ${url}`);
     tabManager.createTab(url);
 });
@@ -87,9 +107,9 @@ function formatDisplayURL(rawUrl: string) {
 }
 
 // Window Control Handlers
-(document.getElementById('win-min-btn') as HTMLElement).onclick = () => (window as any).atlasControls.minimize();
-(document.getElementById('win-max-btn') as HTMLElement).onclick = () => (window as any).atlasControls.maximize();
-(document.getElementById('win-close-btn') as HTMLElement).onclick = () => (window as any).atlasControls.close();
+(document.getElementById('win-min-btn') as HTMLElement).onclick = () => window.atlasControls.minimize();
+(document.getElementById('win-max-btn') as HTMLElement).onclick = () => window.atlasControls.maximize();
+(document.getElementById('win-close-btn') as HTMLElement).onclick = () => window.atlasControls.close();
 
 // Navigation Handlers
 (document.getElementById('hud-back-btn') as HTMLElement).onclick = () => tabManager.goBack();
@@ -107,10 +127,10 @@ urlInput.onkeydown = (e) => {
 };
 // --- RECORDER UI LOGIC ---
 let recordingStartTime = 0;
-let recordingInterval: any = null;
+let recordingInterval: ReturnType<typeof setInterval> | null = null;
 let isRecordingPaused = false;
 
-(window as any).updateRecorder = (state: { isRecording: boolean, paused?: boolean }) => {
+window.updateRecorder = (state: { isRecording: boolean, paused?: boolean }) => {
     const recDot = document.getElementById('pill-rec-indicator');
     const recTimer = document.getElementById('pill-rec-timer');
     const pillLabel = document.getElementById('pill-label');
@@ -157,9 +177,9 @@ let isRecordingPaused = false;
 let mediaRecorder: MediaRecorder | null = null;
 let recordedSessionId = '';
 
-(window as any).startNativeRecording = async () => {
+window.startNativeRecording = async () => {
     try {
-        const sourceId = await (window as any).atlasNativeRecorder.getWindowSource();
+        const sourceId = await window.atlasNativeRecorder.getWindowSource();
         if (!sourceId) return false;
 
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -171,21 +191,21 @@ let recordedSessionId = '';
                     minFrameRate: 30,
                     maxFrameRate: 30
                 }
-            } as any
+            } as unknown as MediaTrackConstraints
         });
 
         recordedSessionId = new Date().toISOString().replace(/[:.]/g, '-');
-        mediaRecorder = new (window as any).MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+        mediaRecorder = new (window as unknown as { MediaRecorder: new (s: MediaStream, o: unknown) => MediaRecorder }).MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
 
-        mediaRecorder!.ondataavailable = async (e: any) => {
+        mediaRecorder!.ondataavailable = async (e: BlobEvent) => {
             if (e.data.size > 0) {
                 const buffer = await e.data.arrayBuffer();
-                (window as any).atlasNativeRecorder.saveChunk(recordedSessionId, buffer);
+                window.atlasNativeRecorder.saveChunk(recordedSessionId, buffer);
             }
         };
 
         mediaRecorder!.start(1000); // emit chunks every second
-        (window as any).updateRecorder({ isRecording: true });
+        window.updateRecorder({ isRecording: true });
         return true;
     } catch (e) {
         console.error('[Atlas] Native recording failed:', e);
@@ -193,23 +213,23 @@ let recordedSessionId = '';
     }
 };
 
-(window as any).stopNativeRecording = async () => {
+window.stopNativeRecording = async () => {
     if (mediaRecorder) {
         mediaRecorder.stop();
-        mediaRecorder.stream.getTracks().forEach((t: any) => t.stop());
+        mediaRecorder.stream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
         setTimeout(() => {
-            (window as any).atlasNativeRecorder.finalize(recordedSessionId);
+            window.atlasNativeRecorder.finalize(recordedSessionId);
             mediaRecorder = null;
         }, 1500); // Flush final chunks
-        (window as any).updateRecorder({ isRecording: false });
+        window.updateRecorder({ isRecording: false });
     }
 };
 
-(window as any).pauseNativeRecording = (paused: boolean) => {
+window.pauseNativeRecording = (paused: boolean) => {
     if (mediaRecorder) {
         if (paused) mediaRecorder.pause();
         else mediaRecorder.resume();
-        (window as any).updateRecorder({ isRecording: true, paused });
+        window.updateRecorder({ isRecording: true, paused });
     }
 };
 
@@ -223,21 +243,21 @@ function updateRecordingTimer() {
 }
 
 // Initial state
-(window as any).updateRecorder({ isRecording: false });
+window.updateRecorder({ isRecording: false });
 
 // Pill Control Listeners
 (document.getElementById('pill-pause-btn') as HTMLElement).onclick = async (e) => {
     e.stopPropagation(); // Don't drag/toggle menu
     isRecordingPaused = !isRecordingPaused;
-    if (typeof (window as any).pauseNativeRecording === 'function') {
-        (window as any).pauseNativeRecording(isRecordingPaused);
+    if (typeof window.pauseNativeRecording === 'function') {
+        window.pauseNativeRecording(isRecordingPaused);
     }
 };
 
 (document.getElementById('pill-stop-btn') as HTMLElement).onclick = async (e) => {
     e.stopPropagation();
-    if (typeof (window as any).stopNativeRecording === 'function') {
-        (window as any).stopNativeRecording();
+    if (typeof window.stopNativeRecording === 'function') {
+        window.stopNativeRecording();
     }
 };
 

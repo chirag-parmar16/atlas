@@ -319,12 +319,12 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 stack: ''
             });
 
-            // Console warnings count as low-severity violations (they are real bugs)
-            if (level === 'warn') {
+            // Console warnings and errors count as violations
+            if (level === 'warn' || level === 'error') {
                 pipeline.emit('violation', {
                     source: 'Console',
-                    message: `[WARN] ${message}`,
-                    level: 1, // WARNING severity
+                    message: `[${level.toUpperCase()}] ${message}`,
+                    level: level === 'error' ? 2 : 1, // ERROR=2, WARNING=1
                     timestamp: Date.now(),
                     url: targetPage.url()
                 });
@@ -562,7 +562,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
                 // Re-find the webview target robustly
                 const targets = await browser.targets();
-                const newWebview = targets.find((t: any) => {
+                const newWebview = targets.find((t: Target) => {
                     const type = t.type();
                     const url = t.url();
                     return type === 'webview' || (type === 'other' && url === 'about:blank') || (type === 'page' && !url.includes('index.html'));

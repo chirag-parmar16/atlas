@@ -19,7 +19,7 @@
             '<div style="font-size:11px; color:#71717a; line-height:1.5;">Passive monitoring enabled. Atlas will detect PII leaks and insecure resource loads without blocking.</div>';
         containerEl.appendChild(warden);
 
-        const atlas = (window as any).Atlas;
+        const atlas = window.Atlas;
         const violations: Violation[] = (atlas && atlas.violations) || [];
         const secEvents = violations.filter(v =>
             v.source.includes('Security') ||
@@ -48,7 +48,7 @@
         containerEl.appendChild(listWrap);
     };
 
-    const atlas = (window as any).Atlas;
+    const atlas = window.Atlas;
 
     // React to live violation updates
     atlas.on('violationsUpdated', () => {

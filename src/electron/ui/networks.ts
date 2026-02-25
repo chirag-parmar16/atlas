@@ -17,7 +17,7 @@ let activeType: string = 'all';
 let searchQuery: string = '';
 let containerEl: HTMLElement | null = null;
 let expandedRequestId: string | null = null;
-let renderTimeout: any = null;
+let renderTimeout: number | null = null;
 
 const TYPE_MAP: Record<string, string> = {
     'fetch': 'XHR', 'xhr': 'XHR', 'document': 'Doc', 'script': 'JS',
@@ -26,7 +26,7 @@ const TYPE_MAP: Record<string, string> = {
 
 const STATUS_COLORS: Record<string, string> = { '2': '#10b981', '3': '#3b82f6', '4': '#facc15', '5': '#ef4444' };
 
-const atlas = (window as any).Atlas;
+const atlas = window.Atlas;
 
 function formatHeaders(headers: Record<string, string>) {
     const wrap = document.createDocumentFragment();

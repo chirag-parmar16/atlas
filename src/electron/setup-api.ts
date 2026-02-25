@@ -1,3 +1,5 @@
+import { Violation, ConsoleEntry, NetworkRequest, StorageMetrics, NavigationEntry } from '../engine/state';
+
 export const pill = document.getElementById('host-pill') as HTMLElement;
 export const pillCount = document.getElementById('pill-count') as HTMLElement;
 export const menu = document.getElementById('host-menu') as HTMLElement;
@@ -8,11 +10,11 @@ export const menu = document.getElementById('host-menu') as HTMLElement;
 // zero-flicker, no data loss. Chrome DevTools style.
 
 interface TabData {
-    violations: any[];
-    requests: any[];
-    consoleLogs: any[];
-    storage: any;
-    links: any[];
+    violations: Violation[];
+    requests: NetworkRequest[];
+    consoleLogs: ConsoleEntry[];
+    storage: StorageMetrics | null;
+    links: NavigationEntry[];
 }
 
 const tabDataStore = new Map<string, TabData>();
@@ -36,7 +38,38 @@ function getActiveTabData(): TabData {
 }
 
 // ─── ATLAS API (HOST ADAPTER) ───────────────────────────────────────────────
-(window as any).Atlas = {
+
+export interface AtlasApi {
+    Severity: { INFO: number; WARN: number; ERROR: number };
+    tools: { name: string; onShow?: () => void }[];
+    violations: Violation[];
+    networkRequests: NetworkRequest[];
+    _listeners: Record<string, Function[]>;
+    on: (event: string, callback: Function) => void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    emit: (event: string, data?: any) => void;
+    addTool: (name: string, renderCallback?: () => HTMLElement | null, onShow?: () => void) => void;
+    reportViolation: (source: string, message: string, level: number) => void;
+}
+
+declare global {
+    interface Window {
+        Atlas: AtlasApi;
+        updateViolations: (vils: Violation[], tabId?: string) => void;
+        updateViolationCount: (count: number) => void;
+        updateConsole: (entry: ConsoleEntry, tabId?: string) => void;
+        updateTraffic: (reqs: NetworkRequest[], tabId?: string) => void;
+        addNetworkRequest: (req: NetworkRequest, tabId?: string) => void;
+        updateStorage: (metrics: StorageMetrics, tabId?: string) => void;
+        updateLinks: (links: NavigationEntry[], tabId?: string) => void;
+        __atlasSwapTab: (tabId: string) => void;
+        __atlasDeleteTab: (tabId: string) => void;
+        __ATLAS_STORAGE__: StorageMetrics | null;
+        __ATLAS_LINKS__: NavigationEntry[];
+    }
+}
+
+window.Atlas = {
     Severity: { INFO: 0, WARN: 1, ERROR: 2 },
     tools: [],
     violations: [],
@@ -46,12 +79,13 @@ function getActiveTabData(): TabData {
         if (!this._listeners[event]) this._listeners[event] = [];
         this._listeners[event].push(callback);
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     emit: function (event: string, data?: any) {
         if (this._listeners[event]) {
-            this._listeners[event].forEach((cb: any) => cb(data));
+            this._listeners[event].forEach((cb: Function) => cb(data));
         }
     },
-    addTool: function (name: string, renderCallback: any, onShow: any) {
+    addTool: function (name: string, renderCallback?: () => HTMLElement | null, onShow?: () => void) {
         const id = name.toLowerCase().replace(/\s+/g, '-');
 
         const mountTool = () => {
@@ -99,89 +133,89 @@ function getActiveTabData(): TabData {
         this.tools.push({ name, onShow });
     },
     reportViolation: function (source: string, message: string, level: number) {
-        const v = { source, message, level, timestamp: Date.now() };
+        const v: Violation = { source, message, level, timestamp: Date.now(), url: '' };
         this.violations.push(v);
         // Also store in per-tab bucket
         getActiveTabData().violations.push(v);
-        (window as any).updateViolationCount(this.violations.length);
+        window.updateViolationCount(this.violations.length);
         this.emit('violationsUpdated', this.violations);
     }
 };
 
 // ─── PIPELINE DATA BRIDGE (writes into per-tab buckets) ─────────────────────
 
-(window as any).updateViolations = (vils: any[], tabId: string = '') => {
+window.updateViolations = (vils: Violation[], tabId: string = '') => {
     const targetId = tabId || activeTabId || '__default__';
     const data = getOrCreateTabData(targetId);
     data.violations = vils;
 
     // Update UI only if this data belongs to the active tab
     if (targetId === activeTabId || !activeTabId) {
-        (window as any).Atlas.violations = data.violations;
-        (window as any).Atlas.emit('violationsUpdated', data.violations);
-        (window as any).updateViolationCount(data.violations.length);
+        window.Atlas.violations = data.violations;
+        window.Atlas.emit('violationsUpdated', data.violations);
+        window.updateViolationCount(data.violations.length);
     }
 };
 
-(window as any).updateViolationCount = (count: number) => {
+window.updateViolationCount = (count: number) => {
     pillCount.textContent = String(count);
     pill.classList.toggle('has-violations', count > 0);
     pill.classList.add('pulse');
     setTimeout(() => pill.classList.remove('pulse'), 400);
 };
 
-(window as any).updateConsole = (entry: any, tabId: string = '') => {
+window.updateConsole = (entry: ConsoleEntry, tabId: string = '') => {
     const targetId = tabId || activeTabId || '__default__';
     const data = getOrCreateTabData(targetId);
     data.consoleLogs.push(entry);
 
     if (targetId === activeTabId || !activeTabId) {
-        (window as any).Atlas.emit('consoleLog', entry);
+        window.Atlas.emit('consoleLog', entry);
     }
 };
 
-(window as any).updateTraffic = (reqs: any[], tabId: string = '') => {
+window.updateTraffic = (reqs: NetworkRequest[], tabId: string = '') => {
     const targetId = tabId || activeTabId || '__default__';
     const data = getOrCreateTabData(targetId);
     data.requests = reqs;
 
     if (targetId === activeTabId || !activeTabId) {
-        (window as any).Atlas.networkRequests = data.requests;
-        (window as any).Atlas.emit('networkTrafficUpdated', data.requests);
+        window.Atlas.networkRequests = data.requests;
+        window.Atlas.emit('networkTrafficUpdated', data.requests);
     }
 };
 
-(window as any).addNetworkRequest = (req: any, tabId: string = '') => {
+window.addNetworkRequest = (req: NetworkRequest, tabId: string = '') => {
     const targetId = tabId || activeTabId || '__default__';
     const data = getOrCreateTabData(targetId);
     data.requests.push(req);
     if (data.requests.length > 200) data.requests.shift();
 
     if (targetId === activeTabId || !activeTabId) {
-        (window as any).Atlas.networkRequests = data.requests;
-        (window as any).Atlas.emit('networkTrafficUpdated', data.requests);
+        window.Atlas.networkRequests = data.requests;
+        window.Atlas.emit('networkTrafficUpdated', data.requests);
     }
 };
 
-(window as any).updateStorage = (metrics: any, tabId: string = '') => {
+window.updateStorage = (metrics: StorageMetrics, tabId: string = '') => {
     const targetId = tabId || activeTabId || '__default__';
     const data = getOrCreateTabData(targetId);
     data.storage = metrics;
 
     if (targetId === activeTabId || !activeTabId) {
-        (window as any).__ATLAS_STORAGE__ = metrics;
-        (window as any).Atlas.emit('storageUpdated', metrics);
+        window.__ATLAS_STORAGE__ = metrics;
+        window.Atlas.emit('storageUpdated', metrics);
     }
 };
 
-(window as any).updateLinks = (links: any[], tabId: string = '') => {
+window.updateLinks = (links: NavigationEntry[], tabId: string = '') => {
     const targetId = tabId || activeTabId || '__default__';
     const data = getOrCreateTabData(targetId);
     data.links = links;
 
     if (targetId === activeTabId || !activeTabId) {
-        (window as any).__ATLAS_LINKS__ = links;
-        (window as any).Atlas.emit('linksUpdated', links);
+        window.__ATLAS_LINKS__ = links;
+        window.Atlas.emit('linksUpdated', links);
     }
 };
 
@@ -191,29 +225,30 @@ function getActiveTabData(): TabData {
  * Swap to a tab's stored data and re-emit everything to all panels.
  * Zero flicker — just swaps which data bucket feeds the UI.
  */
-(window as any).__atlasSwapTab = (tabId: string) => {
+window.__atlasSwapTab = (tabId: string) => {
     activeTabId = tabId;
     const data = getOrCreateTabData(tabId);
-    const atlas = (window as any).Atlas;
+    const atlas = window.Atlas;
 
     // Swap all UI state to this tab's stored data
     atlas.violations = data.violations;
     atlas.networkRequests = data.requests;
-    (window as any).__ATLAS_STORAGE__ = data.storage;
-    (window as any).__ATLAS_LINKS__ = data.links;
+    window.__ATLAS_STORAGE__ = data.storage;
+    window.__ATLAS_LINKS__ = data.links;
 
     // Re-emit all events so every panel refreshes with this tab's data
     atlas.emit('violationsUpdated', data.violations);
     atlas.emit('networkTrafficUpdated', data.requests);
-    atlas.emit('storageUpdated', data.storage);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    atlas.emit('storageUpdated', data.storage as any);
     atlas.emit('linksUpdated', data.links);
 
     // Update pill count
-    (window as any).updateViolationCount(data.violations.length);
+    window.updateViolationCount(data.violations.length);
 
     // Re-emit all console logs for this tab so Console panel populates
     atlas.emit('consoleCleared');  // clear first
-    data.consoleLogs.forEach((entry: any) => {
+    data.consoleLogs.forEach((entry: ConsoleEntry) => {
         atlas.emit('consoleLog', entry);
     });
 };
@@ -221,6 +256,6 @@ function getActiveTabData(): TabData {
 /**
  * Delete a tab's data bucket when the tab is closed.
  */
-(window as any).__atlasDeleteTab = (tabId: string) => {
+window.__atlasDeleteTab = (tabId: string) => {
     tabDataStore.delete(tabId);
 };
