@@ -1,8 +1,39 @@
-
 import inquirer from 'inquirer';
 import path from 'path';
 import fs from 'fs';
 import chalk from 'chalk';
+
+async function readConsole(promptText: string): Promise<string> {
+    return new Promise<string>((resolve) => {
+        process.stdout.write(promptText);
+
+        // Use generic readline for normal environments
+        if (process.stdin.isTTY) {
+            const rl = require('readline').createInterface({
+                input: process.stdin,
+                output: process.stdout
+            });
+            rl.question('', (answer: string) => {
+                rl.close();
+                resolve(answer.trim());
+            });
+            return;
+        }
+
+        // Fallback for packaged Electron Windows apps where stdin/stdout is detached
+        try {
+            const fd = fs.openSync('\\\\.\\CON', 'rs');
+            const buf = Buffer.alloc(512);
+            const bytesRead = fs.readSync(fd, buf, 0, 512, null);
+            fs.closeSync(fd);
+            resolve(buf.toString('utf8', 0, bytesRead).trim());
+        } catch (e) {
+            console.error('\n\x1b[31m[Error] Cannot read from console. Please run this command from a standard terminal.\x1b[0m');
+            process.exit(1);
+        }
+    });
+}
+
 import { startServer } from '../server/server';
 import { launchBrowser } from '../browser/browser';
 
@@ -138,61 +169,43 @@ export async function run() {
 
             const serverPromise = startServer(projectPath, onServerLog);
 
-            if (atlasConfig.targetDomain) {
-                const serverResult = await serverPromise;
-                serverPort = serverResult.port;
-                serverCleanup = serverResult.cleanup;
-                finalDomain = atlasConfig.targetDomain;
-                console.log(`   ${NEON_GREEN('✓')} Using target domain: ${CYAN(finalDomain)}`);
-            } else {
-                const answers = await inquirer.prompt([{
-                    type: 'input',
-                    name: 'domain',
-                    message: 'Enter domain to mask as:',
-                    filter: (i: string) => i.trim(),
-                    validate: (i: string) => i.length > 0
-                }]);
-
-                const serverResult = await serverPromise;
-                serverPort = serverResult.port;
-                serverCleanup = serverResult.cleanup;
-                finalDomain = answers.domain;
+            if (!atlasConfig.targetDomain) {
+                console.log(`   ${chalk.red.bold('ERROR')} ${chalk.white('No targetDomain found in atlas.config.json. Please run "atlas init" again.')}`);
+                process.exit(1);
             }
+
+            const serverResult = await serverPromise;
+            serverPort = serverResult.port;
+            serverCleanup = serverResult.cleanup;
+            finalDomain = atlasConfig.targetDomain;
+            console.log(`   ${NEON_GREEN('✓')} Using target domain: ${CYAN(finalDomain)}`);
+            // Remove domain prompt since it's already in the config
         } else {
             console.log(YELLOW('   MODE MANUAL') + GRAY(' • No package.json detected'));
             console.log('');
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const prompts: any[] = [];
+            // === MANUAL MODE ===
             if (!atlasConfig.targetDomain) {
-                prompts.push({
-                    type: 'input',
-                    name: 'domain',
-                    message: 'Enter domain to mask as:',
-                    validate: (i: string) => i.length > 0
-                });
-            } else {
-                console.log(`   ${NEON_GREEN('✓')} Using target domain: ${CYAN(atlasConfig.targetDomain)}`);
-                finalDomain = atlasConfig.targetDomain;
+                console.log(`   ${chalk.red.bold('ERROR')} ${chalk.white('No targetDomain found in atlas.config.json. Please run "atlas init" again.')}`);
+                process.exit(1);
             }
 
-            prompts.push({
-                type: 'input',
-                name: 'port',
-                message: 'Enter localhost port:',
-                validate: (i: string) => {
-                    const n = parseInt(i);
-                    return (!isNaN(n) && n > 0 && n < 65536) || 'Please enter a valid port number (1-65535)';
-                },
-                filter: (i: string) => parseInt(i)
-            });
+            console.log(`   ${NEON_GREEN('✓')} Using target domain: ${CYAN(atlasConfig.targetDomain)}`);
+            finalDomain = atlasConfig.targetDomain;
 
-            const answers = await inquirer.prompt(prompts);
-            serverPort = answers.port;
-            if (!finalDomain) finalDomain = answers.domain;
+            let isPortValid = false;
+            while (!isPortValid) {
+                const answer = await readConsole('Enter localhost port: ');
+                const n = parseInt(answer);
+                if (!isNaN(n) && n > 0 && n < 65536) {
+                    serverPort = n;
+                    isPortValid = true;
+                } else {
+                    console.log('\x1b[31mPlease enter a valid port number (1-65535)\x1b[0m');
+                }
+            }
         }
     } catch (err: unknown) {
-        if ((err as Error).name === 'ExitPromptError') process.exit(0);
         throw err;
     }
 

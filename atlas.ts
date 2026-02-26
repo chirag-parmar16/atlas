@@ -56,10 +56,10 @@ const updateConfig = (disable?: string, enable?: string) => {
 };
 
 program
-    .command('init')
+    .command('init [domain]')
     .description('Initialize Atlas in the current project directory')
-    .action(() => {
-        init();
+    .action((domain?: string) => {
+        init(domain);
     });
 
 program
@@ -93,8 +93,11 @@ if (disableVal || enableVal) {
     }
 }
 
-program.parse(process.argv);
-
-if (!isCommand && !disableVal && !enableVal) {
-    program.help();
-}
+program.parseAsync(process.argv).then(() => {
+    if (!isCommand && !disableVal && !enableVal) {
+        program.help();
+    }
+}).catch(err => {
+    console.error(err);
+    process.exit(1);
+});

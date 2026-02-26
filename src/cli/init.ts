@@ -1,8 +1,40 @@
 import fs from 'fs';
 import path from 'path';
-import inquirer from 'inquirer';
 
-export async function init() {
+async function readConsole(promptText: string): Promise<string> {
+    return new Promise<string>((resolve) => {
+        process.stdout.write(promptText);
+
+        // Use generic readline for normal environments
+        if (process.stdin.isTTY) {
+            const rl = require('readline').createInterface({
+                input: process.stdin,
+                output: process.stdout
+            });
+            rl.question('', (answer: string) => {
+                rl.close();
+                resolve(answer.trim());
+            });
+            return;
+        }
+
+        // Fallback for packaged Electron Windows apps where stdin/stdout is detached
+        try {
+            const fd = fs.openSync('\\\\.\\CON', 'rs');
+            const buf = Buffer.alloc(512);
+            const bytesRead = fs.readSync(fd, buf, 0, 512, null);
+            fs.closeSync(fd);
+            resolve(buf.toString('utf8', 0, bytesRead).trim());
+        } catch (e) {
+            // Absolute worst-case fallback, though CON should always work on Windows
+            console.error('\n\x1b[31m[Error] Cannot read from console. Please run this command from a standard terminal.\x1b[0m');
+            process.exit(1);
+        }
+    });
+}
+import readline from 'readline';
+
+export async function init(providedDomain?: string) {
     const projectPath = process.cwd();
     const configPath = path.join(projectPath, 'atlas.config.json');
 
@@ -17,20 +49,24 @@ export async function init() {
     const projectType = detectProjectType(projectPath);
     console.log(`[Atlas] Detected Project Type: \x1b[36m${projectType}\x1b[0m`);
 
-    // Prompt for Target Domain
-    const answers = await inquirer.prompt([
-        {
-            type: 'input',
-            name: 'targetDomain',
-            message: 'Enter target domain to mask (e.g., example.com):',
-            validate: (input) => input.trim().length > 0 || 'Domain cannot be empty'
+    let targetDomain = providedDomain?.trim();
+
+    if (!targetDomain) {
+        let isValid = false;
+        while (!isValid) {
+            targetDomain = await readConsole('Enter target domain to mask (e.g., example.com): ');
+            if (targetDomain.length > 0) {
+                isValid = true;
+            } else {
+                console.log('\x1b[31mDomain cannot be empty\x1b[0m');
+            }
         }
-    ]);
+    }
 
     // Create config based on type
     const config = {
         projectType: projectType,
-        targetDomain: answers.targetDomain,
+        targetDomain: targetDomain,
         startupTimeout: 30000,
         recordingEnabled: true,
         debugMode: false
@@ -42,7 +78,7 @@ export async function init() {
         console.log(`\nCreated: \x1b[36m${configPath}\x1b[0m`);
         console.log('\nConfiguration:');
         console.log(`  • Type: ${projectType}`);
-        console.log(`  • Domain: ${answers.targetDomain}`);
+        console.log(`  • Domain: ${targetDomain}`);
         console.log('  • Startup timeout: 30 seconds');
         console.log('  • Recording: Enabled');
         console.log('  • Debug mode: Disabled');

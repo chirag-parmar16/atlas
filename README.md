@@ -40,13 +40,22 @@ cd /path/to/your/project
 
 ### 2. Initialize Atlas
 ```bash
+# Interactive prompt (Not recommended for Windows executable)
 atlas init
+
+# Or provide the domain directly (Recommended)
+atlas init example.com
 ```
 
 This creates an `atlas.config.json` file in your project directory. Atlas auto-detects your project type (Node, React, Vue, Angular, PHP, Static).
 
 ### 3. Run Atlas
 ```bash
+# Auto mode (Detects and starts your dev server)
+atlas run
+
+# Manual mode (When there's no framework/package.json)
+# Atlas will interactively prompt you for the domain and your local server port
 atlas run
 ```
 
