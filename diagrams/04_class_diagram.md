@@ -1,6 +1,6 @@
 # Class Diagram
 
-This diagram shows the object-oriented structure of the Atlas codebase with classes, interfaces, and their relationships.
+This diagram shows the object-oriented structure of the Atlas codebase with classes, interfaces, and their relationships, based on the reference architecture.
 
 ```mermaid
 classDiagram
@@ -8,10 +8,6 @@ classDiagram
     
     class AtlasCLI {
         -program: Command
-        +name: string = "atlas"
-        +version: string = "1.0.0"
-        +description: string
-        +constructor()
         +parse(argv: string[]): void
         +registerCommands(): void
     }
@@ -20,179 +16,100 @@ classDiagram
         -projectPath: string
         -projectName: string
         -serverPort: number
-        -serverChild: ChildProcess
-        -serverCleanup: Function
-        -finalDomain: string
-        -pendingLogs: string[]
-        -logTarget: Function
+        -pipeline: Pipeline
         +run(): Promise~void~
-        -promptForDomain(): Promise~string~
-        -promptForPort(): Promise~number~
-        -performCleanup(): Promise~void~
-        -relayLogs(msg: string): void
+        -setupBrowser(): Promise~void~
     }
-    
+
     class ServerManager {
         <<static>>
         +startServer(projectPath, onLog): Promise~ServerResult~
-        -spawnAsync(cmd, args, cwd, onLog): Promise~void~
-        -findFreePort(): Promise~number~
-        -waitForReady(port): Promise~boolean~
-    }
-    
-    class ServerResult {
-        +port: number
-        +child: ChildProcess
-        +cleanup: Function
     }
     
     class BrowserOrchestrator {
         -browser: Browser
-        -page: Page
-        -networkManager: NetworkManager
-        -recorder: SessionRecorder
+        -pipeline: Pipeline
+        -reportManager: ReportManager
         +launchBrowser(domain, port, path): Promise~BrowserResult~
-        -injectTools(page: Page): Promise~void~
-        -setupMultiTabSupport(): void
-        +broadcastLog(msg: string): void
-        +close(): Promise~void~
+        -setupPage(page: Page): Promise~void~
     }
     
-    class BrowserResult {
-        +broadcastLog: Function
-        +close: Function
-        +process: ChildProcess
-    }
-    
-    class NetworkManager {
-        -page: Page
-        -config: NetworkConfig
-        -currentThrottlingProfile: string
-        -currentSecurityMode: string
-        -chaosConfig: ChaosConfig
-        +constructor(page, config)
-        +init(): Promise~void~
-        +attach(page: Page): Promise~void~
-        -handleRequest(req, page): Promise~void~
-        -exposeControls(): Promise~void~
-        -serveAtlasShell(req): Promise~void~
-        -proxyToLocalhost(req): Promise~void~
-        -applyChaos(req): Promise~boolean~
-        -applyThrottling(): Promise~void~
-    }
-    
-    class NetworkConfig {
-        <<interface>>
-        +domain: string
-        +localPort: number
-    }
-    
-    class ChaosConfig {
-        <<interface>>
-        +enabled: boolean
-        +errorRate: number
-        +latencyRate: number
-        +dropRate: number
-    }
-    
-    class SessionRecorder {
-        -page: Page
-        -config: RecorderConfig
-        -recorder: PuppeteerScreenRecorder
-        -videoPath: string
-        -sessionEvents: SessionEvent[]
-        +constructor(page, config)
-        +init(): Promise~void~
-        +generateLog(): Promise~void~
-        -startRecording(): Promise~boolean~
-        -stopRecording(): Promise~string~
-        -recordEvent(event): void
-    }
-    
-    class RecorderConfig {
-        <<interface>>
-        +projectPath: string
-    }
-    
-    class SessionEvent {
-        <<interface>>
-        +time: string
-        +url: string
-        +type: EventType
-        +details: any
+    class Pipeline {
+        <<EventEmitter>>
+        +on(event, callback): void
+        +emit(event, data): void
     }
 
-    class AtlasAPI {
-        <<singleton>>
-        +Severity: SeverityEnum
-        +tools: Tool[]
-        +violations: Violation[]
-        +addTool(name, render, onShow): void
-        +reportViolation(source, msg, level): void
-        +setRecordingState(active): void
+    class NetworkInterceptor {
+        -stressor: Stressor
+        -securityScanner: SecurityScanner
+        -performanceTracker: PerformanceTracker
+        +init(): Promise~void~
+        +attach(page: Page): Promise~void~
     }
     
-    class SeverityEnum {
-        <<enumeration>>
-        INFO = 0
-        WARN = 1
-        ERROR = 2
+    class Stressor {
+        -config: ChaosConfig
+        +setConfig(config): void
+        +inject(request, onViolation): Promise~boolean~
+    }
+
+    class SecurityScanner {
+        -mode: string
+        +scanResponse(pathname, url, body, ...): void
+        +checkCORS(pathname, url, headers, ...): void
+    }
+
+    class PerformanceTracker {
+        +check(pathname, duration, pageUrl): Violation | null
+    }
+
+    class SessionRecorder {
+        -recorder: PuppeteerScreenRecorder
+        +init(): Promise~void~
     }
     
-    class Tool {
+    class ReportManager {
+        -projectPath: string
+        +logViolation(v: Violation): Promise~void~
+        +logNavigation(url, metrics): Promise~void~
+    }
+
+    class Violation {
         <<interface>>
-        +name: string
-        +render(): HTMLElement
-        +onShow(): void
-    }
-    
-    class EmbeddedTools {
-        <<module>>
-        +UI_SHELL: string
-        +TOOLS: string
-        +RECORDER: string
-        +HEALTH: string
-        +CHAOS: string
+        +source: string
+        +message: string
+        +level: number
+        +timestamp: number
+        +url: string
     }
 
     %% Relationships
     AtlasCLI --> RunCommand : creates
     RunCommand --> ServerManager : uses
     RunCommand --> BrowserOrchestrator : uses
-    ServerManager ..> ServerResult : returns
-    BrowserOrchestrator ..> BrowserResult : returns
-    BrowserOrchestrator --> NetworkManager : creates
-    BrowserOrchestrator --> SessionRecorder : creates
-    BrowserOrchestrator --> EmbeddedTools : injects
-    NetworkManager --> NetworkConfig : uses
-    NetworkManager --> ChaosConfig : uses
-    SessionRecorder --> RecorderConfig : uses
-    SessionRecorder --> SessionEvent : captures
-    EmbeddedTools --> AtlasAPI : defines
-    AtlasAPI --> Tool : manages
-    AtlasAPI --> SeverityEnum : uses
+    RunCommand --> Pipeline : defines
+    BrowserOrchestrator --> NetworkInterceptor : creates
+    BrowserOrchestrator --> SessionRecorder : attaches
+    BrowserOrchestrator --> ReportManager : creates
+    NetworkInterceptor --> Stressor : uses
+    NetworkInterceptor --> SecurityScanner : uses
+    NetworkInterceptor --> PerformanceTracker : uses
+    ReportManager ..> Violation : persists
 ```
 
 ## Class Responsibilities
 
-| Class               | File Location                  | Responsibility                           |
-| ------------------- | ------------------------------ | ---------------------------------------- |
-| AtlasCLI            | atlas.ts                       | CLI entry point, command registration    |
-| RunCommand          | src/commands/run.ts            | Main orchestration, lifecycle management |
-| ServerManager       | src/utils/server.ts            | Project server spawning and management   |
-| BrowserOrchestrator | src/utils/browser.ts           | Puppeteer browser control                |
-| NetworkManager      | src/utils/network-manager.ts   | Request interception, domain proxying    |
-| SessionRecorder     | src/utils/session-recorder.ts  | Video capture, event logging             |
-| AtlasAPI            | src/utils/embedded/ui-shell.ts | In-browser global API                    |
-| EmbeddedTools       | src/utils/embedded/index.ts    | Tool panel scripts                       |
-
-## Design Patterns Used
-
-| Pattern   | Implementation            | Purpose                           |
-| --------- | ------------------------- | --------------------------------- |
-| Singleton | AtlasAPI (window.Atlas)   | Single global API instance        |
-| Factory   | ServerManager.startServer | Create appropriate server type    |
-| Observer  | Event listeners           | Broadcast logs, violations        |
-| Proxy     | NetworkManager            | Intercept and forward requests    |
-| Module    | EmbeddedTools             | Encapsulate tool scripts          |
-| Strategy  | Throttling profiles       | Interchangeable network behaviors |
+| Class               | Responsibility                                             |
+| ------------------- | ---------------------------------------------------------- |
+| AtlasCLI            | Entry point for CLI commands and argument parsing.         |
+| RunCommand          | Orchestrates the server and browser lifecycle.             |
+| ServerManager       | Manages the local project server process.                  |
+| BrowserOrchestrator | Controls the Puppeteer instance and tool injection.        |
+| Pipeline            | Central event bus for system-wide communications.          |
+| NetworkInterceptor  | Intercepts and analyzes network traffic.                   |
+| Stressor            | Injects latency and errors to test application resilience. |
+| SecurityScanner     | Scans for PII and security policy violations.              |
+| PerformanceTracker  | Monitors and reports on network response times.            |
+| SessionRecorder     | Captures video and user interaction logs.                  |
+| ReportManager       | Generates JSON and Markdown audit reports.                 |

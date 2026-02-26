@@ -1,6 +1,6 @@
 # Context Level Data Flow Diagram (DFD)
 
-This diagram represents the highest level view of the Atlas system, showing the main external entities and data flows.
+This diagram represents the highest level view of the Atlas system, showing the main external entities and data flows based on the Electron-based architecture.
 
 ```mermaid
 flowchart TB
@@ -8,69 +8,84 @@ flowchart TB
         direction TB
         DEV(("Developer"))
         FS[("File System")]
-        PROD(("Production<br/>Domain"))
+        PROD(("Production Domain"))
     end
 
-    subgraph ATLAS_SYSTEM["ATLAS SYSTEM - Browser Sandbox Environment"]
+    subgraph ATLAS_SYSTEM["ATLAS SYSTEM"]
         direction TB
         
         subgraph CLI_Layer["CLI Layer"]
-            CLI["Command Line Interface<br/>atlas run"]
+            INIT["Atlas Init"]
+            RUN["Atlas Run"]
         end
         
-        subgraph Core["Core Processing"]
-            SERVER["Server Manager"]
-            BROWSER["Browser Orchestrator"]
-            NETWORK["Network Proxy"]
+        subgraph Electron_Host["Electron Host (HUD)"]
+            MAIN["Main Process"]
+            UI["Renderer (HUD UI)"]
+            TAB["Tab Manager"]
         end
-        
-        subgraph Output["Output Generation"]
-            RECORDER["Session Recorder"]
+
+        subgraph Engine_Pipeline["Engine & Pipeline"]
+            NET["Network Interceptor"]
+            STRESS["Stressor"]
+            SEC["Security Scanner"]
+            PIPE["Central Pipeline (Events)"]
+        end
+
+        subgraph Browser_Guest["Browser Guest"]
+            PAGE["Puppeteer Page"]
+            API["Global Atlas API"]
         end
     end
 
     %% Input Flows
-    DEV -->|"1. Execute CLI Command"| CLI
-    DEV -->|"2. Provide Domain Config"| CLI
-    FS -->|"3. Project Source Code"| SERVER
+    DEV -->|"1. Command"| INIT
+    DEV -->|"1. Command"| RUN
+    INIT -->|"12. Create Config"| FS
+    FS -->|"2. atlas.config.json"| RUN
+    RUN -->|"3. Spawn"| MAIN
+    FS <-->|"2. Source Code"| MAIN
+    FS <-->|"11. Reports/Logs"| MAIN
     
     %% Internal Flows
-    CLI -->|"4. Spawn Server"| SERVER
-    CLI -->|"5. Launch Browser"| BROWSER
-    SERVER -->|"6. Local Port"| NETWORK
-    BROWSER -->|"7. Page Instance"| NETWORK
-    BROWSER -->|"8. Page Events"| RECORDER
+    MAIN -->|"4. Attach"| Browser_Guest
+    PAGE <--> API
+    PAGE -->|"5. Logic"| NET
+    STRESS -->|"8. Interference"| NET
+    NET -->|"6. Events"| PIPE
+    PIPE -->|"7. Sync Data"| UI
     
     %% External Communication
-    NETWORK <-->|"9. Domain Masking<br/>Request/Response"| PROD
+    NET <-->|"9. Domain Masking"| PROD
     
     %% Output Flows
-    BROWSER -->|"10. Testing Interface"| DEV
-    RECORDER -->|"11. MP4 Video"| FS
+    UI -->|"10. HUD Dashboard"| DEV
 ```
 
 ## Data Flow Descriptions
 
-| #   | Flow              | Source         | Destination          | Data                        |
-| --- | ----------------- | -------------- | -------------------- | --------------------------- |
-| 1   | CLI Command       | Developer      | CLI                  | atlas run                   |
-| 2   | Domain Config     | Developer      | CLI                  | Domain name, Port           |
-| 3   | Source Code       | File System    | Server Manager       | package.json, Project files |
-| 4   | Spawn Server      | CLI            | Server Manager       | Project path, Log callback  |
-| 5   | Launch Browser    | CLI            | Browser Orchestrator | Domain, Port, Path          |
-| 6   | Local Port        | Server Manager | Network Proxy        | Port number                 |
-| 7   | Page Instance     | Browser        | Network Proxy        | Puppeteer Page object       |
-| 8   | Page Events       | Browser        | Session Recorder     | User interactions           |
-| 9   | Domain Masking    | Network Proxy  | Production Domain    | HTTP Requests/Responses     |
-| 10  | Testing Interface | Browser        | Developer            | Floating UI with tools      |
-| 11  | Video Output      | Recorder       | File System          | session-*.mp4               |
+| #   | Flow            | Source              | Destination         | Data                               |
+| --- | --------------- | ------------------- | ------------------- | ---------------------------------- |
+| 1   | Command         | Developer           | CLI Layer           | CLI Execution (init, run)          |
+| 2   | Source / Config | File System         | CLI / Main          | Project assets & atlas.config.json |
+| 3   | Spawn           | Atlas Run           | Main Process        | Launch Electron Host               |
+| 4   | Attach          | Main Process        | Browser Guest       | CDP connection and instrumentation |
+| 5   | Logic           | Puppeteer Page      | Network Interceptor | HTTP/WS Traffic                    |
+| 6   | Events          | Network Interceptor | Central Pipeline    | Intercepted events & violations    |
+| 7   | Sync Data       | Central Pipeline    | Renderer (HUD UI)   | Live data feed to UI               |
+| 8   | Interference    | Stressor            | Network Interceptor | Injected latency/errors            |
+| 9   | Domain Masking  | Network Interceptor | Production Domain   | Proxied traffic                    |
+| 10  | HUD Dashboard   | Renderer (HUD UI)   | Developer           | Interactive visual interface       |
+| 11  | Reports/Logs    | Main Process        | File System         | Persisted audit results            |
+| 12  | Create Config   | Atlas Init          | File System         | atlas.config.json                  |
 
 ## Process Descriptions
 
-| Process              | Input            | Output                  | Function                      |
-| -------------------- | ---------------- | ----------------------- | ----------------------------- |
-| CLI                  | Commands, Config | Server/Browser triggers | Parse args, orchestrate flow  |
-| Server Manager       | Project path     | Running server on port  | Install, build, spawn process |
-| Browser Orchestrator | Domain, Port     | Puppeteer instance      | Launch browser, inject tools  |
-| Network Proxy        | HTTP Requests    | Proxied Responses       | Domain masking, interception  |
-| Session Recorder     | User events      | MP4                     | Capture video                 |
+| Process             | Description                                                                       |
+| ------------------- | --------------------------------------------------------------------------------- |
+| CLI Layer           | Handles project initialization and session startup via the terminal.              |
+| Electron Host (HUD) | Provides the native container, window management, and the visual dashboard.       |
+| Engine & Pipeline   | Core analytical layer that processes traffic, applies security, and emits events. |
+| Browser Guest       | The isolated web environment where the target application runs.                   |
+| Stressor            | Module formerly known as Chaos Engine; responsible for stability testing.         |
+| Network Interceptor | Intercepts all traffic for proxying and analysis.                                 |

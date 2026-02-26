@@ -1,178 +1,80 @@
 # Data Dictionary
 
-Complete reference of all data types, structures, interfaces, and constants in the Atlas system.
+Complete reference of all data types, structures, and terminology as defined in the **Atlas README** and **Core Engine**.
 
 ---
 
-## 1. Configuration Interfaces
+## 1. Core State Interfaces (`src/engine/state.ts`)
 
-### 1.1 NetworkConfig
+### 1.1 Violation
 
-| Attribute | Type   | Required | Default | Description                   |
-| --------- | ------ | -------- | ------- | ----------------------------- |
-| domain    | string | Yes      | -       | Production domain to mask     |
-| localPort | number | Yes      | -       | Local server port to proxy to |
+| Attribute | Type                        | Description                                 |
+| --------- | --------------------------- | ------------------------------------------- |
+| type      | 'violation' \| 'navigation' | Categorization (optional)                   |
+| source    | string                      | Detector (e.g., 'Security Warden', 'Chaos') |
+| message   | string                      | Description of the issue                    |
+| level     | number                      | 0=INFO, 1=WARN, 2=ERROR                     |
+| timestamp | number                      | Unix timestamp                              |
+| url       | string                      | Page URL where it occurred                  |
+| metadata  | object                      | Optional context (e.g., stack trace)        |
 
-### 1.2 RecorderConfig
+### 1.2 NetworkRequest
 
-| Attribute   | Type   | Required | Default | Description                   |
-| ----------- | ------ | -------- | ------- | ----------------------------- |
-| projectPath | string | Yes      | -       | Absolute path to project root |
-
-### 1.3 ChaosConfig
-
-| Attribute   | Type    | Required | Default | Range | Description                    |
-| ----------- | ------- | -------- | ------- | ----- | ------------------------------ |
-| enabled     | boolean | Yes      | false   | -     | Master toggle for chaos mode   |
-| errorRate   | number  | Yes      | 0       | 0-50  | Percentage returning HTTP 500  |
-| latencyRate | number  | Yes      | 0       | 0-50  | Percentage with 2-5s delay     |
-| dropRate    | number  | Yes      | 0       | 0-20  | Percentage of dropped requests |
-
----
-
-## 2. Result Types
-
-### 2.1 ServerResult
-
-| Attribute | Type         | Nullable | Description                  |
-| --------- | ------------ | -------- | ---------------------------- |
-| port      | number       | No       | Assigned server port number  |
-| child     | ChildProcess | Yes      | Node.js child process handle |
-| cleanup   | Function     | No       | Function to terminate server |
-
-### 2.2 BrowserResult
-
-| Attribute    | Type         | Description               |
-| ------------ | ------------ | ------------------------- |
-| broadcastLog | Function     | Send log messages to UI   |
-| close        | Function     | Close browser and cleanup |
-| process      | ChildProcess | Browser process handle    |
+| Attribute | Type   | Description                            |
+| --------- | ------ | -------------------------------------- |
+| id        | string | Unique request ID                      |
+| url       | string | Full request URL                       |
+| method    | string | HTTP Method (GET, POST, etc.)          |
+| status    | number | HTTP Status Code                       |
+| type      | string | Resource type (Document, Script, etc.) |
+| size      | number | Response size in bytes                 |
+| time      | number | Duration in milliseconds               |
 
 ---
 
+## 2. Configuration & Features
 
+### 2.1 Chaos Engineering (Load Stressor)
 
-## 4. Session Event Types
+| Setting         | Technical Key | Description                                         |
+| :-------------- | :------------ | :-------------------------------------------------- |
+| `Error Rate`    | `errorRate`   | Inject **HTTP 500** responses at a percentage.      |
+| `Latency Spike` | `latencyRate` | Add **2s - 5s delay** to a percentage of requests.  |
+| `Packet Drop`   | `dropRate`    | Abort requests mid-flight (simulates spotty Wi-Fi). |
 
-### 4.1 SessionEvent
+### 2.2 Security Warden
 
-| Attribute | Type   | Description        | Example    |
-| --------- | ------ | ------------------ | ---------- |
-| time      | string | ISO timestamp      | 14:32:15   |
-| url       | string | Current page path  | /dashboard |
-| type      | string | Event category     | ACTION     |
-| details   | any    | Type-specific data | See below  |
-
-### 4.2 EventType Enumeration
-
-| Value      | Trigger             | Details Schema               |
-| ---------- | ------------------- | ---------------------------- |
-| NAVIGATION | pushState, popstate | string description           |
-| ACTION     | Click event         | tag, label, id, className    |
-| INPUT      | Form field change   | tag, inputType, label, value |
-| ERROR      | Window error        | error message string         |
-| API_ERROR  | Fetch failure       | status and URL               |
+| Mode       | Responsibility                                                            |
+| :--------- | :------------------------------------------------------------------------ |
+| `Standard` | Permissive proxying, scans for PII leaks (Emails, CC Cards, JWT) in APIs. |
+| `Strict`   | Blocks insecure CORS (`*`) and mixed content in addition to PII scanning. |
 
 ---
 
-## 5. Violation Tracking
+## 3. UI Components (HUD Overview)
 
-### 5.1 Violation
+Atlas injects a **Shadow DOM overlay** with the following **9 dynamic tool panels**:
 
-| Attribute | Type   | Description           | Example             |
-| --------- | ------ | --------------------- | ------------------- |
-| source    | string | Detector module       | Console             |
-| message   | string | Violation description | Email leak detected |
-| level     | number | Severity level        | 2                   |
-| timestamp | number | Unix timestamp        | 1704931200000       |
-
-### 5.2 SeverityLevel Enumeration
-
-| Value | Name  | Color  | Use Case              |
-| ----- | ----- | ------ | --------------------- |
-| 0     | INFO  | Gray   | Informational notices |
-| 1     | WARN  | Yellow | Warnings              |
-| 2     | ERROR | Red    | Critical issues       |
-
-### 5.3 Violation Detection Rules
-
-| Source          | Trigger              | Severity |
-| --------------- | -------------------- | -------- |
-| Console         | console.error called | ERROR    |
-| Promise         | Unhandled rejection  | WARN     |
-| Data Leak       | Email regex match    | ERROR    |
-| Data Leak       | Credit card pattern  | ERROR    |
-| Security Warden | Mixed content        | WARN     |
-| Security Warden | CORS wildcard        | ERROR    |
-| Traffic         | HTTP status 500+     | ERROR    |
-| Traffic         | HTTP status 400-499  | WARN     |
+| Tab             | Description                                                                          |
+| :-------------- | :----------------------------------------------------------------------------------- |
+| **Console**     | Intercepted console output with level filters, stack traces, and PII detection       |
+| **Networks**    | Chrome DevTools-style request inspector with headers, preview, response, and cookies |
+| **Application** | Page metadata, meta tags, scripts, stylesheets, cookies, and storage                 |
+| **Storage**     | Page weight analysis, size breakdown, client storage metrics, top 10 resources       |
+| **Stability**   | Chaos engineering controls (error rate, latency, drop rate) + live violation monitor |
+| **Security**    | Security Warden mode toggle + security violation log                                 |
+| **Recorder**    | Start/stop/pause video recording controls                                            |
+| **Links**       | Navigation links and route tracking                                                  |
+| **Extras**      | Project utilities (force reload, project settings)                                   |
 
 ---
 
-## 6. Atlas Global API
+## 4. Architectural Layers
 
-### 6.1 window.Atlas
-
-| Member            | Type     | Description             |
-| ----------------- | -------- | ----------------------- |
-| Severity          | object   | SeverityLevel enum      |
-| addTool           | function | Register new tool panel |
-| reportViolation   | function | Log a violation         |
-| setRecordingState | function | Update UI indicator     |
-| setRecordingState | function | Update UI indicator     |
-
-### 6.2 Tool Registration
-
-| Parameter | Type     | Description           |
-| --------- | -------- | --------------------- |
-| name      | string   | Tab label text        |
-| renderFn  | Function | Returns panel content |
-| onShowFn  | Function | Callback when shown   |
-
----
-
-## 7. Exposed Node.js Functions
-
-| Function            | Parameters          | Returns | Purpose                   |
-| ------------------- | ------------------- | ------- | ------------------------- |
-| setThrottling       | profile: string     | void    | Change throttling profile |
-| setSecurityMode     | mode: string        | void    | Toggle CORS mode          |
-| setChaosConfig      | config: ChaosConfig | void    | Update chaos settings     |
-| startTrafficSim     | url, count          | Promise | Execute load test         |
-| atlasStartRecording | none                | Promise | Begin video capture       |
-| atlasStopRecording  | none                | Promise | End capture               |
-| atlasRecordEvent    | event               | void    | Log interaction           |
-
----
-
-## 8. Throttling Profiles
-
-| Profile Name  | Latency | Behavior             |
-| ------------- | ------- | -------------------- |
-| No Throttling | 0ms     | Default, no delay    |
-| Fast 4G       | 20ms    | Fast mobile          |
-| Slow 4G       | 100ms   | Slow mobile          |
-| Offline       | N/A     | All requests aborted |
-
----
-
-## 9. Security Modes
-
-| Mode     | CORS Wildcards | Mixed Content | Description     |
-| -------- | -------------- | ------------- | --------------- |
-| Standard | Allowed        | Warning only  | Permissive      |
-| Strict   | Blocked        | Blocked       | Production-like |
-
----
-
-## 10. File Output Formats
-
-### 10.1 Video Recording
-
-| Attribute | Value                   |
-| --------- | ----------------------- |
-| Format    | MP4                     |
-| Filename  | session-{timestamp}.mp4 |
-| Location  | Project root            |
-
-
+1.  **CLI Interface**: Orchestrates env setup and server spawning.
+2.  **Infrastructure**: Server manager and Puppeteer/CDP orchestrator.
+3.  **Engine (Brain)**: Core logic (Interception, Chaos, Warden, Performance).
+4.  **Pipeline**: Typed event bus (Central Nervous System).
+5.  **Electron Shell**: Standalone container and native IPC handler.
+6.  **HUD UI**: Shadow DOM injected overlay.
+7.  **Collectors**: Link scanning and storage metric gatherers.
