@@ -336,12 +336,12 @@ export function createNetworkInterceptor(
             isCleanedUp = true;
         });
 
-        p.on('request', (req) => {
+        p.on('request', async (req) => {
             if (isCleanedUp || p.isClosed()) {
                 try { req.abort('blockedbyclient').catch(() => { }); } catch (_) { }
                 return;
             }
-            handleRequest(req, p);
+            await handleRequest(req, p);
         });
 
         // Global failure tracker for Scalability tab
