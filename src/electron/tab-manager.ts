@@ -1,8 +1,9 @@
-interface WebviewEvent extends Event {
+interface WebviewNavigationEvent extends Event {
     url?: string;
     isMainFrame?: boolean;
     title?: string;
     favicons?: string[];
+    userGesture?: boolean;
 }
 declare global {
     interface Window {
@@ -35,6 +36,7 @@ interface ElectronWebview extends HTMLElement {
     goBack: () => void;
     goForward: () => void;
     reload: () => void;
+    stop: () => void;
     executeJavaScript: (code: string) => Promise<unknown>;
 }
 
@@ -56,17 +58,45 @@ export class TabManager {
     private onActivate: TabEventCallback;
     private onClose: TabEventCallback;
     private tabCounter = 0;
+    /** Allowed hostnames — navigation outside these is blocked for user gestures */
+    private allowedHostnames: Set<string> = new Set(['localhost', '127.0.0.1']);
 
     constructor(
         container: HTMLElement,
         tabBar: HTMLElement,
         onActivate: TabEventCallback,
-        onClose: TabEventCallback
+        onClose: TabEventCallback,
+        allowedDomain?: string
     ) {
         this.container = container;
         this.tabBar = tabBar;
         this.onActivate = onActivate;
         this.onClose = onClose;
+        if (allowedDomain) this.setAllowedOrigins(allowedDomain);
+    }
+
+    /**
+     * Register the project's masked domain so same-project navigation is always allowed.
+     * Call this with the `targetDomain` from atlas.config.json.
+     */
+    setAllowedOrigins(domain: string) {
+        if (!domain) return;
+        // Strip protocol and path — just hostname
+        try { domain = new URL(domain.includes('://') ? domain : 'https://' + domain).hostname; } catch (_) { }
+        if (domain) this.allowedHostnames.add(domain);
+    }
+
+    /** Check whether a URL is within the allowed project boundaries. */
+    private isAllowedUrl(url: string): boolean {
+        if (!url || url === 'about:blank') return true;
+        try {
+            const parsed = new URL(url);
+            // Always allow non-http protocols (file:, data:, etc.)
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+            return this.allowedHostnames.has(parsed.hostname);
+        } catch (_) {
+            return true; // Relative or unparseable — allow
+        }
     }
 
     /** Create a new tab and optionally navigate to `url`. */
@@ -222,7 +252,7 @@ export class TabManager {
 
         // Intercept new-window (target="_blank") → open as tab
         webview.addEventListener('new-window', (e: Event) => {
-            const webviewEvent = e as WebviewEvent;
+            const webviewEvent = e as WebviewNavigationEvent;
             webviewEvent.preventDefault();
             if (webviewEvent.url) {
                 this.createTab(webviewEvent.url);
@@ -230,17 +260,26 @@ export class TabManager {
             }
         });
 
-        // URL updates
+        // URL updates — block user-gesture navigations to external sites
         webview.addEventListener('did-start-navigation', (e: Event) => {
-            const webviewEvent = e as WebviewEvent;
-            if (webviewEvent.isMainFrame && webviewEvent.url) {
-                tab.url = webviewEvent.url;
-                if (this.activeTabId === tab.id) this.onActivate(tab);
+            const webviewEvent = e as WebviewNavigationEvent;
+            if (!webviewEvent.isMainFrame || !webviewEvent.url) return;
+
+            // If this is a user-initiated navigation to an external hostname, stop it
+            if (webviewEvent.userGesture && !this.isAllowedUrl(webviewEvent.url)) {
+                webview.stop();
+                console.log(`[Atlas] Blocked user navigation to external URL: ${webviewEvent.url}`);
+                // Show a brief visual notification via a custom event on the host window
+                window.dispatchEvent(new CustomEvent('atlas-nav-blocked', { detail: { url: webviewEvent.url } }));
+                return;
             }
+
+            tab.url = webviewEvent.url;
+            if (this.activeTabId === tab.id) this.onActivate(tab);
         });
 
         webview.addEventListener('did-navigate', (e: Event) => {
-            const webviewEvent = e as WebviewEvent;
+            const webviewEvent = e as WebviewNavigationEvent;
             if (webviewEvent.url) {
                 tab.url = webviewEvent.url;
                 if (this.activeTabId === tab.id) this.onActivate(tab);
@@ -248,7 +287,7 @@ export class TabManager {
         });
 
         webview.addEventListener('did-navigate-in-page', (e: Event) => {
-            const webviewEvent = e as WebviewEvent;
+            const webviewEvent = e as WebviewNavigationEvent;
             if (webviewEvent.url) {
                 tab.url = webviewEvent.url;
                 if (this.activeTabId === tab.id) this.onActivate(tab);
@@ -257,7 +296,7 @@ export class TabManager {
 
         // Title updates
         webview.addEventListener('page-title-updated', (e: Event) => {
-            const webviewEvent = e as WebviewEvent;
+            const webviewEvent = e as WebviewNavigationEvent;
             tab.title = webviewEvent.title || tab.url;
             const titleEl = tabEl.querySelector('.atlas-tab-title');
             if (titleEl) titleEl.textContent = this.truncate(tab.title, 22);
@@ -265,7 +304,7 @@ export class TabManager {
 
         // Favicon updates
         webview.addEventListener('page-favicon-updated', (e: Event) => {
-            const webviewEvent = e as WebviewEvent;
+            const webviewEvent = e as WebviewNavigationEvent;
             if (webviewEvent.favicons && webviewEvent.favicons.length > 0) {
                 const faviconEl = tabEl.querySelector('.atlas-tab-favicon');
                 if (faviconEl) {

@@ -65,7 +65,7 @@ if (projectName) {
     if (hudLabel) hudLabel.textContent = fullTitle.toUpperCase();
 }
 
-// Initialize the Tab Manager with URL bar sync
+// Initialize the Tab Manager with URL bar sync and allowed project domain
 const tabManager = new TabManager(
     webviewContainer,
     tabBar,
@@ -74,7 +74,9 @@ const tabManager = new TabManager(
         urlInput.value = formatDisplayURL(tab.url);
     },
     // onClose
-    (_tab) => { }
+    (_tab) => { },
+    // Pass the project domain so same-domain navigation is never blocked
+    initialDomain
 );
 
 // Create the initial tab pointing to the proxied project
@@ -118,13 +120,63 @@ function formatDisplayURL(rawUrl: string) {
 // New Tab Button
 document.getElementById('atlas-new-tab-btn')!.onclick = () => tabManager.createTab('about:blank');
 
-// URL Input Handler
+// URL Input Handler — validates that manual navigation stays within the project
 urlInput.onkeydown = (e) => {
-    if (e.key === 'Enter') {
-        tabManager.navigate(urlInput.value.trim());
-        urlInput.blur();
+    if (e.key !== 'Enter') return;
+    const rawInput = urlInput.value.trim();
+    if (!rawInput) return;
+
+    // Allow relative paths (e.g. "/about") and same-domain inputs
+    let isExternal = false;
+    try {
+        const parsed = new URL(rawInput.startsWith('http') ? rawInput : 'https://' + rawInput);
+        const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+        const isSameDomain = initialDomain && parsed.hostname === initialDomain;
+        isExternal = !isLocalhost && !isSameDomain && rawInput.includes('.');
+    } catch (_) {
+        // Relative path or unparseable — allow
     }
+
+    if (isExternal) {
+        showNavBlockedToast(rawInput);
+        urlInput.value = formatDisplayURL(tabManager.getActiveTab()?.url || '');
+    } else {
+        tabManager.navigate(rawInput);
+    }
+    urlInput.blur();
 };
+
+/** Show a brief toast when external navigation is blocked */
+function showNavBlockedToast(blockedUrl: string) {
+    let toast = document.getElementById('atlas-nav-blocked-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'atlas-nav-blocked-toast';
+        toast.style.cssText = [
+            'position:fixed', 'bottom:24px', 'left:50%', 'transform:translateX(-50%)',
+            'background:#1a1a2e', 'color:#ff4d6d', 'border:1px solid #ff4d6d44',
+            'padding:10px 20px', 'border-radius:8px', 'font-size:13px',
+            'font-family:monospace', 'z-index:99999', 'pointer-events:none',
+            'box-shadow:0 4px 20px rgba(0,0,0,0.5)', 'opacity:0',
+            'transition:opacity 0.2s ease'
+        ].join(';');
+        document.body.appendChild(toast);
+    }
+    try {
+        const host = new URL(blockedUrl.includes('://') ? blockedUrl : 'https://' + blockedUrl).hostname;
+        toast.textContent = `⛔ External navigation blocked: ${host}`;
+    } catch (_) {
+        toast.textContent = `⛔ External navigation blocked`;
+    }
+    toast.style.opacity = '1';
+    setTimeout(() => { if (toast) toast.style.opacity = '0'; }, 3000);
+}
+
+// Also show toast for webview-level blocked navigations (from tab-manager)
+window.addEventListener('atlas-nav-blocked', (e: Event) => {
+    const detail = (e as CustomEvent).detail as { url: string };
+    if (detail?.url) showNavBlockedToast(detail.url);
+});
 // --- RECORDER UI LOGIC ---
 let recordingStartTime = 0;
 let recordingInterval: ReturnType<typeof setInterval> | null = null;

@@ -20,3 +20,11 @@ contextBridge.exposeInMainWorld('atlasTabBridge', {
     },
     reportActiveTab: (url: string) => ipcRenderer.send('active-tab-url', url)
 });
+
+// GUI Dashboard IPC bridge — used by gui-renderer.ts
+contextBridge.exposeInMainWorld('atlasGui', {
+    scanProjects: (rootPath?: string) => ipcRenderer.invoke('scan-projects', rootPath),
+    getReportFiles: (projectPath: string) => ipcRenderer.invoke('get-report-files', projectPath),
+    readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
+    browseFolder: () => ipcRenderer.invoke('browse-folder'),
+});

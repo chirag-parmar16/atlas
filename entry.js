@@ -1,15 +1,15 @@
-if (process.env.ATLAS_GUI_MODE === 'true') {
-    // We are running as the Electron GUI process
-    require('./dist/src/electron/electron-main.js');
-} else {
-    // If double-clicked directly by the user, warn them to use CLI
-    const { app, dialog } = require('electron');
-    app.whenReady().then(() => {
-        dialog.showMessageBoxSync({
-            type: 'info',
-            title: 'Atlas Sandbox',
-            message: 'Atlas is a CLI tool. Please open your terminal (Command Prompt, PowerShell, Git Bash) and type "atlas init" or "atlas run".'
-        });
-        app.quit();
-    });
-}
+/**
+ * Atlas Packaged Entry Point
+ *
+ * When the installed .exe is launched:
+ *   - With ATLAS_MODE=SANDBOX (set by `atlas run`) → load sandbox HUD
+ *   - With ATLAS_MODE=GUI (set by `atlas gui`) → load GUI dashboard
+ *   - Double-clicked with NO args → default to GUI dashboard (no more CLI popup)
+ */
+
+// Resolve mode: support both old ATLAS_GUI_MODE and new ATLAS_MODE
+const mode = process.env.ATLAS_MODE
+    || (process.env.ATLAS_GUI_MODE === 'true' ? 'SANDBOX' : 'GUI');
+
+process.env.ATLAS_MODE = mode;
+require('./dist/src/electron/electron-main.js');

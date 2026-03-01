@@ -547,8 +547,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 timeout: 30000
             });
 
-            // Explicitly log the starting page to ensure it's ALWAYS Step 1
-            await reportManager.logNavigation(page!.url());
+            // Navigation is logged automatically by the network interceptor's
+            // handleRequest() → pipeline.emit('navigation') → reportManager.logNavigation().
+            // Do NOT call logNavigation() again here — it would create a duplicate entry.
             break; // Success!
 
         } catch (e) {

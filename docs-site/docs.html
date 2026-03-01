@@ -264,6 +264,7 @@
             <h4>Features</h4>
             <ul>
                 <li><a href="#modes">Project Modes</a></li>
+                <li><a href="#dashboard">Atlas Dashboard</a></li>
                 <li><a href="#ui">The HUD Overlay</a></li>
             </ul>
 
@@ -332,8 +333,16 @@ atlas run</code></pre>
                 <li><strong>Manual Mode</strong>: If no package manager is found, Atlas will prompt for a local port to proxy, enabling support for static HTML, Python, or Go servers.</li>
             </ul>
 
-            <h2 id="ui">The UI Modules</h2>
-            <p>Atlas injects an isolated Shadow DOM overlay directly into the browser viewport, housing 6 powerful core modules:</p>
+            <h2 id="dashboard">Atlas Dashboard (Explorer)</h2>
+            <p>The Atlas Dashboard is a standalone GUI for managing your projects and browsing generated reports. It provides a secondary entry point focused on technical audits and session review.</p>
+            <ul>
+                <li><strong>Tree Explorer:</strong> Familiar VS Code-style hierarchical navigation for projects and files.</li>
+                <li><strong>Mermaid Rendering:</strong> Live SVG diagram rendering for Markdown architecture docs.</li>
+                <li><strong>Integrated Viewer:</strong> High-fidelity Markdown (GFM) and video playback for session recordings.</li>
+            </ul>
+
+            <h2 id="ui">The HUD Overlay</h2>
+            <p>Atlas injects an isolated Shadow DOM overlay directly into the browser viewport, housing 6 powerful core modules. Designed with a <strong>Matte Graphite</strong> aesthetic for reduced eye strain.</p>
             <ul>
                 <li><strong>Console:</strong> View intercepted logs enriched with native stack traces.</li>
                 <li><strong>Networks:</strong> High-performance request inspector (similar to Chrome DevTools).</li>

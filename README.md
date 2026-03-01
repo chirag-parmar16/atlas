@@ -85,11 +85,31 @@ Atlas automatically detects your project type:
     *   Atlas proxies the specified port to your custom domain.
 
 ---
+### 📉 Atlas Dashboard (Project Explorer)
+Atlas now features a dedicated **standalone GUI Dashboard** for browsing your projects and reports:
+*   **VS Code-style Explorer**: Navigate your projects with a familiar, hierarchical tree structure. Collapsible project nodes and folder icons.
+*   **Native Report Viewer**: Open your `atlas-reports` Markdown and JSON files directly within the dashboard.
+*   **Live Mermaid Diagrams**: Any Markdown file with ` ```mermaid ` blocks will be rendered as a live, interactive SVG diagram.
+*   **Integrated Video Player**: Watch your session recordings (.mp4, .webm) without leaving the Atlas environment.
+
+---
 
 ## 🛠️ Features
 
 ### 🌐 Domain Masking
-Browse your localhost app as if it were on `https://myapp.com` or `https://api.production.local`. Atlas intercepts network requests via CDP and proxies them to your local server, solving CORS issues and allowing you to test production-only APIs locally.
+Browse your localhost app as if it were on `https://myapp.com`. Atlas intercepts network requests via CDP and proxies them to your local server, solving CORS issues and allowing you to test production-only APIs locally.
+
+### 🎨 Premium Matte Theme
+Designed for professional developers, the Atlas UI uses a **Matte Graphite** palette:
+*   **No Glow**: Reduced visual strain for long sessions.
+*   **Neutral Tones**: Strictly gray backgrounds (#1F1F1F) with emerald accents (#22C55E).
+*   **High Contrast**: Neutral off-white text (#CCCCCC) for maximum readability.
+
+### 📉 Report Explorer & Dashboard
+Atlas provides a central hub for all your development artifacts:
+*   **Hierarchical Tree View**: Browse multiple projects simultaneously.
+*   **Mermaid.js Integration**: Live diagram rendering for system architecture or flowcharts.
+*   **GFM Support**: High-fidelity Markdown rendering with tables, task lists, and syntax highlighting via `marked.js`.
 
 ### 💣 Chaos Engineering (Load Stressor)
 Test your app's resilience by injecting failure. Configurable via the UI:
@@ -104,31 +124,24 @@ Test your app's resilience by injecting failure. Configurable via the UI:
 Atlas includes a dedicated **WebSocket Proxy** that:
 *   Intercepts `Upgrade: websocket` headers and proxies to localhost.
 *   Supports chaos injection (dropping frames, delaying messages) on active WebSocket connections.
-*   Includes **SSRF protection** — only allows `localhost`/`127.0.0.1` targets.
 
 ### 🎥 Session Recording
 Records your development session for retrospective debugging:
 *   **Video**: High-quality `.mp4` recording of the browser window.
 *   **Cursor**: Injects a high-visibility fake cursor for clearer interaction tracking.
-*   **Pause/Resume**: Split recording into parts with seamless pause/resume support.
-*   **Merge**: Automatically merges multi-part recordings via `ffmpeg`.
 
 ### 🏥 Security Warden
 The Security Warden actively monitors your app's traffic:
-*   **PII Leaks**: Scans response bodies for **Emails**, **Credit Card Numbers**, and **Auth Tokens** (JWT, AWS Keys). Emails are only flagged in API responses (not HTML pages).
-*   **Strict CORS**: In Strict mode, blocks responses with `Access-Control-Allow-Origin: *` and logs violations.
-*   **PII Masking**: Sensitive data is masked in violation logs to prevent secondary exposure.
+*   **PII Leaks**: Scans response bodies for **Emails**, **Credit Card Numbers**, and **Auth Tokens**.
+*   **Strict CORS**: Blocks responses with `Access-Control-Allow-Origin: *` and logs violations.
 
 ### ⚡ Performance Monitoring
 *   Tracks request latency with a **rolling average** per URL path.
-*   Flags requests that are **>2x slower** than their average (above 250ms threshold).
-*   Uses a **bounded LRU cache** (max 1000 paths) to prevent memory leaks.
+*   Flags requests that are **>2x slower** than their average.
 
 ### 📊 Auto Journey Report
-Runs automatically in the background — no user interaction required:
 *   Tracks all navigations with per-page metrics (load time, storage usage).
-*   On exit, generates a **tree-structured JSON report** (`atlas-reports/json/`).
-*   On exit, generates a **human-readable Markdown audit** (`atlas-reports/markdown/`).
+*   Generates **human-readable Markdown audits** (`atlas-reports/markdown/`).
 *   Saves session recording video to `atlas-reports/videos/`.
 
 ---
@@ -208,13 +221,18 @@ atlas/
 ├── atlas.ts                     # CLI Commander entry
 ├── package.json                 # electron-builder & dependencies
 ├── src/
+├── gui/                         # Dashboard React components
 │   ├── cli/                     # CLI commands (init/run)
 │   ├── server/                  # Project auto-detection
 │   ├── browser/                 # Puppeteer orchestrator
 │   ├── engine/                  # Core modules (interceptor, chaos, security)
 │   ├── pipeline/                # Typed Event Bus
 │   ├── collectors/              # Link scanning & storage metrics
-│   └── electron/                # Standalone GUI Shell
+│   ├── gui/                     # Standalone Dashboard GUI
+│   │   ├── gui-host.html        # Explorer Shell
+│   │   ├── gui.css              # Premium Matte Theme
+│   │   └── gui-renderer.ts      # Markdown & Mermaid Logic
+│   └── electron/                # HUD Overlay Shell
 │       ├── electron-main.ts     # Main Process (Recording/IPC)
 │       ├── renderer.ts          # HUD Orchestrator
 │       ├── index.html           # UI Layout

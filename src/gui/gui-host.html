@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atlas &mdash; Project Dashboard</title>
+    <!-- Styles loaded from tsc-compiled copy in dist/gui/ — no crossorigin, file:// safe -->
+    <link href="./gui.css" rel="stylesheet">
+    <style>
+        /* Critical fallback: ensures dark bg even before gui.css loads */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #0a0a0f;
+            color: #e2e8f0;
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <!-- Drag region for frameless window -->
+    <div id="gui-titlebar" class="gui-titlebar">
+        <div class="gui-titlebar-drag">
+            <div class="gui-logo">
+                    <img src="./icon.png" width="22" height="22" alt="Atlas" style="object-fit:contain;">
+                    <span class="gui-logo-text">ATLAS</span>
+                    <span class="gui-logo-sub">Project Dashboard</span>
+                </div>
+        </div>
+        <div class="gui-window-controls">
+            <button id="gui-min-btn" class="win-btn win-min" title="Minimize">
+                <svg width="10" height="1" viewBox="0 0 10 1"><line x1="0" y1="0.5" x2="10" y2="0.5" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+            <button id="gui-max-btn" class="win-btn win-max" title="Maximize">
+                <svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            </button>
+            <button id="gui-close-btn" class="win-btn win-close" title="Close">
+                <svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main layout: sidebar + content -->
+    <div id="gui-layout" class="gui-layout">
+
+        <!-- LEFT: Explorer Sidebar (VS Code Style) -->
+        <aside id="gui-sidebar" class="gui-sidebar">
+            <div class="sidebar-header">
+                <span class="sidebar-title">EXPLORER</span>
+                <div class="sidebar-header-btns">
+                    <button id="gui-browse-btn" class="icon-btn" title="Open Folder">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                        </svg>
+                    </button>
+                    <button id="gui-scan-btn" class="icon-btn" title="Refresh Explorer">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Tree container -->
+            <div id="gui-project-list" class="project-list explorer-tree">
+                <div class="project-list-loading">
+                    <div class="spinner"></div>
+                    <span>Loading explorer&hellip;</span>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <span id="gui-scan-root-label" class="scan-root-label">Scanning drives...</span>
+            </div>
+        </aside>
+
+        <!-- RIGHT: Content Area -->
+        <main id="gui-content" class="gui-content">
+
+            <!-- Welcome screen -->
+            <div id="gui-welcome" class="gui-welcome">
+                <div class="welcome-icon">
+                    <img src="./icon.png" width="64" height="64" alt="Atlas" style="opacity:0.2;">
+                </div>
+                <h1 class="welcome-title">Atlas Explorer</h1>
+                <p class="welcome-sub">Expand a project in the sidebar to browse reports and diagrams.</p>
+                <div class="welcome-tip">
+                    <span class="tip-badge">TIP</span>
+                    Reports with <code>mermaid</code> blocks will render as live diagrams.
+                </div>
+            </div>
+
+            <!-- Project/File view (Integrated) -->
+            <div id="gui-project-view" class="gui-project-view" style="display:none;">
+                <!-- Report tab bar -->
+                <div id="gui-report-tabbar" class="report-tabbar">
+                    <div id="gui-report-tabs" class="report-tabs-scroll"></div>
+                </div>
+
+                <!-- File panels container -->
+                <div id="gui-panels" class="gui-panels">
+                    <div id="gui-no-files" class="gui-no-files">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4a5568" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        <p>Select a file to view.</p>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Pre-load metadata/marked for local rendering -->
+    <script src="./mermaid.min.js"></script>
+    <script src="./marked.min.js"></script>
+    <script src="./gui-renderer.js"></script>
+</body>
+</html>

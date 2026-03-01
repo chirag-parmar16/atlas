@@ -15,6 +15,15 @@ import path from 'path';
 import url from 'url';
 import fs from 'fs';
 
+// ─── Mode Detection ──────────────────────────────────────────────────────────
+// ATLAS_MODE=GUI  → launch project dashboard (no CDP)
+// ATLAS_MODE=SANDBOX (or unset) → launch sandbox HUD (existing behaviour)
+const ATLAS_MODE = process.env.ATLAS_MODE || 'SANDBOX';
+
+// Register GUI IPC handlers (harmless in sandbox mode — they just never get called)
+import { registerScannerHandlers } from '../gui/project-scanner';
+registerScannerHandlers();
+
 // Get the debug port from environment variable (avoids Electron CLI parsing conflicts)
 const debugPort = parseInt(process.env.ATLAS_DEBUG_PORT || '0', 10);
 const projectName = process.env.ATLAS_PROJECT_NAME || '';
@@ -32,32 +41,34 @@ app.commandLine.appendSwitch('disable-site-isolation-trials');
 let mainWindow: BrowserWindow | null = null;
 
 app.on('ready', () => {
+    // Icon path — same for both modes (in dist/src/electron/assets/ after build)
+    const iconPath = path.join(__dirname, 'assets', 'icon.png');
+    const isGuiMode = ATLAS_MODE === 'GUI';
+
     mainWindow = new BrowserWindow({
-        // Standard mode instead of kiosk to allow better window management
         kiosk: false,
-        // Frameless — Atlas has its own HUD bar
         frame: false,
-        // Start maximized (this will be handled after initialization)
         show: false,
-        // Web preferences
+        // GUI: fixed dashboard size; Sandbox: maximized (handled below)
+        width: isGuiMode ? 1200 : undefined,
+        height: isGuiMode ? 750 : undefined,
+        minWidth: isGuiMode ? 800 : undefined,
+        minHeight: isGuiMode ? 500 : undefined,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            webviewTag: true,
+            webviewTag: !isGuiMode,       // sandbox needs webview; dashboard doesn't
             preload: path.join(__dirname, 'preload.js'),
-            // Allow running insecure content for localhost proxying
-            webSecurity: false,
+            webSecurity: !isGuiMode,      // sandbox needs false for proxy; GUI is safe
         },
-        // Appearance
-        backgroundColor: '#111111',
-        title: projectName ? `Atlas - ${projectName}` : 'Atlas',
-        icon: path.join(__dirname, 'assets', 'icon.png'),
-        // Start in maximized state
+        backgroundColor: '#0a0a0f',
+        title: isGuiMode ? 'Atlas — Project Dashboard' : (projectName ? `Atlas - ${projectName}` : 'Atlas'),
+        icon: fs.existsSync(iconPath) ? iconPath : undefined,
         autoHideMenuBar: true,
     });
 
-    // Start maximized and then show to prevent flickering
-    mainWindow.maximize();
+    // Sandbox: maximize to fill screen. GUI: show at fixed dimensions.
+    if (!isGuiMode) mainWindow.maximize();
     mainWindow.show();
 
     // Open DevTools for debugging UI tools failure
@@ -66,15 +77,31 @@ app.on('ready', () => {
     // Remove the application menu
     mainWindow.setMenu(null);
 
-    // --- INTERCEPT _blank LINKS: Route new windows as tabs in renderer ---
+    // --- INTERCEPT _blank LINKS: Route new windows as tabs, block external sites ---
     // When any webview inside Atlas tries to open a new window (target="_blank"),
-    // we intercept it in the main process (the ONLY reliable place) and tell
-    // the renderer to open it as a new tab instead.
+    // we intercept here (the ONLY reliable place) and:
+    //   - If the URL is within the project domain (localhost / targetDomain) → open as tab
+    //   - If the URL is an external site (google.com, etc.) → block entirely
+    const projectDomain = process.env.ATLAS_DOMAIN || '';
+    const projectPort = process.env.ATLAS_PORT || '';
+
     mainWindow.webContents.on('did-attach-webview', (_event: Event, webviewContents: WebContents) => {
         webviewContents.setWindowOpenHandler(({ url }: { url: string }) => {
-            // Tell renderer to open as a new tab
-            mainWindow?.webContents.send('open-as-tab', url);
-            return { action: 'deny' }; // Block native window creation
+            try {
+                const parsed = new URL(url);
+                const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+                const isProjectDomain = projectDomain && parsed.hostname === projectDomain;
+                const isProjectPort = projectPort && parsed.port === projectPort;
+
+                // Allow internal project navigation as a new tab
+                if (isLocalhost || isProjectDomain || isProjectPort) {
+                    mainWindow?.webContents.send('open-as-tab', url);
+                }
+                // External URLs: silently deny (no new tab, no navigation)
+            } catch (_) {
+                // Malformed URL — deny
+            }
+            return { action: 'deny' }; // Always block native window creation
         });
     });
 
@@ -206,19 +233,35 @@ app.on('ready', () => {
     // Get domain/port from env for the HUD
     const domain = process.env.ATLAS_DOMAIN || 'unknown';
     const port = process.env.ATLAS_PORT || '0';
-    // Resolve index.html path - point to Vite build output in dist/electron
-    let indexPath = path.join(__dirname, '..', '..', 'electron', 'index.html');
-    if (!require('fs').existsSync(indexPath)) {
-        indexPath = path.join(process.cwd(), 'src', 'electron', 'index.html');
+
+    if (ATLAS_MODE === 'GUI') {
+        // ── GUI Dashboard Mode ────────────────────────────────────────────────
+        // electron-main.js lives at:  dist/src/electron/electron-main.js
+        // gui-host.html lives at:     dist/gui/gui-host.html
+        // So: __dirname/../../../gui → dist/src/electron/../../gui → dist/gui ✓
+        let guiHtml = path.join(__dirname, '..', '..', 'gui', 'gui-host.html');
+        if (!fs.existsSync(guiHtml)) {
+            // Compiled fallback: dist/gui/ relative to project root
+            guiHtml = path.join(process.cwd(), 'dist', 'gui', 'gui-host.html');
+        }
+        if (!fs.existsSync(guiHtml)) {
+            // Last resort: source directory (dev without build)
+            guiHtml = path.join(process.cwd(), 'src', 'gui', 'gui-host.html');
+        }
+        console.log(`[Atlas GUI] Loading dashboard from: ${guiHtml}`);
+        mainWindow.loadFile(guiHtml);  // loadFile handles file:// correctly, no CORS issues
+
+    } else {
+        // ── Sandbox HUD Mode (existing behaviour) ─────────────────────────────
+        let indexPath = path.join(__dirname, '..', '..', 'electron', 'index.html');
+        if (!require('fs').existsSync(indexPath)) {
+            indexPath = path.join(process.cwd(), 'src', 'electron', 'index.html');
+        }
+        const indexUrl = url.pathToFileURL(indexPath).toString();
+        console.log(`[Atlas] Loading Host HUD from: ${indexPath}`);
+        const disabledTabs = process.env.ATLAS_DISABLED_TABS || '';
+        mainWindow.loadURL(`${indexUrl}?domain=${encodeURIComponent(domain)}&port=${port}&projectName=${encodeURIComponent(projectName)}&disabledTabs=${encodeURIComponent(disabledTabs)}`);
     }
-
-    const indexUrl = url.pathToFileURL(indexPath).toString();
-    console.log(`[Atlas] Loading Host HUD from: ${indexPath}`);
-
-    const disabledTabs = process.env.ATLAS_DISABLED_TABS || '';
-
-    // Load local index.html with identity params
-    mainWindow.loadURL(`${indexUrl}?domain=${encodeURIComponent(domain)}&port=${port}&projectName=${encodeURIComponent(projectName)}&disabledTabs=${encodeURIComponent(disabledTabs)}`);
 
     // Handle window close
     mainWindow.on('closed', () => {

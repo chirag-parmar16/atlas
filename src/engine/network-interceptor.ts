@@ -329,7 +329,20 @@ export function createNetworkInterceptor(
     // --- ATTACH ---
     const attach = async (p: Page) => {
         await p.setRequestInterception(true);
-        p.on('request', (req) => handleRequest(req, p));
+
+        // Guard: if the page closes (process swap, navigation, etc.) stop processing requests.
+        // Without this, stale CDP sessions cause silent errors that freeze the Network tab.
+        p.on('close', () => {
+            isCleanedUp = true;
+        });
+
+        p.on('request', (req) => {
+            if (isCleanedUp || p.isClosed()) {
+                try { req.abort('blockedbyclient').catch(() => { }); } catch (_) { }
+                return;
+            }
+            handleRequest(req, p);
+        });
 
         // Global failure tracker for Scalability tab
         p.on('requestfailed', (req) => {

@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import { run } from './src/cli/run';
 import { init } from './src/cli/init';
+import { launchGui } from './src/gui/gui-launcher';
 
 const program = new Command();
 import fs from 'fs';
@@ -69,6 +70,13 @@ program
         run();
     });
 
+program
+    .command('gui')
+    .description('Open the Atlas project dashboard (GUI mode)')
+    .action(() => {
+        launchGui();
+    });
+
 // Manual parsing for top-level flags before commander takes over
 const argv = process.argv;
 let disableVal: string | undefined;
@@ -83,7 +91,7 @@ for (let i = 0; i < argv.length; i++) {
     }
 }
 
-const isCommand = argv.some(arg => ['init', 'run', 'help'].includes(arg));
+const isCommand = argv.some(arg => ['init', 'run', 'gui', 'help'].includes(arg));
 
 if (disableVal || enableVal) {
     updateConfig(disableVal, enableVal);
@@ -94,8 +102,9 @@ if (disableVal || enableVal) {
 }
 
 program.parseAsync(process.argv).then(() => {
+    // No subcommand given (e.g. double-clicking atlas.exe) → open GUI dashboard
     if (!isCommand && !disableVal && !enableVal) {
-        program.help();
+        launchGui();
     }
 }).catch(err => {
     console.error(err);
