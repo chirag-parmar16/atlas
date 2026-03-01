@@ -1,9 +1,8 @@
 import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import path from 'path';
-
-// Use centralized Violation type from engine state
 import { Violation } from './state';
+import { buildTreeReport, generateMarkdown } from './report-utils';
 
 export class ReportManager {
     private reportPath: string;
@@ -11,6 +10,10 @@ export class ReportManager {
     private videoDir: string;
     private videoPath: string;
     private localSource: string;
+
+    // In-memory log — prevents race conditions from concurrent read-modify-write
+    private entries: Violation[] = [];
+    private flushTimer: NodeJS.Timeout | null = null;
 
     constructor(projectPath: string, localSource?: string) {
         this.localSource = localSource || 'localhost';
@@ -26,7 +29,7 @@ export class ReportManager {
         if (!existsSync(mdDir)) mkdirSync(mdDir, { recursive: true });
 
         const now = new Date();
-        const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19); // Simplified timestamp
+        const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
         this.reportPath = path.join(jsonDir, `report-${timestamp}.json`);
         this.mdReportPath = path.join(mdDir, `audit-${timestamp}.md`);
@@ -44,36 +47,28 @@ export class ReportManager {
         };
     }
 
-    // In-memory log — prevents race conditions from concurrent read-modify-write
-    private entries: Violation[] = [];
-    private flushTimer: NodeJS.Timeout | null = null;
-
     public getViolations(): Violation[] {
         return this.entries;
     }
 
     private async getReports(): Promise<Violation[]> {
-        // If we have in-memory entries, return those (source of truth)
         if (this.entries.length > 0) return this.entries;
-        // Otherwise read from disk (cold start)
         try {
             const content = await fs.readFile(this.reportPath, 'utf-8');
             const parsed = JSON.parse(content);
-            // Handle tree format (new) — reconstruct flat entries
             if (parsed.journey && Array.isArray(parsed.journey)) {
                 const flat: Violation[] = [];
-                parsed.journey.forEach((page: { url: string; timestamp: number; violations?: { source: string; message: string; level?: number; timestamp: number; resourceUrl?: string; metadata?: Record<string, unknown> }[]; subPages?: { url: string; timestamp: number; }[] }) => {
+                parsed.journey.forEach((page: any) => {
                     flat.push({ type: 'navigation', source: 'Browser', message: `Visited: ${page.url}`, timestamp: page.timestamp, url: page.url });
-                    page.violations?.forEach((v) => {
+                    page.violations?.forEach((v: any) => {
                         flat.push({ type: 'violation', source: v.source, message: v.message, level: v.level, timestamp: v.timestamp, url: v.resourceUrl || page.url, metadata: v.metadata });
                     });
-                    page.subPages?.forEach((sp) => {
+                    page.subPages?.forEach((sp: any) => {
                         flat.push({ type: 'navigation', source: 'Browser', message: `Visited: ${sp.url}`, timestamp: sp.timestamp, url: sp.url });
                     });
                 });
                 this.entries = flat;
             } else if (Array.isArray(parsed)) {
-                // Handle flat format (legacy)
                 this.entries = parsed;
             }
             return this.entries;
@@ -84,11 +79,8 @@ export class ReportManager {
 
     async logNavigation(url: string, metrics?: { loadTime: number; storage: number }) {
         const lastEntry = this.entries.length > 0 ? this.entries[this.entries.length - 1] : null;
-
-        // Skip if same URL as last entry to avoid noise (unless metrics are provided now and weren't before)
         if (lastEntry && lastEntry.type === 'navigation' && lastEntry.url === url && !metrics) return;
 
-        // If updating previous entry with metrics
         if (lastEntry && lastEntry.type === 'navigation' && lastEntry.url === url && metrics) {
             lastEntry.metrics = metrics;
             this.scheduleFlush();
@@ -112,7 +104,7 @@ export class ReportManager {
     }
 
     private scheduleFlush() {
-        if (this.flushTimer) return; // Already scheduled
+        if (this.flushTimer) return;
         this.flushTimer = setTimeout(() => {
             this.flushTimer = null;
             this.flushToDisk().catch(() => { });
@@ -121,351 +113,31 @@ export class ReportManager {
 
     async flushToDisk() {
         try {
-            const structured = this.buildTreeReport();
+            const result = buildTreeReport(this.entries, this.localSource);
+            const structured = {
+                session: {
+                    id: path.basename(this.reportPath, '.json'),
+                    startTime: this.entries.length > 0 ? new Date(this.entries[0].timestamp).toISOString() : new Date().toISOString(),
+                    endTime: new Date().toISOString(),
+                    date: new Date().toLocaleString(),
+                    totalPages: result.journey.length,
+                    totalSteps: this.entries.filter(e => e.type === 'navigation').length
+                },
+                summary: result.summary,
+                journey: result.journey
+            };
             await fs.writeFile(this.reportPath, JSON.stringify(structured, null, 2), 'utf-8');
         } catch (error) {
             console.error('[Atlas] Failed to flush log to disk:', error);
         }
     }
 
-    private normalizePath(urlStr: string): string {
-        try {
-            const u = new URL(urlStr);
-            return u.pathname.replace(/\/(index\.html?)?$/, '/');
-        } catch { return urlStr; }
-    }
-
-    private buildTreeReport() {
-        const navigations = this.entries.filter(e => e.type === 'navigation');
-        const firstTs = this.entries.length > 0 ? this.entries[0].timestamp : Date.now();
-        const lastTs = this.entries.length > 0 ? this.entries[this.entries.length - 1].timestamp : Date.now();
-
-        // Build journey: group entries by navigation steps
-        const pages: {
-            step: number;
-            url: string;
-            localUrl: string;
-            timestamp: number;
-            time: string;
-            duration: string;
-            metrics?: { loadTime: number; storage: number };
-            violations: Record<string, unknown>[];
-            subPages: { url: string; timestamp: number; time: string }[];
-        }[] = [];
-
-        // Track which normalized paths we've already created a page for
-        const pathToPageIndex = new Map<string, number>();
-
-        this.entries.forEach((entry, idx) => {
-            if (entry.type === 'navigation') {
-                const norm = this.normalizePath(entry.url);
-                const existingIndex = pathToPageIndex.get(norm);
-
-                // Calculate duration (time until next calc frame or end)
-                let duration = '—';
-                const nextEntry = this.entries.slice(idx + 1).find(e => e.type === 'navigation');
-                if (nextEntry) {
-                    const ms = nextEntry.timestamp - entry.timestamp;
-                    duration = ms > 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
-                }
-
-                if (existingIndex !== undefined) {
-                    // Same page (hash navigation) — add as sub-page, but UPDATE metrics if present
-                    const parentPage = pages[existingIndex];
-                    if (entry.metrics) {
-                        parentPage.metrics = entry.metrics;
-                        parentPage.duration = duration; // Update duration as user extended stay
-                    }
-
-                    // Only add if URL is different from parent
-                    if (parentPage.url !== entry.url) {
-                        const alreadyListed = parentPage.subPages.some(sp => sp.url === entry.url);
-                        if (!alreadyListed) {
-                            parentPage.subPages.push({
-                                url: entry.url,
-                                timestamp: entry.timestamp,
-                                time: new Date(entry.timestamp).toLocaleTimeString()
-                            });
-                        }
-                    }
-                } else {
-                    // New page
-                    const pageObj = {
-                        step: pages.length + 1,
-                        url: entry.url,
-                        localUrl: this.getLocalUrl(entry.url),
-                        timestamp: entry.timestamp,
-                        time: new Date(entry.timestamp).toLocaleTimeString(),
-                        duration,
-                        metrics: entry.metrics,
-                        violations: [],
-                        subPages: []
-                    };
-                    pathToPageIndex.set(norm, pages.length);
-                    pages.push(pageObj);
-                }
-            } else if (entry.type === 'violation') {
-                // Find which page this violation belongs to
-                const violationNorm = this.normalizePath(entry.url);
-                const pageIndex = pathToPageIndex.get(violationNorm);
-
-                const violation = {
-                    source: entry.source,
-                    message: entry.message,
-                    level: entry.level,
-                    severity: entry.level === 2 ? 'critical' : 'warning',
-                    timestamp: entry.timestamp,
-                    time: new Date(entry.timestamp).toLocaleTimeString(),
-                    resourceUrl: entry.url,
-                    ...(entry.metadata && Object.keys(entry.metadata).length > 0 ? { metadata: entry.metadata } : {})
-                };
-
-                if (pageIndex !== undefined) {
-                    pages[pageIndex].violations.push(violation);
-                } else if (pages.length > 0) {
-                    // Assign to last known page
-                    pages[pages.length - 1].violations.push(violation);
-                }
-            }
-        });
-
-        // Build summary counts
-        const allViolations = this.entries.filter(e => e.type === 'violation');
-        const criticalCount = allViolations.filter(v => v.level === 2).length;
-        const warningCount = allViolations.filter(v => v.level !== 2).length;
-
-        return {
-            session: {
-                id: path.basename(this.reportPath, '.json'),
-                startTime: new Date(firstTs).toISOString(),
-                endTime: new Date(lastTs).toISOString(),
-                date: new Date().toLocaleString(),
-                totalPages: pages.length,
-                totalSteps: navigations.length
-            },
-            summary: {
-                health: criticalCount > 0 ? 'attention_required' : (warningCount > 0 ? 'stable' : 'perfect'),
-                critical: criticalCount,
-                warnings: warningCount,
-                total: allViolations.length
-            },
-            journey: pages
-        };
-    }
-
-    private getLocalUrl(maskedUrl: string) {
-        if (!this.localSource) return maskedUrl;
-        try {
-            const url = new URL(maskedUrl);
-            return `${url.protocol}//${this.localSource}${url.pathname}${url.search}${url.hash}`;
-        } catch (e) {
-            return maskedUrl;
-        }
-    }
-
-    private translateViolation(v: Violation) {
-        let title = v.message;
-        let impact = "Potential impact on user experience.";
-        let recommendation = "Review the affected resource and ensure it is accessible.";
-        let icon = v.level === 2 ? '🔴' : '🟡';
-
-        if (v.source === 'Network' && v.message.includes('404')) {
-            title = `Broken Link: ${v.message.split(' on ')[1] || 'Unknown'}`;
-            impact = "Users will encounter missing content or broken navigation, hurting trust.";
-            recommendation = "Update the link to a valid URL or remove the broken reference.";
-        } else if (v.source === 'Resource' && v.message.startsWith('Failed to load')) {
-            const type = v.message.includes('IMG') ? 'Image' : 'Resource';
-            title = `Missing ${type}: ${v.message.split(': ')[1] || 'Unknown'}`;
-            impact = `Visual ${type} is missing, resulting in a broken or unprofessional layout.`;
-            recommendation = "Check if the file exists on the server or if the path is correct.";
-        } else if (v.source === 'Scalability' && v.message.includes('Console Error')) {
-            title = "Script Runtime Error";
-            impact = "Certain page features or interactions might be completely broken.";
-            recommendation = "Inspect the browser console to debug the JavaScript execution.";
-        } else if (v.source === 'Security') {
-            title = `Security Risk: ${v.message}`;
-            impact = "Sensitive data could be exposed or the application could be vulnerable to attacks.";
-            recommendation = "Apply standard security headers and sanitize all user inputs.";
-            icon = '🛡️';
-        }
-
-        return { title, impact, recommendation, icon };
-    }
-
     async generateMarkdownReport() {
         try {
             const entries = await this.getReports();
-            if (entries.length === 0) {
-                console.log('[Atlas] No entries found, skipping report generation.');
-                return;
-            }
+            if (entries.length === 0) return;
 
-            const violations = entries.filter(e => e.type === 'violation');
-            const criticalCount = violations.filter(v => v.level === 2).length;
-            const warningCount = violations.filter(v => v.level !== 2).length;
-
-            let md = `# 📊 Atlas Audit Executive Summary\n\n`;
-            md += `> **Session ID:** \`${path.basename(this.reportPath, '.json')}\`  \n`;
-            md += `> **Date:** ${new Date().toLocaleString()}  \n\n`;
-
-            md += `## 📈 Health Overview\n\n`;
-
-            const healthScore = violations.length === 0 ? "Perfect" : (criticalCount > 0 ? "Attention Required" : "Stable");
-            const healthIcon = violations.length === 0 ? "🟢" : (criticalCount > 0 ? "🔴" : "🟡");
-
-            const uniquePages = new Set(entries.filter(e => e.type === 'navigation').map(e => this.normalizePath(e.url)));
-            const navigableSteps = entries.filter(e => e.type === 'navigation' && e.metrics);
-            const avgLoadTime = navigableSteps.length > 0
-                ? Math.round(navigableSteps.reduce((acc, curr) => acc + (curr.metrics?.loadTime || 0), 0) / navigableSteps.length)
-                : 0;
-
-            md += `| Metric | Status | Count |\n`;
-            md += `| :--- | :--- | :--- |\n`;
-            md += `| **Site Health** | ${healthIcon} ${healthScore} | - |\n`;
-            md += `| **Critical Issues** | 🔴 High Impact | ${criticalCount} |\n`;
-            md += `| **Warnings** | 🟡 Medium Impact | ${warningCount} |\n`;
-            md += `| **Pages Visited** | 🗺️ Unique URLs | ${uniquePages.size} |\n`;
-            if (avgLoadTime > 0) md += `| **Avg Load Time** | ⚡ Performance | ${avgLoadTime}ms |\n`;
-            md += `\n`;
-
-            // Page Frequency Table
-            md += `#### 🔄 Visit Frequency\n\n`;
-            md += `| Page | Visits | Last Visit |\n`;
-            md += `| :--- | :--- | :--- |\n`;
-
-            const visitCounts = new Map<string, { count: number, lastTime: number }>();
-            entries.filter(e => e.type === 'navigation').forEach(e => {
-                const norm = this.normalizePath(e.url);
-                const current = visitCounts.get(norm) || { count: 0, lastTime: 0 };
-                visitCounts.set(norm, {
-                    count: current.count + 1,
-                    lastTime: Math.max(current.lastTime, e.timestamp)
-                });
-            });
-
-            visitCounts.forEach((data, url) => {
-                const local = this.getLocalUrl(url);
-                let displayUrl = url;
-                try {
-                    displayUrl = url === 'http://test/' ? '/' : new URL(url).pathname;
-                } catch (e) {
-                    displayUrl = url;
-                }
-                md += `| [${displayUrl}](${local}) | **${data.count}** | ${new Date(data.lastTime).toLocaleTimeString()} |\n`;
-            });
-            md += `\n`;
-
-            md += `--- \n\n`;
-
-            // Group violations by the page they occurred on
-            let journey: { url: string, timestamp: number, metrics?: { loadTime: number, storage: number }, violations: Violation[] }[] = [];
-
-            entries.forEach(entry => {
-                if (entry.type === 'navigation') {
-                    // Start new journey step if URL changes or it's the first one
-                    if (journey.length === 0 || journey[journey.length - 1].url !== entry.url) {
-                        journey.push({ url: entry.url, timestamp: entry.timestamp, metrics: entry.metrics, violations: [] });
-                    } else if (entry.metrics) {
-                        // Update metrics for existing step if newer ones come in (e.g. from same-page reload/nav)
-                        journey[journey.length - 1].metrics = entry.metrics;
-                    }
-                } else if (entry.type === 'violation') {
-                    if (journey.length > 0) {
-                        journey[journey.length - 1].violations.push(entry);
-                    } else {
-                        journey.push({ url: entry.url, timestamp: entry.timestamp, violations: [entry] });
-                    }
-                }
-            });
-
-            // Helper: normalize URL path to detect same-page hash navigations
-            const normalizePath = (urlStr: string) => {
-                try {
-                    const u = new URL(urlStr);
-                    return u.pathname.replace(/\/(index\.html?)?$/, '/');
-                } catch { return urlStr; }
-            };
-
-            md += `## 🗺️ User Journey Analysis\n\n`;
-            journey.forEach((step, index) => {
-                const stepTitle = step.url === 'http://test/' ? 'Home Page' : step.url;
-                const localUrl = this.getLocalUrl(step.url);
-
-                // Calculate duration
-                let duration = '—';
-                const nextStep = journey[index + 1];
-                if (nextStep) {
-                    const ms = nextStep.timestamp - step.timestamp;
-                    duration = ms > 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
-                } else {
-                    duration = 'End';
-                }
-
-                md += `### Step ${index + 1}: ${stepTitle}\n`;
-                md += `🔗 **Masked:** [${step.url}](${step.url})  \n`;
-                md += `🛠️ **Local:** [${localUrl}](${localUrl})  \n`;
-
-                const metaParts = [`⏱️ *${new Date(step.timestamp).toLocaleTimeString()}*`];
-                if (step.metrics) {
-                    metaParts.push(`⚡ **Load:** ${step.metrics.loadTime}ms`);
-                    metaParts.push(`💾 **Storage:** ${step.metrics.storage}KB`);
-                }
-                metaParts.push(`⏳ **Duration:** ${duration}`);
-
-                md += `${metaParts.join(' • ')}\n\n`;
-
-                if (step.violations.length === 0) {
-                    // Check if this is same page as a previous step that had violations
-                    const currentNorm = normalizePath(step.url);
-                    const parentStep = journey.find((s, i) => i < index && normalizePath(s.url) === currentNorm && s.violations.length > 0);
-
-                    if (parentStep) {
-                        const parentIndex = journey.indexOf(parentStep) + 1;
-                        const parentTitle = parentStep.url === 'http://test/' ? '/' : new URL(parentStep.url).pathname;
-                        const criticals = parentStep.violations.filter(v => v.level === 2).length;
-                        const warnings = parentStep.violations.filter(v => v.level !== 2).length;
-                        const countParts: string[] = [];
-                        if (criticals > 0) countParts.push(`🔴 ${criticals} critical`);
-                        if (warnings > 0) countParts.push(`🟡 ${warnings} warnings`);
-                        md += `> **Status:** ↪️ *Same page as Step ${parentIndex} (${parentTitle}) — ${countParts.join(', ')} found there.*\n\n`;
-                    } else {
-                        md += `> **Status:** ✅ *No critical issues detected on this page.*\n\n`;
-                    }
-                } else {
-                    // Deduplicate violations per step
-                    const uniqueViolations = new Map<string, { v: Violation, count: number }>();
-                    step.violations.forEach(v => {
-                        const key = `${v.source}|${v.message}|${v.url}`;
-                        const existing = uniqueViolations.get(key);
-                        if (existing) {
-                            existing.count++;
-                        } else {
-                            uniqueViolations.set(key, { v, count: 1 });
-                        }
-                    });
-
-                    uniqueViolations.forEach(({ v, count }) => {
-                        const { title, impact, recommendation, icon } = this.translateViolation(v);
-                        const localViolationUrl = this.getLocalUrl(v.url);
-                        const repeatLabel = count > 1 ? ` *(Seen ${count} times on this page)*` : '';
-
-                        md += `#### ${icon} ${title}${repeatLabel}\n`;
-                        md += `**Impact:** ${impact}  \n`;
-                        md += `**Fix:** ${recommendation}\n`;
-                        md += `**Sourced from:** \`${localViolationUrl}\`  \n\n`;
-
-                        if (v.metadata && Object.keys(v.metadata).length > 0) {
-                            md += `<details>\n<summary>View Technical Metadata</summary>\n\n`;
-                            md += `\`\`\`json\n${JSON.stringify(v.metadata, null, 2)}\n\`\`\`\n`;
-                            md += `</details>\n\n`;
-                        }
-                    });
-                }
-                md += `---\n\n`;
-            });
-
-            md += `\n*This report was automatically generated by Atlas Browser Orchestrator.*\n`;
-
+            const md = generateMarkdown(entries, this.localSource, path.basename(this.reportPath, '.json'));
             await fs.writeFile(this.mdReportPath, md, 'utf-8');
             console.log(`\n[Atlas] ✅ Premium Audit Report Generated: ${this.mdReportPath}`);
         } catch (error) {
