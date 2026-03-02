@@ -309,8 +309,11 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 const args = await Promise.all(msg.args().map(arg => arg.jsonValue()));
                 message = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
             } catch (e) {
-                message = msg.text(); // Fallback to simple text
+                message = msg.text() || ''; // Fallback to simple text
             }
+
+            message = message.trim();
+            if (!message) return; // Skip empty logs to prevent "Ghost [ERROR]" noise
 
             pipeline.emit('console:log', {
                 level: allowedLevels.includes(level) ? level : 'log',
@@ -442,44 +445,16 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // 5. Initial Log for this page
         await logNav();
 
-        // 6. Browser Bridge Functions (Close + Navigation)
+        // 6. Browser Bridge Functions (Telemetry Only)
+        // Audit Fix: Remove sensitive control functions from Guest Page.
+        // Controls (Close, Minimize, etc.) are now handled by the Electron Host UI (atlasControls).
         const bridgeFunctions: Record<string, Function> = {
-            atlasCloseBrowser: async () => {
-                console.log('[Atlas] Close requested from Browser HUD.');
-                // 1. Inject Closer Animation
-
-                if (onBrowserClose) onBrowserClose();
-                else { await close(); process.exit(0); }
-            },
-            atlasGoBack: async () => { try { await targetPage.goBack(); } catch (e) { console.error("GoBack failed", e) } },
-            atlasGoForward: async () => { try { await targetPage.goForward(); } catch (e) { console.error("GoForward failed", e) } },
-            atlasMinimizeWindow: async () => {
-                try {
-                    const session = await targetPage.target().createCDPSession();
-                    const { windowId } = await session.send('Browser.getWindowForTarget');
-                    await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } });
-                } catch (e) { console.error("Minimize failed", e); }
-            },
-            atlasToggleWindowMode: async () => {
-                try {
-                    const session = await targetPage.target().createCDPSession();
-                    const { windowId, bounds } = await session.send('Browser.getWindowForTarget');
-                    const newState = bounds.windowState === 'normal' ? 'maximized' : 'normal';
-                    await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: newState } });
-                } catch (e) { console.error("Window toggle failed", e); }
-            },
-            // --- DEPRECATED: Recording is now handled Natively in the Electron Main/Renderer Process ---
-            atlasStartRecording: async () => false,
-            atlasStopRecording: async () => null,
-            atlasTogglePause: async () => { },
-            atlasRecordEvent: async () => { },
+            // Keep only what is needed for SPA tracking or guest-side logging
             setSecurityMode: async (mode: string) => {
-                console.log(`[Atlas] Security Warden mode set to: ${mode}`);
-                pipeline.emit('action:security-mode', mode);
+                console.warn(`[Atlas Security] Guest page attempted to change security mode to: ${mode}. Action blocked.`);
             },
-            setStressConfig: async (config: ChaosConfig) => {
-                console.log(`[Atlas] Stress testing config updated`, config);
-                pipeline.emit('action:stress', config);
+            setStressConfig: async () => {
+                console.warn(`[Atlas Security] Guest page attempted to change stress config. Action blocked.`);
             },
             atlasGetTabId: async () => tabId
         };
@@ -487,7 +462,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         console.log(`[Atlas] [DEBUG] Exposing bridge functions to guest...`);
         for (const [name, fn] of Object.entries(bridgeFunctions)) {
             try {
-                await targetPage.exposeFunction(name, fn);
+                await targetPage.exposeFunction(name, fn as any);
             } catch (e) {
                 // Function already exposed - safe to ignore on navigations
             }

@@ -1,6 +1,6 @@
 {
   "name": "atlas-sandbox",
-  "version": "1.0.4",
+  "version": "1.0.1",
   "description": "Chrome-based local development sandbox with production domain masking,load stressor, and session recording",
   "main": "entry.js",
   "bin": {
@@ -18,8 +18,8 @@
     "prepublishOnly": "npm run build",
     "test": "jest",
     "test:watch": "jest --watch",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
   },
   "build": {
     "appId": "com.atlas.sandbox",

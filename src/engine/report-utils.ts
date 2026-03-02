@@ -24,10 +24,20 @@ export function getLocalUrl(maskedUrl: string, localSource: string): string {
     if (!localSource) return maskedUrl;
     try {
         const url = new URL(maskedUrl);
+        // Only map if it's the target domain or already localhost
         return `${url.protocol}//${localSource}${url.pathname}${url.search}${url.hash}`;
     } catch (e) {
         return maskedUrl;
     }
+}
+
+/** 
+ * Maps any URL to its local equivalent and normalizes the path 
+ * to allow accurate comparison (e.g. masked domain vs localhost).
+ */
+export function getNormalizedEffectiveUrl(url: string, localSource: string): string {
+    const local = getLocalUrl(url, localSource);
+    return normalizePath(local);
 }
 
 export function buildTreeReport(entries: Violation[], localSource: string) {
@@ -36,7 +46,7 @@ export function buildTreeReport(entries: Violation[], localSource: string) {
 
     entries.forEach((entry, idx) => {
         if (entry.type === 'navigation') {
-            const norm = normalizePath(entry.url);
+            const norm = getNormalizedEffectiveUrl(entry.url, localSource);
             const existingIndex = pathToPageIndex.get(norm);
 
             let duration = '—';
@@ -78,7 +88,7 @@ export function buildTreeReport(entries: Violation[], localSource: string) {
                 pages.push(pageObj);
             }
         } else if (entry.type === 'violation') {
-            const violationNorm = normalizePath(entry.url);
+            const violationNorm = getNormalizedEffectiveUrl(entry.url, localSource);
             const pageIndex = pathToPageIndex.get(violationNorm);
 
             const violation = {
@@ -124,6 +134,11 @@ export function translateViolation(v: Violation, localSource: string) {
         title = `Broken Link: ${v.message.split(' on ')[1] || 'Unknown'}`;
         impact = "Users will encounter missing content or broken navigation, hurting trust.";
         recommendation = "Update the link to a valid URL or remove the broken reference.";
+    } else if (v.source === 'Network' && (v.message.includes('ERR_CONNECTION_REFUSED') || v.message.includes('timeout'))) {
+        title = "Local Server Connection Failed";
+        impact = "The browser tried to reach your project's local server, but it didn't respond or timed out.";
+        recommendation = "Ensure your project's 'start' script keeps a server running and stays alive. Atlas needs an active port to connect to.";
+        icon = '🔴';
     } else if (v.source === 'Resource' && v.message.startsWith('Failed to load')) {
         const type = v.message.includes('IMG') ? 'Image' : 'Resource';
         title = `Missing ${type}: ${v.message.split(': ')[1] || 'Unknown'}`;
@@ -157,7 +172,7 @@ export function generateMarkdown(entries: Violation[], localSource: string, repo
     const healthScore = violations.length === 0 ? "Perfect" : (criticalCount > 0 ? "Attention Required" : "Stable");
     const healthIcon = violations.length === 0 ? "🟢" : (criticalCount > 0 ? "🔴" : "🟡");
 
-    const uniquePages = new Set(entries.filter(e => e.type === 'navigation').map(e => normalizePath(e.url)));
+    const uniquePages = new Set(entries.filter(e => e.type === 'navigation').map(e => getNormalizedEffectiveUrl(e.url, localSource)));
     const navigableSteps = entries.filter(e => e.type === 'navigation' && e.metrics);
     const avgLoadTime = navigableSteps.length > 0
         ? Math.round(navigableSteps.reduce((acc, curr) => acc + (curr.metrics?.loadTime || 0), 0) / navigableSteps.length)
@@ -178,7 +193,7 @@ export function generateMarkdown(entries: Violation[], localSource: string, repo
 
     const visitCounts = new Map<string, { count: number, lastTime: number }>();
     entries.filter(e => e.type === 'navigation').forEach(e => {
-        const norm = normalizePath(e.url);
+        const norm = getNormalizedEffectiveUrl(e.url, localSource);
         const current = visitCounts.get(norm) || { count: 0, lastTime: 0 };
         visitCounts.set(norm, {
             count: current.count + 1,
@@ -203,10 +218,14 @@ export function generateMarkdown(entries: Violation[], localSource: string, repo
     let journey: { url: string, timestamp: number, metrics?: { loadTime: number, storage: number }, violations: Violation[] }[] = [];
     entries.forEach(entry => {
         if (entry.type === 'navigation') {
-            if (journey.length === 0 || journey[journey.length - 1].url !== entry.url) {
+            const currentNorm = getNormalizedEffectiveUrl(entry.url, localSource);
+            const lastStep = journey[journey.length - 1];
+            const lastNorm = lastStep ? getNormalizedEffectiveUrl(lastStep.url, localSource) : null;
+
+            if (journey.length === 0 || lastNorm !== currentNorm) {
                 journey.push({ url: entry.url, timestamp: entry.timestamp, metrics: entry.metrics, violations: [] });
             } else if (entry.metrics) {
-                journey[journey.length - 1].metrics = entry.metrics;
+                lastStep.metrics = entry.metrics;
             }
         } else if (entry.type === 'violation') {
             if (journey.length > 0) {

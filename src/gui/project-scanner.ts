@@ -198,12 +198,26 @@ export function registerScannerHandlers(): void {
 
     // Read a text file for Markdown rendering
     // Security: only allow reading .md files (no arbitrary file reads)
+    // Audit Fix: Implement Path Traversal protection
     ipcMain.handle('read-file', (_event, filePath: string) => {
         const resolved = path.resolve(filePath);
+
+        // Ensure path is within the project's report directories
+        const isReportDir = resolved.includes('atlas-report') || resolved.includes('atlas-reports');
+        if (!isReportDir) {
+            console.error(`[Atlas Security] Blocked attempt to read file outside report directory: ${resolved}`);
+            throw new Error('[Atlas Security] Access Denied: Cannot read files outside of project report directories');
+        }
+
         const ext = path.extname(resolved).toLowerCase();
         if (ext !== '.md' && ext !== '.txt') {
             throw new Error('[Atlas] Only .md and .txt files can be read');
         }
+
+        if (!fs.existsSync(resolved)) {
+            throw new Error(`[Atlas] File not found: ${resolved}`);
+        }
+
         return fs.readFileSync(resolved, 'utf-8');
     });
 

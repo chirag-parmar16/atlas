@@ -9,7 +9,15 @@ import path from 'path';
 // Helper to spawn and pipe output non-blocking
 function spawnAsync(command: string, args: string[], cwd: string, onLog: (msg: string) => void): Promise<void> {
     return new Promise((resolve, reject) => {
-        const child = spawn(command, args, { cwd, shell: true, stdio: 'pipe' });
+        const isWin = process.platform === 'win32';
+        const isCmd = command === 'npm' || command === 'npx';
+
+        // Audit Fix: On Windows, .cmd files REQUIRE a shell to run via spawn.
+        // We only enable shell: true for these known safe commands to prevent injection.
+        const useShell = isWin && isCmd;
+        const cmd = useShell ? command : (isWin && isCmd ? `${command}.cmd` : command);
+
+        const child = spawn(cmd, args, { cwd, shell: useShell, stdio: 'pipe' });
 
         child.stdout?.on('data', (d) => {
             const msg = d.toString().trim();
@@ -20,9 +28,13 @@ function spawnAsync(command: string, args: string[], cwd: string, onLog: (msg: s
             if (msg) onLog(`[ERR] ${msg}`);
         });
 
+        child.on('error', (err) => {
+            reject(new Error(`Failed to start process ${cmd}: ${err.message}`));
+        });
+
         child.on('close', (code) => {
             if (code === 0) resolve();
-            else reject(new Error(`Command ${command} ${args.join(' ')} failed with code ${code}`));
+            else reject(new Error(`Command ${cmd} ${args.join(' ')} failed with code ${code}`));
         });
     });
 }
@@ -85,11 +97,16 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
 
                 const port = await getFreePort();
                 onLog(`[Atlas] Spawning app (${cmd} ${args.join(' ')}) on port ${port}...`);
+                // --- Start the actual child process ---
+                const isWin = process.platform === 'win32';
+                const isCmd = cmd === 'npm' || cmd === 'npx';
+                const useShell = isWin && isCmd;
+                const finalCmd = useShell ? cmd : (isWin && isCmd ? `${cmd}.cmd` : cmd);
 
-                const child = spawn(cmd, args, {
+                const child = spawn(finalCmd, args, {
                     cwd: projectPath,
                     env: { ...process.env, PORT: port.toString(), NODE_ENV: 'production' },
-                    shell: true,
+                    shell: useShell, // Audit Fix: Security hardening to prevent RCE
                     stdio: 'pipe'
                 });
 

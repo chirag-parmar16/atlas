@@ -59,7 +59,9 @@ app.on('ready', () => {
             contextIsolation: true,
             webviewTag: !isGuiMode,       // sandbox needs webview; dashboard doesn't
             preload: path.join(__dirname, 'preload.js'),
-            webSecurity: !isGuiMode,      // sandbox needs false for proxy; GUI is safe
+            // Audit Fix: Always enable webSecurity. Proxy handles CORS via response manipulation.
+            webSecurity: true,
+            sandbox: true,
         },
         backgroundColor: '#0a0a0f',
         title: isGuiMode ? 'Atlas — Project Dashboard' : (projectName ? `Atlas - ${projectName}` : 'Atlas'),
