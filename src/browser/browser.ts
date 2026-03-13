@@ -127,6 +127,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 type: String(req.type || 'Other'),
                 size: Number(req.size || 0),
                 time: Number(req.time || 0),
+                reqHeaders: req.reqHeaders || {},
+                resHeaders: req.resHeaders || {},
+                body: req.body || '',
                 timestamp: Date.now()
             };
             await mainWindow.evaluate((request: Partial<NetworkRequest>, tId: string) => {

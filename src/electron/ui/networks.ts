@@ -26,6 +26,12 @@ const TYPE_MAP: Record<string, string> = {
 
 const STATUS_COLORS: Record<string, string> = { '2': '#10b981', '3': '#3b82f6', '4': '#facc15', '5': '#ef4444' };
 
+declare global {
+    interface Window {
+        Atlas: any;
+    }
+}
+
 const atlas = window.Atlas;
 
 function formatHeaders(headers: Record<string, string>) {
@@ -39,18 +45,65 @@ function formatHeaders(headers: Record<string, string>) {
     return wrap;
 }
 
+function syntaxHighlightJSON(json: string) {
+    if (!json) return '';
+    json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g, function (match) {
+        let cls = 'color:#f87171'; // number
+        if (/^"/.test(match)) {
+            if (/:$/.test(match)) {
+                cls = 'color:#818cf8'; // key
+            } else {
+                cls = 'color:#34d399'; // string
+            }
+        } else if (/true|false/.test(match)) {
+            cls = 'color:#fbbf24'; // boolean
+        } else if (/null/.test(match)) {
+            cls = 'color:#a1a1aa'; // null
+        }
+        return `<span style="${cls}">${match}</span>`;
+    });
+}
+
 function renderDetails(selectedRequest: NetworkRequest) {
     const detailsContainer = document.createElement('div');
-    detailsContainer.style.cssText = 'background:rgba(0,0,0,0.6); border-top:1px solid rgba(255,255,255,0.08); border-bottom:1px solid rgba(255,255,255,0.08); overflow:hidden; animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);';
+    detailsContainer.style.cssText = 'background:rgba(0,0,0,0.6); border-top:1px solid rgba(255,255,255,0.08); border-bottom:1px solid rgba(255,255,255,0.08); overflow:hidden; animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1); position:relative;';
 
     const tabsNav = document.createElement('div');
-    tabsNav.style.cssText = 'display:flex; background:rgba(255, 255, 255, 0.02); border-bottom:1px solid rgba(255,255,255,0.05); padding:0 12px;';
+    tabsNav.style.cssText = 'display:flex; background:rgba(255, 255, 255, 0.02); border-bottom:1px solid rgba(255,255,255,0.05); padding:0 12px; align-items:center;';
 
     const contentArea = document.createElement('div');
     contentArea.style.cssText = 'max-height:400px; overflow-y:auto; background:transparent;';
 
+    const copyBtn = document.createElement('button');
+    copyBtn.innerHTML = 'Copy';
+    copyBtn.style.cssText = 'margin-left:auto; background:rgba(16, 185, 129, 0.1); border:1px solid rgba(16, 185, 129, 0.2); color:#10b981; padding:4px 10px; border-radius:4px; font-size:9px; font-weight:800; cursor:pointer; text-transform:uppercase; transition:all 0.2s;';
+    copyBtn.onclick = (e) => {
+        e.stopPropagation();
+        const activeView = Object.entries(views).find(([_, v]) => v.style.display === 'block');
+        if (activeView) {
+            let textValue = activeView[1].innerText;
+            if (activeView[0] === 'Headers') {
+                // Formatting for headers copy
+                textValue = Array.from(activeView[1].querySelectorAll('div')).map(row => {
+                    const spans = row.querySelectorAll('span');
+                    return spans.length >= 2 ? `${spans[0].innerText} ${spans[1].innerText}` : '';
+                }).filter(t => t).join('\n');
+            }
+            navigator.clipboard.writeText(textValue);
+            copyBtn.innerText = 'COPIED!';
+            copyBtn.style.background = '#10b981';
+            copyBtn.style.color = '#000';
+            setTimeout(() => {
+                copyBtn.innerText = 'COPY';
+                copyBtn.style.background = 'rgba(16, 185, 129, 0.1)';
+                copyBtn.style.color = '#10b981';
+            }, 1000);
+        }
+    };
+
     const views: Record<string, HTMLElement> = {};
-    const tabs = ['Headers', 'Preview', 'Response', 'Timing'];
+    const tabs = ['Headers', 'Preview', 'Raw', 'Timing'];
 
     tabs.forEach((label, i) => {
         const btn = document.createElement('button');
@@ -67,14 +120,18 @@ function renderDetails(selectedRequest: NetworkRequest) {
         btn.onclick = (e) => {
             e.stopPropagation();
             tabsNav.querySelectorAll('button').forEach(b => {
-                (b as HTMLElement).style.color = '#71717a';
-                (b as HTMLElement).style.borderBottomColor = 'transparent';
+                const buttonElement = b as HTMLElement;
+                if (buttonElement.innerText !== 'COPY') {
+                    buttonElement.style.color = '#71717a';
+                    buttonElement.style.borderBottomColor = 'transparent';
+                }
             });
             Object.values(views).forEach(v => v.style.display = 'none');
             btn.style.color = '#10b981'; btn.style.borderBottomColor = '#10b981';
             view.style.display = 'block';
         };
     });
+    tabsNav.appendChild(copyBtn);
 
     const h = views['Headers'];
     const section = (name: string, color: string) => {
@@ -104,16 +161,79 @@ function renderDetails(selectedRequest: NetworkRequest) {
             <img src="${selectedRequest.url}" style="max-width:100%; max-height:220px; border-radius:4px;" />
         </div>`;
     } else {
-        const code = selectedRequest.body || '(No content recorded)';
-        const pre = document.createElement('pre');
-        pre.style.cssText = 'background:rgba(0, 0, 0, 0.4); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); white-space:pre-wrap; word-break:break-all; font-family:"JetBrains Mono", monospace; font-size:10px; color:#10b981; line-height:1.5; margin:0;';
-        pre.textContent = code;
-        views['Preview'].appendChild(pre);
-        views['Response'].appendChild(pre.cloneNode(true));
+        const rawContent = selectedRequest.body || '(No content recorded)';
+        
+        // 1. Raw view
+        const resPre = document.createElement('pre');
+        resPre.style.cssText = 'background:rgba(0, 0, 0, 0.4); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); white-space:pre-wrap; word-break:break-all; font-family:"JetBrains Mono", monospace; font-size:10px; color:#10b981; line-height:1.5; margin:0;';
+        resPre.textContent = rawContent;
+        views['Raw'].appendChild(resPre);
+
+        // 2. Preview view (Structured with Syntax Highlighting)
+        let previewContent: HTMLElement;
+        try {
+            const parsed = JSON.parse(rawContent);
+            const beautified = JSON.stringify(parsed, null, 2);
+            const pre = document.createElement('pre');
+            pre.style.cssText = 'background:rgba(0, 0, 0, 0.4); padding:16px; border-radius:8px; border:1px solid rgba(16, 185, 129, 0.2); white-space:pre-wrap; word-break:break-all; font-family:"JetBrains Mono", monospace; font-size:10px; color:#d4d4d8; line-height:1.5; margin:0;';
+            pre.innerHTML = syntaxHighlightJSON(beautified);
+            previewContent = pre;
+        } catch (e) {
+            const pre = document.createElement('pre');
+            pre.style.cssText = 'background:rgba(255, 255, 255, 0.02); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.05); white-space:pre-wrap; word-break:break-all; font-family:"JetBrains Mono", monospace; font-size:10px; color:#d4d4d8; line-height:1.5; margin:0;';
+            pre.textContent = rawContent;
+            previewContent = pre;
+        }
+        views['Preview'].appendChild(previewContent);
+    }
+
+    const t = views['Timing'];
+    const totalTime = Math.round(selectedRequest.time);
+    const timingWrap = document.createElement('div');
+    timingWrap.style.cssText = 'padding:10px 0;';
+    
+    const timeRow = (label: string, duration: number, color: string) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:12px; margin-bottom:16px;';
+        
+        const labelEl = document.createElement('div');
+        labelEl.style.cssText = 'width:100px; font-size:10px; color:#71717a; font-weight:700; text-transform:uppercase;';
+        labelEl.innerText = label;
+        
+        const barContainer = document.createElement('div');
+        barContainer.style.cssText = 'flex:1; height:8px; background:rgba(255,255,255,0.03); border-radius:4px; overflow:hidden; position:relative;';
+        
+        const bar = document.createElement('div');
+        bar.style.cssText = `height:100%; width:100%; background:${color}; border-radius:4px; transform-origin:left; animation: growBar 0.5s cubic-bezier(0.16, 1, 0.3, 1);`;
+        barContainer.appendChild(bar);
+        
+        const valueEl = document.createElement('div');
+        valueEl.style.cssText = 'width:60px; font-size:11px; font-family:"JetBrains Mono", monospace; color:#d4d4d8; text-align:right; font-weight:700;';
+        valueEl.innerText = `${duration} ms`;
+        
+        row.appendChild(labelEl);
+        row.appendChild(barContainer);
+        row.appendChild(valueEl);
+        return row;
+    };
+
+    t.appendChild(section('Request Timing', '#fbbf24'));
+    t.appendChild(timeRow('Total Duration', totalTime, 'linear-gradient(90deg, #fbbf24, #f59e0b)'));
+    
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:10px; color:#52525b; margin-top:20px; font-style:italic; line-height:1.4;';
+    hint.innerText = 'Timing includes proxy overhead and localhost latency. More granular TCP/SSL breakdowns coming in future updates.';
+    t.appendChild(hint);
+
+    if (!document.getElementById('timing-style')) {
+        const style = document.createElement('style');
+        style.id = 'timing-style';
+        style.textContent = `@keyframes growBar { from { transform: scaleX(0); } to { transform: scaleX(1); } }`;
+        document.head.appendChild(style);
     }
 
     detailsContainer.appendChild(tabsNav);
-    detailsContainer.appendChild(contentArea);
+    contentArea && detailsContainer.appendChild(contentArea);
     return detailsContainer;
 }
 

@@ -110,7 +110,13 @@ export class ProxyEngine {
 
                 // Body capture and PII scan
                 const contentType = response.headers.get('content-type') || '';
-                if (contentType.includes('json') || contentType.includes('text') || contentType.includes('xml')) {
+                const isTextual = contentType.includes('json') || 
+                                 contentType.includes('text') || 
+                                 contentType.includes('xml') || 
+                                 contentType.includes('javascript') || 
+                                 contentType.includes('css');
+
+                if (isTextual) {
                     const str = Buffer.from(buffer).toString('utf-8');
                     networkEvent.body = str.length > 100000 ? str.substring(0, 100000) + '... (Truncated)' : str;
                     this.securityScanner.scanResponse(url.pathname, urlString, str, contentType, contentType.includes('html'), false, this.callbacks.onViolation, this.callbacks.onLog);
