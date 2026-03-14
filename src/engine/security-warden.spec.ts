@@ -57,6 +57,12 @@ describe('SecurityWarden', () => {
             expect(results[0].type).toBe('AuthToken');
         });
 
+        it('should NOT flag version strings or non-object dots as JWTs', () => {
+            const version = "Project Version v1.0.1 and file.test.js";
+            const results = scanForPII(version);
+            expect(results.length).toBe(0);
+        });
+
         it('should ignore source code boilerplate (template literals/concats)', () => {
             const boilerplate = "headers: { 'Authorization': `Bearer ${token}` }";
             const results = scanForPII(boilerplate);
@@ -65,6 +71,37 @@ describe('SecurityWarden', () => {
             const concat = "const header = 'Bearer ' + secret;";
             const results2 = scanForPII(concat);
             expect(results2.length).toBe(0);
+
+            const jsCall = "localStorage.getItem('token')";
+            const results3 = scanForPII(jsCall);
+            expect(results3.length).toBe(0);
+
+            const jsArr = "config['Bearer'] = true;";
+            const results4 = scanForPII(jsArr);
+            expect(results4.length).toBe(0);
+        });
+
+        it('should NOT flag the user\'s own email if IdentityContext is provided', () => {
+            const context = { email: 'admin@example.com' };
+            const text = 'Response: {"email": "admin@example.com", "other": "victim@hacker.com"}';
+            
+            const results = scanForPII(text, false, context);
+            const emails = results.find(r => r.type === 'Email')?.matches || [];
+            
+            expect(emails).not.toContain('admin@example.com');
+            expect(emails).toContain('victim@hacker.com');
+        });
+
+        it('should NOT flag authorized tokens if they match IdentityContext', () => {
+            const context = { authorizedTokens: ['my-secret-token'] };
+            const text = 'Mirror: Bearer my-secret-token, Leak: Bearer someone-elses-token';
+            
+            const results = scanForPII(text, false, context);
+            const tokens = results.find(r => r.type === 'AuthToken')?.matches || [];
+            
+            // Check that my-secret-token is filtered out, but others remain
+            expect(tokens.some(t => t.includes('my-secret-token'))).toBe(false);
+            expect(tokens.some(t => t.includes('someone-elses-token'))).toBe(true);
         });
     });
 

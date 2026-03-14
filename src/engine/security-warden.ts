@@ -26,29 +26,44 @@ function isValidJWT(token: string): boolean {
         // Decode payload (segment[1])
         const payload = segments[1];
         const decoded = Buffer.from(payload, 'base64').toString('utf8');
-        JSON.parse(decoded);
-        return true;
+        const parsed = JSON.parse(decoded);
+        
+        // Stricter check: Payload must be a non-null JSON OBJECT
+        // This prevents version strings like "v1.0.1" (which parses to numbers) from being flagged.
+        return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
     } catch (e) {
         return false;
     }
+}
+
+export interface IdentityContext {
+    email?: string;
+    authorizedTokens?: string[];
 }
 
 /**
  * Scan text for PII (Personally Identifiable Information).
  * 
  * Detects: Credit Card numbers, Auth Tokens (Bearer/JWT/AWS keys).
- * Emails are only scanned on non-HTML responses (API data) since
- * HTML pages commonly display intentional contact emails.
+ * Emails are only scanned on non-HTML responses (API data).
+ * 
+ * Zero Assumption: If IdentityContext is provided, we filter out "self-leaks"
+ * (data that belongs to the current authorized user).
  * 
  * @param text - The text content to scan
  * @param isHtmlPage - If true, skip email detection (intentional display)
+ * @param context - The authorized session context (Identity)
  * @returns Array of detected PII leaks with type and matches
  */
-export function scanForPII(text: string, isHtmlPage: boolean = false): PIILeak[] {
+export function scanForPII(
+    text: string, 
+    isHtmlPage: boolean = false, 
+    context: IdentityContext = {}
+): PIILeak[] {
     const results: PIILeak[] = [];
     const patterns: Record<string, RegExp> = {
         CreditCard: /\b(?:\d[ -]*?){13,16}\b/g,
-        AuthToken: /\b(?:Bearer|Token|JWT|AKIA[0-9A-Z]{16}|[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)\b/gi
+        AuthToken: /\b(?:Bearer|Token|JWT)\s+[a-zA-Z0-9._~+/-]{4,}\b|\bAKIA[0-9A-Z]{16}\b|\b[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/gi
     };
 
     // Only scan for emails on non-HTML responses (API data).
@@ -57,7 +72,6 @@ export function scanForPII(text: string, isHtmlPage: boolean = false): PIILeak[]
     }
 
     // Stage 1: Context Filtering
-    // Remove UUIDs, URLs, and common HTML attributes to prevent false positives
     const uuidRegex = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
     
     let cleanText = text
@@ -75,15 +89,26 @@ export function scanForPII(text: string, isHtmlPage: boolean = false): PIILeak[]
                 const m = match[0];
                 const index = match.index || 0;
 
+                // Zero Assumption: Identity Filter
+                // If this is the user's own email, it's not a leak.
+                if (type === 'Email' && context.email && m.toLowerCase() === context.email.toLowerCase()) {
+                    continue;
+                }
+
+                // If this is an authorized token used in the request, it's not a leak (it's a mirror).
+                if (type === 'AuthToken' && context.authorizedTokens?.some(t => m.includes(t) || t.includes(m))) {
+                    continue;
+                }
+
                 // Boilerplate Noise Reduction
-                // If it's just a keyword and followed by code-like patterns, skip it.
                 if (['bearer', 'token', 'jwt'].includes(m.toLowerCase())) {
-                    const context = cleanText.substring(index + m.length, index + m.length + 15);
-                    if (context.includes('${') || context.includes('+') || context.includes('`') || context.includes('template')) {
-                        continue;
-                    }
-                    // Also skip if it's just the keyword alone without any following data
-                    if (context.trim().length === 0) {
+                    const contextStr = cleanText.substring(index + m.length, index + m.length + 15);
+                    const isBoilerplate = contextStr.includes('${') || contextStr.includes('+') || 
+                                        contextStr.includes('`') || contextStr.includes('template') ||
+                                        contextStr.includes('\')') || contextStr.includes('\']') || 
+                                        contextStr.includes('",') || contextStr.includes("\',");
+                    
+                    if (isBoilerplate || contextStr.trim().length === 0) {
                         continue;
                     }
                 }
@@ -94,13 +119,17 @@ export function scanForPII(text: string, isHtmlPage: boolean = false): PIILeak[]
                         filtered.push(m);
                     }
                 } else if (type === 'AuthToken') {
-                    // If it's a long string that looks like a JWT, validate it
-                    if (m.includes('.')) {
+                    const isKeywordPrefixed = m.toLowerCase().startsWith('bearer') || 
+                                            m.toLowerCase().startsWith('token') || 
+                                            m.toLowerCase().startsWith('jwt');
+                    
+                    if (m.includes('.') && !isKeywordPrefixed) {
+                        // Strict validation ONLY for raw x.y.z patterns
                         if (isValidJWT(m)) {
                             filtered.push(m);
                         }
                     } else {
-                        // For other tokens (like Bearer XYZ), we keep them
+                        // Keyword-prefixed tokens or AWS keys are kept as-is
                         filtered.push(m);
                     }
                 } else {

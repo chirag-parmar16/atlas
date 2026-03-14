@@ -121,7 +121,34 @@ export class ProxyEngine {
                 if (isTextual) {
                     const str = Buffer.from(buffer).toString('utf-8');
                     networkEvent.body = str.length > 100000 ? str.substring(0, 100000) + '... (Truncated)' : str;
-                    this.securityScanner.scanResponse(url.pathname, urlString, str, contentType, contentType.includes('html'), false, this.callbacks.onViolation, this.callbacks.onLog);
+
+                    // Identity Harvesting (Zero Assumption)
+                    // We try to find the current user's identity to avoid false positives.
+                    const authHeader = request.headers()['authorization'] || '';
+                    const authorizedTokens: string[] = [];
+                    if (authHeader.startsWith('Bearer ')) authorizedTokens.push(authHeader.substring(7));
+                    
+                    // Harvest email from cookies or headers if possible
+                    const cookieStr = request.headers()['cookie'] || '';
+                    const emailMatch = cookieStr.match(/user_email=([^;]+)/) || 
+                                     str.match(/"email"\s*:\s*"([^"]+)"/); // Optimistic harvest from JSON
+                    
+                    const identityContext = {
+                        email: emailMatch ? emailMatch[1] : undefined,
+                        authorizedTokens
+                    };
+
+                    this.securityScanner.scanResponse(
+                        url.pathname, 
+                        urlString, 
+                        str, 
+                        contentType, 
+                        contentType.includes('html'), 
+                        false, 
+                        identityContext,
+                        this.callbacks.onViolation, 
+                        this.callbacks.onLog
+                    );
                 } else {
                     networkEvent.body = `[Binary Data: ${contentType}]`;
                 }

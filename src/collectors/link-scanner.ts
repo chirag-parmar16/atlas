@@ -24,8 +24,8 @@ export async function scanLinksForPage(
     if (!targetPage || targetPage.isClosed()) return;
 
     try {
-        const rawLinks = await targetPage.evaluate((): ExtractedLink[] => {
-            const baseUrl = window.location.origin;
+        // Step 1: Extract all links from the page
+        const extractedLinks = await targetPage.evaluate((): ExtractedLink[] => {
             return Array.from(document.querySelectorAll('a[href]'))
                 .map(a => {
                     const hrefAttr = a.getAttribute('href') || '';
@@ -54,62 +54,61 @@ export async function scanLinksForPage(
         });
 
         // Deduplicate
-        const uniqueLinks = Array.from(new Set(rawLinks.map(l => l.href)))
-            .map(href => rawLinks.find(l => l.href === href)!);
+        const uniqueLinks = Array.from(new Set(extractedLinks.map(l => l.href)))
+            .map(href => extractedLinks.find(l => l.href === href)!);
+
+        // Step 2: Validate links INSIDE the browser context (Native Session)
+        // We use evaluate to run fetch() inside the page. This automatically uses
+        // the browser's cookies, session, and identity. No assumptions needed.
+        const validationResults = await targetPage.evaluate(async (links: ExtractedLink[]) => {
+            const results: { href: string, text: string, status: number, ok: boolean, error?: string }[] = [];
+            
+            for (const link of links) {
+                try {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 5000);
+
+                    // Native browser fetch inherits all cookies and auth state
+                    const res = await fetch(link.href, { 
+                        method: 'HEAD', 
+                        signal: controller.signal,
+                        mode: 'no-cors' // Use no-cors to avoid preflight issues for external links
+                    }).catch(() => fetch(link.href, { 
+                        method: 'GET', 
+                        signal: controller.signal 
+                    }));
+
+                    clearTimeout(timeout);
+                    results.push({
+                        href: link.href,
+                        text: link.text,
+                        status: res.status,
+                        ok: res.type === 'opaque' || res.ok // opaque means it's an external link that succeeded without CORS
+                    });
+                } catch (e) {
+                    results.push({
+                        href: link.href,
+                        text: link.text,
+                        status: 0,
+                        ok: false,
+                        error: (e as Error).message
+                    });
+                }
+            }
+            return results;
+        }, uniqueLinks);
 
         const accessibleLinks: ExtractedLink[] = [];
 
-        for (const link of uniqueLinks) {
-            const cached = linkStatusCache.get(link.href);
-
-            if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
-                if (cached.ok) accessibleLinks.push(link);
-                continue;
-            }
-
-            try {
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 5000);
-
-                const fetchOptions = {
-                    signal: controller.signal,
-                    headers: { 
-                        'User-Agent': userAgent,
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                        'Pragma': 'no-cache',
-                        'Cache-Control': 'no-cache'
-                    }
-                };
-
-                const res = await fetch(link.href, {
-                    ...fetchOptions,
-                    method: 'HEAD'
-                }).catch(() => fetch(link.href, {
-                    ...fetchOptions,
-                    method: 'GET'
-                }));
-
-                clearTimeout(timeout);
-
-                const ok = res.ok;
-                linkStatusCache.set(link.href, { ok, timestamp: Date.now() });
-
-                if (ok) {
-                    accessibleLinks.push(link);
-                } else {
-                    pipeline.emit('violation', {
-                        source: 'Scalability',
-                        message: `Broken Link detected: ${link.href} (Status: ${res.status})`,
-                        level: 1, // WARN
-                        timestamp: Date.now(),
-                        url: targetPage.url()
-                    });
-                }
-            } catch (e) {
-                linkStatusCache.set(link.href, { ok: false, timestamp: Date.now() });
+        for (const res of validationResults) {
+            if (res.ok) {
+                accessibleLinks.push({ href: res.href, text: res.text });
+                linkStatusCache.set(res.href, { ok: true, timestamp: Date.now() });
+            } else {
+                linkStatusCache.set(res.href, { ok: false, timestamp: Date.now() });
                 pipeline.emit('violation', {
                     source: 'Scalability',
-                    message: `Broken Link detected: ${link.href} (Connection Failed)`,
+                    message: `Broken Link detected: ${res.href} (Status: ${res.status || 'Connection Failed'})`,
                     level: 1, // WARN
                     timestamp: Date.now(),
                     url: targetPage.url()
@@ -120,7 +119,6 @@ export async function scanLinksForPage(
         // Push accessible links to UI
         if (!mainWindow.isClosed()) {
             await mainWindow.evaluate((ls: ExtractedLink[], tId: string) => {
-                // Define the expected interface for the host UI window
                 const atlasWindow = window as unknown as Window & { updateLinks?: (links: ExtractedLink[], tabId: string) => void };
                 if (atlasWindow.updateLinks) {
                     atlasWindow.updateLinks(ls, tId);
@@ -131,7 +129,7 @@ export async function scanLinksForPage(
     } catch (e) {
         const err = e as Error;
         if (!err.message.includes('Target closed') && !err.message.includes('Session closed')) {
-            console.error('[Atlas:LinkScanner] Link scan evaluation failed:', err.message);
+            console.error('[Atlas:LinkScanner] In-browser validation failed:', err.message);
         }
     }
 }

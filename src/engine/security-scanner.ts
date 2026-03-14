@@ -33,12 +33,22 @@ export class SecurityScanner {
         contentType: string,
         isHtml: boolean,
         isSamePageNav: boolean,
+        context: { email?: string, authorizedTokens?: string[] } = {},
         onViolation: (v: Violation) => void,
         onLog: (msg: string) => void
     ): void {
         if (body.length > 1000000) return; // Skip very large files
 
-        const leaks = isSamePageNav ? [] : scanForPII(body, isHtml);
+        // Skip static assets to avoid noise
+        const lowerPath = urlPath.toLowerCase();
+        if (lowerPath.endsWith('.js') || lowerPath.endsWith('.css') || 
+            lowerPath.endsWith('.map') || contentType.includes('javascript') || 
+            contentType.includes('css')) {
+            return;
+        }
+
+        // Zero-Assumption PII Scan: Verify against IdentityContext
+        const leaks = isSamePageNav ? [] : scanForPII(body, isHtml, context);
 
         if (leaks.length > 0) {
             onLog(`[Atlas Security] 🎯 Found ${leaks.length} PII leaks in ${urlPath} (${contentType})`);
