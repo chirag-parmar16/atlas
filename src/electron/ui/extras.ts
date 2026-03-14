@@ -1,8 +1,6 @@
 declare global {
     interface Window {
-        Atlas: {
-            addTool: (name: string, cb: () => HTMLElement, onRender?: () => void) => void;
-        };
+        Atlas: any;
         startNativeRecording: () => Promise<boolean>;
     }
 }
