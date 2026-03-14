@@ -9,6 +9,7 @@ export interface PageReport {
     time: string;
     duration: string;
     metrics?: { loadTime: number; storage: number };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     violations: any[];
     subPages: { url: string; timestamp: number; time: string }[];
 }

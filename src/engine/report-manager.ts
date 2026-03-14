@@ -58,11 +58,14 @@ export class ReportManager {
             const parsed = JSON.parse(content);
             if (parsed.journey && Array.isArray(parsed.journey)) {
                 const flat: Violation[] = [];
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 parsed.journey.forEach((page: any) => {
                     flat.push({ type: 'navigation', source: 'Browser', message: `Visited: ${page.url}`, timestamp: page.timestamp, url: page.url });
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     page.violations?.forEach((v: any) => {
                         flat.push({ type: 'violation', source: v.source, message: v.message, level: v.level, timestamp: v.timestamp, url: v.resourceUrl || page.url, metadata: v.metadata });
                     });
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     page.subPages?.forEach((sp: any) => {
                         flat.push({ type: 'navigation', source: 'Browser', message: `Visited: ${sp.url}`, timestamp: sp.timestamp, url: sp.url });
                     });

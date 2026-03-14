@@ -71,7 +71,9 @@ export class ProxyEngine {
                 const resHeaders: Record<string, string | string[]> = Object.fromEntries(response.headers.entries());
 
                 // Cookie handling (Node 18+ style)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 if (typeof (response.headers as any).getSetCookie === 'function') {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const cookies = (response.headers as any).getSetCookie!();
                     if (cookies?.length > 0) resHeaders['set-cookie'] = cookies;
                 }

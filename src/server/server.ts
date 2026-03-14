@@ -87,12 +87,33 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 }
 
                 // Find Port: BUG-003 — Minimize race window by resolving as quickly as possible
-                const getFreePort = (): Promise<number> => new Promise((res) => {
-                    const srv = http.createServer();
-                    srv.listen(0, '127.0.0.1', () => {
-                        const p = (srv.address() as AddressInfo).port;
-                        srv.close(() => res(p));
-                    });
+                const getFreePort = (retries = 3): Promise<number> => new Promise(async (res, rej) => {
+                    for (let i = 0; i < retries; i++) {
+                        const portFound = await new Promise<number>((r) => {
+                            const srv = http.createServer();
+                            srv.unref();
+                            srv.listen(0, '127.0.0.1', () => {
+                                const p = (srv.address() as AddressInfo).port;
+                                srv.close(() => r(p));
+                            });
+                        });
+                        
+                        // Verification: quickly check if we can listen again
+                        const isStillFree = await new Promise<boolean>((r) => {
+                            const tester = http.createServer();
+                            tester.unref();
+                            tester.on('error', () => r(false));
+                            tester.listen(portFound, '127.0.0.1', () => {
+                                tester.close(() => r(true));
+                            });
+                        });
+
+                        if (isStillFree) {
+                            res(portFound);
+                            return;
+                        }
+                    }
+                    rej(new Error("Failed to find a guaranteed free port after retries."));
                 });
 
                 const port = await getFreePort();

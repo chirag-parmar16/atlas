@@ -11,7 +11,7 @@ export interface NetworkInterceptorConfig {
     localPort: number;
 }
 
-export interface NetworkInterceptorCallbacks extends ProxyCallbacks { }
+export type NetworkInterceptorCallbacks = ProxyCallbacks;
 
 export function createNetworkInterceptor(
     page: Page,
@@ -29,8 +29,11 @@ export function createNetworkInterceptor(
 
     const exposeControls = async () => {
         const methods = {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             'setSecurityMode': (mode: string) => proxyEngine.setSecurityMode(mode as any),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             'atlasRecordViolationSrv': (v: any) => callbacks.onViolation(v),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             'setStressConfig': (c: any) => chaosEngine.setConfig(c),
             'getNetworkHistory': () => proxyEngine.getHistory(),
             'clearNetworkHistory': () => proxyEngine.clearHistory(),
@@ -104,7 +107,9 @@ export function createNetworkInterceptor(
         init: async () => { await exposeControls(); await attach(page); },
         attach,
         cleanup: async () => { isCleanedUp = true; },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setSecurityMode: (m: any) => proxyEngine.setSecurityMode(m),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setStressConfig: (c: any) => chaosEngine.setConfig(c),
         getRequestHistory: () => proxyEngine.getHistory(),
         getViolations: () => proxyEngine.getViolations()

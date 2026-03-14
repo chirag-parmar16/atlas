@@ -465,6 +465,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         console.log(`[Atlas] [DEBUG] Exposing bridge functions to guest...`);
         for (const [name, fn] of Object.entries(bridgeFunctions)) {
             try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 await targetPage.exposeFunction(name, fn as any);
             } catch (e) {
                 // Function already exposed - safe to ignore on navigations

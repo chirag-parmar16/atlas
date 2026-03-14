@@ -162,51 +162,47 @@ export async function run() {
 
     const hasPackageJson = fs.existsSync(path.join(projectPath, 'package.json'));
 
-    try {
-        if (hasPackageJson) {
-            console.log(YELLOW('   MODE AUTO') + GRAY(' • package.json detected'));
-            console.log('');
+    if (hasPackageJson) {
+        console.log(YELLOW('   MODE AUTO') + GRAY(' • package.json detected'));
+        console.log('');
 
-            const serverPromise = startServer(projectPath, onServerLog);
+        const serverPromise = startServer(projectPath, onServerLog);
 
-            if (!atlasConfig.targetDomain) {
-                console.log(`   ${chalk.red.bold('ERROR')} ${chalk.white('No targetDomain found in atlas.config.json. Please run "atlas init" again.')}`);
-                process.exit(1);
-            }
+        if (!atlasConfig.targetDomain) {
+            console.log(`   ${chalk.red.bold('ERROR')} ${chalk.white('No targetDomain found in atlas.config.json. Please run "atlas init" again.')}`);
+            process.exit(1);
+        }
 
-            const serverResult = await serverPromise;
-            serverPort = serverResult.port;
-            serverCleanup = serverResult.cleanup;
-            finalDomain = atlasConfig.targetDomain;
-            console.log(`   ${NEON_GREEN('✓')} Using target domain: ${CYAN(finalDomain)}`);
-            // Remove domain prompt since it's already in the config
-        } else {
-            console.log(YELLOW('   MODE MANUAL') + GRAY(' • No package.json detected'));
-            console.log('');
+        const serverResult = await serverPromise;
+        serverPort = serverResult.port;
+        serverCleanup = serverResult.cleanup;
+        finalDomain = atlasConfig.targetDomain;
+        console.log(`   ${NEON_GREEN('✓')} Using target domain: ${CYAN(finalDomain)}`);
+        // Remove domain prompt since it's already in the config
+    } else {
+        console.log(YELLOW('   MODE MANUAL') + GRAY(' • No package.json detected'));
+        console.log('');
 
-            // === MANUAL MODE ===
-            if (!atlasConfig.targetDomain) {
-                console.log(`   ${chalk.red.bold('ERROR')} ${chalk.white('No targetDomain found in atlas.config.json. Please run "atlas init" again.')}`);
-                process.exit(1);
-            }
+        // === MANUAL MODE ===
+        if (!atlasConfig.targetDomain) {
+            console.log(`   ${chalk.red.bold('ERROR')} ${chalk.white('No targetDomain found in atlas.config.json. Please run "atlas init" again.')}`);
+            process.exit(1);
+        }
 
-            console.log(`   ${NEON_GREEN('✓')} Using target domain: ${CYAN(atlasConfig.targetDomain)}`);
-            finalDomain = atlasConfig.targetDomain;
+        console.log(`   ${NEON_GREEN('✓')} Using target domain: ${CYAN(atlasConfig.targetDomain)}`);
+        finalDomain = atlasConfig.targetDomain;
 
-            let isPortValid = false;
-            while (!isPortValid) {
-                const answer = await readConsole('Enter localhost port: ');
-                const n = parseInt(answer);
-                if (!isNaN(n) && n > 0 && n < 65536) {
-                    serverPort = n;
-                    isPortValid = true;
-                } else {
-                    console.log('\x1b[31mPlease enter a valid port number (1-65535)\x1b[0m');
-                }
+        let isPortValid = false;
+        while (!isPortValid) {
+            const answer = await readConsole('Enter localhost port: ');
+            const n = parseInt(answer);
+            if (!isNaN(n) && n > 0 && n < 65536) {
+                serverPort = n;
+                isPortValid = true;
+            } else {
+                console.log('\x1b[31mPlease enter a valid port number (1-65535)\x1b[0m');
             }
         }
-    } catch (err: unknown) {
-        throw err;
     }
 
     // --- LIVE PHASE ---

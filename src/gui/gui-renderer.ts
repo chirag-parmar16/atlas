@@ -11,7 +11,9 @@
     // ─── Safe bridge accessors ───────────────────────────────────────────────
     // contextBridge exposes these on window. Checked at call time, not at load time.
     const bridge = {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         get gui() { return (window as any).atlasGui; },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         get controls() { return (window as any).atlasControls; }
     };
 
@@ -126,6 +128,7 @@
                 }
 
                 // Build a nested structure from displayNames (names with slashes)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const tree: any = {};
                 files.forEach(f => {
                     const parts = f.name.split('/');
@@ -147,6 +150,7 @@
             }
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         private renderSubTree(subtree: any, container: HTMLElement, level: number) {
             const padding = 16 + (level * 12);
             Object.keys(subtree).sort().forEach(key => {

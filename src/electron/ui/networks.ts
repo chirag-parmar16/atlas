@@ -28,6 +28,7 @@ const STATUS_COLORS: Record<string, string> = { '2': '#10b981', '3': '#3b82f6', 
 
 declare global {
     interface Window {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         Atlas: any;
     }
 }
@@ -233,7 +234,10 @@ function renderDetails(selectedRequest: NetworkRequest) {
     }
 
     detailsContainer.appendChild(tabsNav);
-    contentArea && detailsContainer.appendChild(contentArea);
+    if (contentArea) {
+        detailsContainer.appendChild(contentArea);
+    }
+
     return detailsContainer;
 }
 
@@ -396,6 +400,8 @@ function throttledRender() {
         renderTimeout = null;
     });
 }
+
+
 
 atlas.on('networkTrafficUpdated', (reqs: NetworkRequest[]) => {
     requests = reqs;
