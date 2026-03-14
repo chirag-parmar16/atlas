@@ -24,112 +24,125 @@ export async function scanLinksForPage(
     if (!targetPage || targetPage.isClosed()) return;
 
     try {
-        // Step 1: Extract all links from the page
-        const extractedLinks = await targetPage.evaluate((): ExtractedLink[] => {
-            return Array.from(document.querySelectorAll('a[href]'))
-                .map(a => {
-                    const hrefAttr = a.getAttribute('href') || '';
-                    const absoluteHref = (a as HTMLAnchorElement).href;
-                    return {
-                        attr: hrefAttr,
-                        href: absoluteHref,
-                        text: a.textContent?.trim() || ''
-                    };
-                })
-                .filter(l => {
-                    // Skip fragments and non-network links
-                    if (!l.attr || l.attr.startsWith('#') || l.attr.startsWith('mailto:') || 
-                        l.attr.startsWith('tel:') || l.attr.startsWith('javascript:') || 
-                        l.attr.startsWith('data:')) {
-                        return false;
+        // Step 1: Extract and Categorize ALL links from the page for the UI
+        const categorizedLinks = await targetPage.evaluate(() => {
+            const baseUrl = window.location.origin;
+            const links = Array.from(document.querySelectorAll('a[href]'));
+            
+            const results = {
+                internal: [] as { href: string, text: string }[],
+                external: [] as { href: string, text: string }[],
+                fragments: [] as { href: string, text: string }[]
+            };
+
+            links.forEach(a => {
+                const hrefAttr = a.getAttribute('href') || '';
+                const absoluteHref = (a as HTMLAnchorElement).href;
+                const text = a.textContent?.trim() || '';
+
+                // 1. Fragments
+                if (hrefAttr.startsWith('#')) {
+                    results.fragments.push({ href: hrefAttr, text });
+                    return;
+                }
+
+                // 2. Protocols to skip
+                if (hrefAttr.startsWith('mailto:') || hrefAttr.startsWith('tel:') || 
+                    hrefAttr.startsWith('javascript:') || hrefAttr.startsWith('data:')) {
+                    return;
+                }
+
+                // 3. Network links (http/https)
+                if (absoluteHref.startsWith('http')) {
+                    const url = absoluteHref.split('#')[0];
+                    if (absoluteHref.startsWith(baseUrl)) {
+                        results.internal.push({ href: url, text });
+                    } else {
+                        results.external.push({ href: url, text });
                     }
-                    // Only validate http/https links
-                    return l.href.startsWith('http');
-                })
-                .map(l => ({
-                    // Normalize: remove fragments from the absolute URL
-                    href: l.href.split('#')[0],
-                    text: l.text
-                }));
+                }
+            });
+
+            return results;
         });
 
-        // Deduplicate
-        const uniqueLinks = Array.from(new Set(extractedLinks.map(l => l.href)))
-            .map(href => extractedLinks.find(l => l.href === href)!);
+        // Debug log (shown in terminal)
+        console.log(`[Atlas:LinkScanner] Extracted links for tab ${tabId}: ${categorizedLinks.internal.length} Internal, ${categorizedLinks.external.length} External, ${categorizedLinks.fragments.length} Fragments`);
 
-        // Step 2: Validate links INSIDE the browser context (Native Session)
-        // We use evaluate to run fetch() inside the page. This automatically uses
-        // the browser's cookies, session, and identity. No assumptions needed.
-        const validationResults = await targetPage.evaluate(async (links: ExtractedLink[]) => {
-            const results: { href: string, text: string, status: number, ok: boolean, error?: string }[] = [];
-            
-            for (const link of links) {
-                try {
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 5000);
+        // Step 2: Extract unique network links for validation
+        const networkLinks = [...categorizedLinks.internal, ...categorizedLinks.external];
+        const uniqueNetworkLinks = Array.from(new Set(networkLinks.map(l => l.href)))
+            .map(href => networkLinks.find(l => l.href === href)!);
 
-                    // Native browser fetch inherits all cookies and auth state
-                    const res = await fetch(link.href, { 
-                        method: 'HEAD', 
-                        signal: controller.signal,
-                        mode: 'no-cors' // Use no-cors to avoid preflight issues for external links
-                    }).catch(() => fetch(link.href, { 
+        // Step 3: Validate links INSIDE the browser context (Native Session)
+        // We use .then() and Promise.all instead of async/await to avoid __awaiter issues
+        const validationResults = await targetPage.evaluate((links) => {
+            return Promise.all(links.map((link) => {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 5000);
+
+                return fetch(link.href, { 
+                    method: 'HEAD', 
+                    signal: controller.signal,
+                    mode: 'no-cors' 
+                })
+                .then((res) => {
+                    clearTimeout(timeout);
+                    return { href: link.href, status: res.status, ok: res.type === 'opaque' || res.ok };
+                })
+                .catch(() => {
+                    // Failover to GET if HEAD failed
+                    return fetch(link.href, { 
                         method: 'GET', 
                         signal: controller.signal 
-                    }));
-
-                    clearTimeout(timeout);
-                    results.push({
-                        href: link.href,
-                        text: link.text,
-                        status: res.status,
-                        ok: res.type === 'opaque' || res.ok // opaque means it's an external link that succeeded without CORS
+                    })
+                    .then((res) => {
+                        clearTimeout(timeout);
+                        return { href: link.href, status: res.status, ok: res.ok };
+                    })
+                    .catch(() => {
+                        clearTimeout(timeout);
+                        return { href: link.href, status: 0, ok: false };
                     });
-                } catch (e) {
-                    results.push({
-                        href: link.href,
-                        text: link.text,
-                        status: 0,
-                        ok: false,
-                        error: (e as Error).message
-                    });
-                }
-            }
-            return results;
-        }, uniqueLinks);
+                });
+            }));
+        }, uniqueNetworkLinks);
 
-        const accessibleLinks: ExtractedLink[] = [];
-
+        // Step 4: Emit Violations for Broken Links
         for (const res of validationResults) {
-            if (res.ok) {
-                accessibleLinks.push({ href: res.href, text: res.text });
-                linkStatusCache.set(res.href, { ok: true, timestamp: Date.now() });
-            } else {
+            if (!res.ok) {
                 linkStatusCache.set(res.href, { ok: false, timestamp: Date.now() });
                 pipeline.emit('violation', {
                     source: 'Scalability',
                     message: `Broken Link detected: ${res.href} (Status: ${res.status || 'Connection Failed'})`,
-                    level: 1, // WARN
+                    level: 1, 
                     timestamp: Date.now(),
                     url: targetPage.url()
                 });
+            } else {
+                linkStatusCache.set(res.href, { ok: true, timestamp: Date.now() });
             }
         }
 
-        // Push accessible links to UI
+        // Step 5: Push links to UI (Restores visibility)
         if (!mainWindow.isClosed()) {
-            await mainWindow.evaluate((ls: ExtractedLink[], tId: string) => {
-                const atlasWindow = window as unknown as Window & { updateLinks?: (links: ExtractedLink[], tabId: string) => void };
-                if (atlasWindow.updateLinks) {
-                    atlasWindow.updateLinks(ls, tId);
+            const allLinksForUI = [
+                ...categorizedLinks.internal,
+                ...categorizedLinks.external,
+                ...categorizedLinks.fragments
+            ];
+
+            await mainWindow.evaluate((ls: any[], tId: string) => {
+                if (window.updateLinks) {
+                    window.updateLinks(ls, tId);
                 }
-            }, accessibleLinks, tabId);
+            }, allLinksForUI, tabId);
         }
 
     } catch (e) {
         const err = e as Error;
         if (!err.message.includes('Target closed') && !err.message.includes('Session closed')) {
-            console.error('[Atlas:LinkScanner] In-browser validation failed:', err.message);
+            console.error('[Atlas:LinkScanner] Link scan failed:', err.message);
         }
     }
 }
