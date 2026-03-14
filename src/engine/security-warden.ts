@@ -67,27 +67,50 @@ export function scanForPII(text: string, isHtmlPage: boolean = false): PIILeak[]
 
     // Stage 2: Pattern Discovery
     for (const [type, regex] of Object.entries(patterns)) {
-        const matches = cleanText.match(regex);
-        if (matches) {
-            let filtered: string[] = matches;
+        const matches = Array.from(cleanText.matchAll(regex));
+        if (matches.length > 0) {
+            const filtered: string[] = [];
 
-            // Stage 3: Structural Validation
-            if (type === 'CreditCard') {
-                filtered = matches.filter(m => m.replace(/[ -]/g, '').length >= 13);
-            } else if (type === 'AuthToken') {
-                filtered = matches.filter(m => {
+            for (const match of matches) {
+                const m = match[0];
+                const index = match.index || 0;
+
+                // Boilerplate Noise Reduction
+                // If it's just a keyword and followed by code-like patterns, skip it.
+                if (['bearer', 'token', 'jwt'].includes(m.toLowerCase())) {
+                    const context = cleanText.substring(index + m.length, index + m.length + 15);
+                    if (context.includes('${') || context.includes('+') || context.includes('`') || context.includes('template')) {
+                        continue;
+                    }
+                    // Also skip if it's just the keyword alone without any following data
+                    if (context.trim().length === 0) {
+                        continue;
+                    }
+                }
+
+                // Stage 3: Structural Validation
+                if (type === 'CreditCard') {
+                    if (m.replace(/[ -]/g, '').length >= 13) {
+                        filtered.push(m);
+                    }
+                } else if (type === 'AuthToken') {
                     // If it's a long string that looks like a JWT, validate it
                     if (m.includes('.')) {
-                        return isValidJWT(m);
+                        if (isValidJWT(m)) {
+                            filtered.push(m);
+                        }
+                    } else {
+                        // For other tokens (like Bearer XYZ), we keep them
+                        filtered.push(m);
                     }
-                    // For short tokens like "Bearer" or "Token" alone, we keep them as potential matches
-                    // but usually they are part of a larger string. If the regex found them, 
-                    // we allow them unless they are obviously not tokens.
-                    return true;
-                });
+                } else {
+                    filtered.push(m);
+                }
             }
 
-            if (filtered.length > 0) results.push({ type, matches: filtered });
+            if (filtered.length > 0) {
+                results.push({ type, matches: filtered });
+            }
         }
     }
 

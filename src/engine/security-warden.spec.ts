@@ -56,6 +56,16 @@ describe('SecurityWarden', () => {
             expect(results.length).toBe(1);
             expect(results[0].type).toBe('AuthToken');
         });
+
+        it('should ignore source code boilerplate (template literals/concats)', () => {
+            const boilerplate = "headers: { 'Authorization': `Bearer ${token}` }";
+            const results = scanForPII(boilerplate);
+            expect(results.length).toBe(0);
+
+            const concat = "const header = 'Bearer ' + secret;";
+            const results2 = scanForPII(concat);
+            expect(results2.length).toBe(0);
+        });
     });
 
     describe('maskPII', () => {

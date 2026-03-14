@@ -71,14 +71,22 @@ export async function scanLinksForPage(
                 const controller = new AbortController();
                 const timeout = setTimeout(() => controller.abort(), 5000);
 
+                const fetchOptions = {
+                    signal: controller.signal,
+                    headers: { 
+                        'User-Agent': userAgent,
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                        'Pragma': 'no-cache',
+                        'Cache-Control': 'no-cache'
+                    }
+                };
+
                 const res = await fetch(link.href, {
-                    method: 'HEAD',
-                    signal: controller.signal,
-                    headers: { 'User-Agent': userAgent }
+                    ...fetchOptions,
+                    method: 'HEAD'
                 }).catch(() => fetch(link.href, {
-                    method: 'GET',
-                    signal: controller.signal,
-                    headers: { 'User-Agent': userAgent }
+                    ...fetchOptions,
+                    method: 'GET'
                 }));
 
                 clearTimeout(timeout);
