@@ -1,4 +1,4 @@
-import { scanForPII, maskPII, isInsecureCORS } from './security-warden';
+import { scanForPII, maskPII, isInsecureCORS, PIILeak } from './security-warden';
 
 describe('SecurityWarden', () => {
     describe('scanForPII', () => {
@@ -20,7 +20,7 @@ describe('SecurityWarden', () => {
         it('should detect emails in non-HTML content', () => {
             const jsonText = '{"user": "test@example.com"}';
             const results = scanForPII(jsonText, false);
-            const emailLeak = results.find(r => r.type === 'Email');
+            const emailLeak = results.find((r: PIILeak) => r.type === 'Email');
             expect(emailLeak).toBeDefined();
             expect(emailLeak?.matches[0]).toBe('test@example.com');
         });
@@ -28,7 +28,7 @@ describe('SecurityWarden', () => {
         it('should ignore emails in HTML content to prevent noise', () => {
             const htmlText = '<footer>Contact us at support@example.com</footer>';
             const results = scanForPII(htmlText, true);
-            const emailLeak = results.find(r => r.type === 'Email');
+            const emailLeak = results.find((r: PIILeak) => r.type === 'Email');
             expect(emailLeak).toBeUndefined();
         });
 
@@ -36,6 +36,25 @@ describe('SecurityWarden', () => {
             const text = 'Check out this https://site.com/photo-12345678901234.img';
             const results = scanForPII(text);
             expect(results).toHaveLength(0);
+        });
+
+        it('should ignore UUIDs to prevent AuthToken false positives', () => {
+            const text = "Request ID: 550e8400-e29b-41d4-a716-446655440000";
+            const results = scanForPII(text);
+            expect(results).toHaveLength(0);
+        });
+
+        it('should validate JWT structure (3 segments)', () => {
+            const invalidJwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ"; // Missing signature
+            const results = scanForPII(invalidJwt);
+            expect(results).toHaveLength(0);
+        });
+
+        it('should accept structurally valid JWTs', () => {
+            const validJwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+            const results = scanForPII(validJwt);
+            expect(results.length).toBe(1);
+            expect(results[0].type).toBe('AuthToken');
         });
     });
 

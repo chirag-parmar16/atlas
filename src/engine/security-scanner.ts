@@ -1,5 +1,5 @@
 import { Violation } from './state';
-import { scanForPII, maskPII, isInsecureCORS } from './security-warden';
+import { scanForPII, maskPII, isInsecureCORS, PIILeak } from './security-warden';
 
 export class SecurityScanner {
     private mode: 'Standard' | 'Strict' | 'Offline' = 'Standard';
@@ -43,8 +43,8 @@ export class SecurityScanner {
         if (leaks.length > 0) {
             onLog(`[Atlas Security] 🎯 Found ${leaks.length} PII leaks in ${urlPath} (${contentType})`);
 
-            leaks.forEach(leak => {
-                const maskedMatches = leak.matches.map(m => maskPII(m));
+            leaks.forEach((leak: PIILeak) => {
+                const maskedMatches = leak.matches.map((m: string) => maskPII(m));
                 onViolation({
                     source: 'Security Warden',
                     message: `PII Leak(${leak.type}) detected in ${urlPath}: ${maskedMatches.join(', ')}`,

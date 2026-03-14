@@ -25,12 +25,32 @@ export async function scanLinksForPage(
 
     try {
         const rawLinks = await targetPage.evaluate((): ExtractedLink[] => {
+            const baseUrl = window.location.origin;
             return Array.from(document.querySelectorAll('a[href]'))
-                .map(a => ({
-                    href: (a as HTMLAnchorElement).href,
-                    text: a.textContent?.trim() || ''
-                }))
-                .filter(l => l.href.startsWith('http')); // Only validate HTTP links
+                .map(a => {
+                    const hrefAttr = a.getAttribute('href') || '';
+                    const absoluteHref = (a as HTMLAnchorElement).href;
+                    return {
+                        attr: hrefAttr,
+                        href: absoluteHref,
+                        text: a.textContent?.trim() || ''
+                    };
+                })
+                .filter(l => {
+                    // Skip fragments and non-network links
+                    if (!l.attr || l.attr.startsWith('#') || l.attr.startsWith('mailto:') || 
+                        l.attr.startsWith('tel:') || l.attr.startsWith('javascript:') || 
+                        l.attr.startsWith('data:')) {
+                        return false;
+                    }
+                    // Only validate http/https links
+                    return l.href.startsWith('http');
+                })
+                .map(l => ({
+                    // Normalize: remove fragments from the absolute URL
+                    href: l.href.split('#')[0],
+                    text: l.text
+                }));
         });
 
         // Deduplicate
