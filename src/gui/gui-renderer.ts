@@ -51,6 +51,7 @@
 
     interface ReportFile {
         name: string; path: string;
+        projectPath: string; // Add projectPath to ReportFile
         type: 'md' | 'mp4' | 'webm';
         size: number; modified: number;
     }
@@ -135,7 +136,7 @@
                     let curr = tree;
                     parts.forEach((p: string, i: number) => {
                         if (i === parts.length - 1) {
-                            curr[p] = f;
+                            curr[p] = { ...f, projectPath: project.path };
                         } else {
                             if (!curr[p]) curr[p] = {};
                             curr = curr[p];
@@ -270,7 +271,25 @@
             try {
                 if (file.type === 'md') {
                     const raw = await bridge.gui.readFile(file.path);
-                    panelEl.innerHTML = `<div class="md-viewer">${this.renderMarkdown(raw)}</div>`;
+                    const headerHtml = `
+                        <div class="project-panel-header">
+                            <div class="header-left">
+                                <span class="text-muted" style="font-size: 11px;">Project: ${escapeHtml(file.projectPath.split(/[\\/]/).pop() || '')}</span>
+                            </div>
+                            <button class="open-project-btn" id="open-project-${tab.id}">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                Open Project in IDE
+                            </button>
+                        </div>
+                    `;
+                    panelEl.innerHTML = headerHtml + `<div class="md-viewer">${this.renderMarkdown(raw)}</div>`;
+                    
+                    // Attach click handler
+                    const btn = document.getElementById(`open-project-${tab.id}`);
+                    if (btn) {
+                        btn.onclick = () => bridge.gui.openProject(file.projectPath);
+                    }
+
                     // Initialize and render Mermaid diagrams
                     await this.processMermaid(panelEl);
                 } else {

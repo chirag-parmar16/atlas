@@ -9,7 +9,8 @@
  * Register by calling registerScannerHandlers(ipcMain) from electron-main.ts.
  */
 
-import { ipcMain, app } from 'electron';
+import { ipcMain, app, dialog, BrowserWindow } from 'electron';
+import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -229,7 +230,106 @@ export function registerScannerHandlers(): void {
             title: 'Select a folder to scan for Atlas projects',
             properties: ['openDirectory']
         });
-        if (result.canceled || result.filePaths.length === 0) return null;
         return result.filePaths[0];
     });
+
+    // Open a project in an IDE
+    ipcMain.handle('open-project', async (event, projectPath: string) => {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        if (!win) return;
+        await handleOpenProject(projectPath, win);
+    });
 }
+
+/**
+ * Detect available IDEs and open the project.
+ */
+interface IDEInfo {
+    name: string;
+    cmd: string;
+    icon: string;
+    resolvedPath?: string;
+}
+
+async function handleOpenProject(projectPath: string, browserWindow: BrowserWindow) {
+    const ides: IDEInfo[] = [
+        { name: 'VS Code', cmd: 'code', icon: 'vscode' },
+        { name: 'Cursor', cmd: 'cursor', icon: 'cursor' },
+        { name: 'Sublime Text', cmd: 'subl', icon: 'sublime' },
+        { name: 'IntelliJ IDEA', cmd: 'idea', icon: 'intellij' },
+        { name: 'PyCharm', cmd: 'pycharm', icon: 'pycharm' },
+        { name: 'WebStorm', cmd: 'webstorm', icon: 'webstorm' }
+    ];
+
+    const availableIDEs: IDEInfo[] = [];
+
+    // Check availability using 'where' on Windows or 'which' on Unix
+    const checkCmd = process.platform === 'win32' ? 'where' : 'which';
+
+    await Promise.all(ides.map(async (ide) => {
+        return new Promise<void>((resolve) => {
+            // Priority 1: Check System PATH
+            exec(`${checkCmd} ${ide.cmd}`, (err, stdout) => {
+                if (!err && stdout) {
+                    availableIDEs.push({ ...ide, resolvedPath: stdout.split('\n')[0].trim() });
+                    resolve();
+                    return;
+                }
+
+                // Priority 2: Check common Windows paths if on Win32
+                if (process.platform === 'win32') {
+                    const home = os.homedir();
+                    const winPaths: Record<string, string> = {
+                        'code': path.join(home, 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
+                        'cursor': path.join(home, 'AppData', 'Local', 'Programs', 'cursor', 'Cursor.exe'),
+                        'subl': 'C:\\Program Files\\Sublime Text\\sublime_text.exe',
+                    };
+
+                    const target = winPaths[ide.cmd];
+                    if (target && fs.existsSync(target)) {
+                        availableIDEs.push({ ...ide, resolvedPath: target });
+                    }
+                }
+                resolve();
+            });
+        });
+    }));
+
+    if (availableIDEs.length === 0) {
+        dialog.showMessageBox(browserWindow, {
+            type: 'warning',
+            title: 'No IDE Found',
+            message: 'Could not find any supported IDEs (VS Code, Cursor, etc.) in your PATH.',
+            buttons: ['OK']
+        });
+        return;
+    }
+
+    let selectedIDE = availableIDEs[0];
+
+    if (availableIDEs.length > 1) {
+        const result = await dialog.showMessageBox(browserWindow, {
+            type: 'question',
+            title: 'Select IDE',
+            message: 'Which IDE would you like to use to open this project?',
+            buttons: availableIDEs.map(i => i.name),
+            cancelId: -1
+        });
+
+        if (result.response === -1) return;
+        selectedIDE = availableIDEs[result.response];
+    }
+
+    // Open the project
+    const command = selectedIDE.resolvedPath 
+        ? `"${selectedIDE.resolvedPath}" "${projectPath}"`
+        : `${selectedIDE.cmd} "${projectPath}"`;
+
+    exec(command, (err) => {
+        if (err) {
+            console.error(`[Atlas] Failed to open project in ${selectedIDE.name}:`, err);
+            dialog.showErrorBox('Error Opening Project', `Failed to launch ${selectedIDE.name}.`);
+        }
+    });
+}
+

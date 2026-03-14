@@ -27,4 +27,5 @@ contextBridge.exposeInMainWorld('atlasGui', {
     getReportFiles: (projectPath: string) => ipcRenderer.invoke('get-report-files', projectPath),
     readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
     browseFolder: () => ipcRenderer.invoke('browse-folder'),
+    openProject: (projectPath: string) => ipcRenderer.invoke('open-project', projectPath),
 });
