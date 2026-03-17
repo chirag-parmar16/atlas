@@ -14,6 +14,7 @@ import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { z } from 'zod';
 
 export interface ProjectInfo {
     name: string;
@@ -98,7 +99,11 @@ function walkForProjects(dir: string, depth: number, maxDepth: number, results: 
 
 export function registerScannerHandlers(): void {
     // Scan for Atlas projects across multiple roots
-    ipcMain.handle('scan-projects', async (_event, rootPath?: string) => {
+    ipcMain.handle('scan-projects', async (_event, rootPath?: unknown) => {
+        // Validation
+        const schema = z.string().optional();
+        const validatedPath = schema.parse(rootPath);
+
         const results: ProjectInfo[] = [];
         const seen = new Set<string>();
 
@@ -108,9 +113,9 @@ export function registerScannerHandlers(): void {
             walkForProjects(root, 0, 3, results);
         };
 
-        if (rootPath) {
+        if (validatedPath) {
             // Explicit root given (e.g. from Browse button)
-            scanRoot(rootPath);
+            scanRoot(validatedPath);
         } else {
             // 1. Always scan home dir (C:\Users\username)
             scanRoot(os.homedir());
@@ -144,11 +149,14 @@ export function registerScannerHandlers(): void {
     });
 
     // List report files for a given project (.md and .mp4 only)
-    ipcMain.handle('get-report-files', (_event, projectPath: string) => {
+    ipcMain.handle('get-report-files', (_event, projectPath: unknown) => {
+        // Validation
+        const validatedPath = z.string().parse(projectPath);
+
         // Support both atlas-report (legacy) and atlas-reports (new)
-        const reportDir = fs.existsSync(path.join(projectPath, 'atlas-reports'))
-            ? path.join(projectPath, 'atlas-reports')
-            : path.join(projectPath, 'atlas-report');
+        const reportDir = fs.existsSync(path.join(validatedPath, 'atlas-reports'))
+            ? path.join(validatedPath, 'atlas-reports')
+            : path.join(validatedPath, 'atlas-report');
 
         const files: ReportFile[] = [];
 
@@ -200,8 +208,9 @@ export function registerScannerHandlers(): void {
     // Read a text file for Markdown rendering
     // Security: only allow reading .md files (no arbitrary file reads)
     // Audit Fix: Implement Path Traversal protection
-    ipcMain.handle('read-file', (_event, filePath: string) => {
-        const resolved = path.resolve(filePath);
+    ipcMain.handle('read-file', (_event, filePath: unknown) => {
+        const validatedPathArg = z.string().parse(filePath);
+        const resolved = path.resolve(validatedPathArg);
 
         // Ensure path is within the project's report directories
         const isReportDir = resolved.includes('atlas-report') || resolved.includes('atlas-reports');
@@ -234,10 +243,11 @@ export function registerScannerHandlers(): void {
     });
 
     // Open a project in an IDE
-    ipcMain.handle('open-project', async (event, projectPath: string) => {
+    ipcMain.handle('open-project', async (event, projectPath: unknown) => {
+        const validatedPath = z.string().parse(projectPath);
         const win = BrowserWindow.fromWebContents(event.sender);
         if (!win) return;
-        await handleOpenProject(projectPath, win);
+        await handleOpenProject(validatedPath, win);
     });
 }
 

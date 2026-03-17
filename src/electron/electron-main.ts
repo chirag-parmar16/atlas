@@ -14,6 +14,7 @@ import { app, BrowserWindow, ipcMain, desktopCapturer, Event, WebContents } from
 import path from 'path';
 import url from 'url';
 import fs from 'fs';
+import { z } from 'zod';
 
 // ─── Mode Detection ──────────────────────────────────────────────────────────
 // ATLAS_MODE=GUI  → launch project dashboard (no CDP)
@@ -144,8 +145,13 @@ app.on('ready', () => {
     // Active file handles for recording
     const activeRecordings = new Map<string, fs.WriteStream>();
 
-    ipcMain.on('save-video-chunk', (event, { sessionId, buffer }: { sessionId: string, buffer: ArrayBuffer }) => {
+    ipcMain.on('save-video-chunk', (event, payload: unknown) => {
         try {
+            const { sessionId, buffer } = z.object({
+                sessionId: z.string(),
+                buffer: z.instanceof(ArrayBuffer)
+            }).parse(payload);
+
             if (!activeRecordings.has(sessionId)) {
                 const tempDir = path.join(process.cwd(), 'atlas-reports', '.temp');
                 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
@@ -167,9 +173,13 @@ app.on('ready', () => {
         }
     });
 
-    ipcMain.handle('finalize-video', async (event, { sessionId }: { sessionId: string }) => {
+    ipcMain.handle('finalize-video', async (event, payload: unknown) => {
         return new Promise((resolve) => {
             try {
+                const { sessionId } = z.object({
+                    sessionId: z.string()
+                }).parse(payload);
+
                 const stream = activeRecordings.get(sessionId);
                 if (stream) {
                     stream.end();

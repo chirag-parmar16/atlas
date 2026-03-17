@@ -2,12 +2,18 @@ import { scanForPII, maskPII, isInsecureCORS, PIILeak } from './security-warden'
 
 describe('SecurityWarden', () => {
     describe('scanForPII', () => {
-        it('should detect credit card numbers', () => {
+        it('should detect valid credit card numbers (Luhn check)', () => {
             const text = "Payment processed with card: 4111 1111 1111 1111.";
             const results = scanForPII(text);
             expect(results.length).toBe(1);
             expect(results[0].type).toBe('CreditCard');
             expect(results[0].matches[0]).toBe('4111 1111 1111 1111');
+        });
+
+        it('should ignore invalid credit card numbers (failing Luhn check)', () => {
+            const text = "Random digits: 4111 1111 1111 1112.";
+            const results = scanForPII(text);
+            expect(results.length).toBe(0);
         });
 
         it('should detect auth tokens', () => {

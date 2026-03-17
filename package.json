@@ -16,7 +16,10 @@
     "build:ui": "vite build",
     "lint": "eslint \"src/**/*.ts\"",
     "prepublishOnly": "npm run build",
-    "test": "jest",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "jest",
+    "test:integration": "playwright test",
+    "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
@@ -52,6 +55,20 @@
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "include": "build/installer.nsh"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "dist/src/electron/assets/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "dist/src/electron/assets/icon.png"
     }
   },
   "keywords": [
@@ -108,6 +125,7 @@
     "puppeteer-core": "^24.34.0",
     "puppeteer-screen-recorder": "^3.0.6",
     "tree-kill": "^1.2.2",
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "zod": "^4.3.6"
   }
 }

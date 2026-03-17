@@ -3,6 +3,7 @@ import { URL } from 'url';
 import { NetworkRequest, Violation, ChaosConfig } from './state';
 import { ChaosEngine } from './chaos-engine';
 import { ProxyEngine, ProxyCallbacks } from './proxy-engine';
+import { isViolation, isChaosConfig } from '../utils/type-guards';
 
 export { NetworkRequest };
 
@@ -29,12 +30,15 @@ export function createNetworkInterceptor(
 
     const exposeControls = async () => {
         const methods = {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            'setSecurityMode': (mode: string) => proxyEngine.setSecurityMode(mode as any),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            'atlasRecordViolationSrv': (v: any) => callbacks.onViolation(v),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            'setStressConfig': (c: any) => chaosEngine.setConfig(c),
+            'setSecurityMode': (mode: unknown) => {
+                if (typeof mode === 'string') proxyEngine.setSecurityMode(mode as 'Standard' | 'Strict');
+            },
+            'atlasRecordViolationSrv': (v: unknown) => {
+                if (isViolation(v)) callbacks.onViolation(v);
+            },
+            'setStressConfig': (c: unknown) => {
+                if (isChaosConfig(c)) chaosEngine.setConfig(c);
+            },
             'getNetworkHistory': () => proxyEngine.getHistory(),
             'clearNetworkHistory': () => proxyEngine.clearHistory(),
             'getFullViolationHistory': () => proxyEngine.getViolations(),
@@ -107,10 +111,12 @@ export function createNetworkInterceptor(
         init: async () => { await exposeControls(); await attach(page); },
         attach,
         cleanup: async () => { isCleanedUp = true; },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setSecurityMode: (m: any) => proxyEngine.setSecurityMode(m),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setStressConfig: (c: any) => chaosEngine.setConfig(c),
+        setSecurityMode: (m: unknown) => {
+            if (typeof m === 'string') proxyEngine.setSecurityMode(m as 'Standard' | 'Strict');
+        },
+        setStressConfig: (c: unknown) => {
+            if (isChaosConfig(c)) chaosEngine.setConfig(c);
+        },
         getRequestHistory: () => proxyEngine.getHistory(),
         getViolations: () => proxyEngine.getViolations()
     };

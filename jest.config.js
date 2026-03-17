@@ -9,5 +9,11 @@ module.exports = {
             tsconfig: 'tsconfig.json'
         }]
     },
-    moduleFileExtensions: ['ts', 'js', 'json', 'node']
+    moduleFileExtensions: ['ts', 'js', 'json', 'node'],
+    collectCoverageFrom: ['src/**/*.ts', '!src/**/*.spec.ts', '!src/gui/**/*'],
+    coverageThreshold: {
+        global: {
+            lines: 80
+        }
+    }
 };

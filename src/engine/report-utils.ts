@@ -1,6 +1,17 @@
 import { Violation } from './state';
 import path from 'path';
 
+export interface ViolationReport {
+    source: string;
+    message: string;
+    level?: number;
+    severity: string;
+    timestamp: number;
+    time: string;
+    resourceUrl: string;
+    metadata?: Record<string, unknown>;
+}
+
 export interface PageReport {
     step: number;
     url: string;
@@ -9,8 +20,7 @@ export interface PageReport {
     time: string;
     duration: string;
     metrics?: { loadTime: number; storage: number };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    violations: any[];
+    violations: ViolationReport[];
     subPages: { url: string; timestamp: number; time: string }[];
 }
 

@@ -71,10 +71,8 @@ export class ProxyEngine {
                 const resHeaders: Record<string, string | string[]> = Object.fromEntries(response.headers.entries());
 
                 // Cookie handling (Node 18+ style)
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                if (typeof (response.headers as any).getSetCookie === 'function') {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const cookies = (response.headers as any).getSetCookie!();
+                if (typeof (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie === 'function') {
+                    const cookies = (response.headers as Headers & { getSetCookie: () => string[] }).getSetCookie();
                     if (cookies?.length > 0) resHeaders['set-cookie'] = cookies;
                 }
 
@@ -133,9 +131,12 @@ export class ProxyEngine {
                     const emailMatch = cookieStr.match(/user_email=([^;]+)/) || 
                                      str.match(/"email"\s*:\s*"([^"]+)"/); // Optimistic harvest from JSON
                     
+                    const envEmail = process.env.ATLAS_USER_EMAIL;
+                    const envTokens = process.env.ATLAS_AUTHORIZED_TOKENS?.split(',').map(t => t.trim()).filter(Boolean) || [];
+
                     const identityContext = {
-                        email: emailMatch ? emailMatch[1] : undefined,
-                        authorizedTokens
+                        email: emailMatch ? emailMatch[1] : envEmail,
+                        authorizedTokens: [...authorizedTokens, ...envTokens]
                     };
 
                     this.securityScanner.scanResponse(

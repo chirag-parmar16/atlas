@@ -1,21 +1,28 @@
 # 🗺️ Atlas
 
+[![Atlas CI/CD](https://github.com/chirag-parmar16/atlas/actions/workflows/ci.yml/badge.svg)](https://github.com/chirag-parmar16/atlas/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/chirag-parmar16/atlas/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 > **The Electron-Powered Standalone Sandbox for Universal Web Development**
 
 Atlas is a powerful **standalone development sandbox** powered by **Electron**. It launches your web projects in an isolated browser window with a built-in devtools overlay. It acts as a transparent proxy between your application and the browser, allowing you to simulate production environments (custom domains, chaos engineering) without modifying your code.
-
-It acts as a "flight simulator" for web developers, letting you fly your app in dangerous conditions (API failures, strict security) while safely on the ground (localhost).
 
 ---
 
 ## 🚀 Installation
 
-Atlas is distributed as a standalone Windows executable.
+Atlas is distributed as a standalone executable for Windows, macOS, and Linux.
 
-1. **Download the latest `.exe` installer** from the [GitHub Releases page](https://github.com/chirag-parmar16/atlas/releases).
-2. **Double-click** the installer. Atlas will automatically install and configure your system `PATH`.
-   * *Note: Since Atlas is an open-source tool without a paid corporate code-signing certificate, **Windows Defender SmartScreen** may flag it as "unrecognized". To install, click **More info** -> **Run anyway**.*
-3. You can now use the `atlas` command globally from any terminal!
+1. **Download the latest installer** for your platform from the [GitHub Releases page](https://github.com/chirag-parmar16/atlas/releases):
+   - **Windows**: `.exe` or `.msi`
+   - **macOS**: `.dmg` or `.app.zip`
+   - **Linux**: `.AppImage` or `.deb`
+2. **Install the application**:
+   - **Windows**: Double-click the installer. Atlas will automatically install and configure your system `PATH`.
+   - **macOS**: Open the `.dmg` and drag Atlas to your `Applications` folder.
+   - **Linux**: Make the `.AppImage` executable (`chmod +x`) or install the `.deb` package.
+3. You can now use the `atlas` command globally from any terminal! (Note: On macOS and Linux, the binary is named `atlas`).
 
 *Note: Your projects must be running on Node.js v18+.*
 
@@ -65,6 +72,20 @@ atlas run
 | :--------------------- | :----------------------- | :-------------------------- |
 | `-d, --disable <tabs>` | Disable specific UI tabs | `atlas -d console,networks` |
 | `-e, --enable <tabs>`  | Re-enable disabled tabs  | `atlas -e console`          |
+
+---
+
+## 🔐 Environment Variables
+
+Atlas can be configured using environment variables. Create a `.env` file in your project root or set them globally. See `.env.example` for a complete list.
+
+| Variable                  | Description                                                                 |
+| :------------------------ | :-------------------------------------------------------------------------- |
+| `ATLAS_USER_EMAIL`        | Your email (used to filter out your own identity from PII alerts).          |
+| `ATLAS_AUTHORIZED_TOKENS` | Comma-separated list of known tokens to ignore in PII scanning.             |
+| `ATLAS_STARTUP_TIMEOUT`   | Timeout for auto-detecting the dev server (default: 30000ms).               |
+| `PORT`                    | The local port Atlas should proxy to (if not auto-detected).                |
+| `ATLAS_DEBUG_PORT`        | CDP Debugging port (default: 9222).                                         |
 
 ---
 
@@ -131,9 +152,12 @@ Records your development session for retrospective debugging:
 *   **Cursor**: Injects a high-visibility fake cursor for clearer interaction tracking.
 
 ### 🏥 Security Warden
-The Security Warden actively monitors your app's traffic:
-*   **PII Leaks**: Scans response bodies for **Emails**, **Credit Card Numbers**, and **Auth Tokens**.
-*   **Strict CORS**: Blocks responses with `Access-Control-Allow-Origin: *` and logs violations.
+The Security Warden actively monitors your app's traffic with a "Zero-Assumption" security model:
+*   **Deep PII Scanning**: Uses the Luhn algorithm for **Credit Card** validation and strict structure checks for **JWT Auth Tokens**.
+*   **Identity Context Filtration**: Prevents false positives by ignoring your own `ATLAS_USER_EMAIL` and `ATLAS_AUTHORIZED_TOKENS`.
+*   **Strict CORS Enforcement**: Blocks responses with `Access-Control-Allow-Origin: *`.
+*   **Strict CSP**: The HUD overlay runs under a strict Content Security Policy to prevent XSS.
+*   **IPC Validation**: All inter-process communication is validated via **Zod schemas** to prevent injection attacks.
 
 ### ⚡ Performance Monitoring
 *   Tracks request latency with a **rolling average** per URL path.
