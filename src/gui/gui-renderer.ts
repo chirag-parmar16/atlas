@@ -5,16 +5,51 @@
  * set by the Electron contextBridge in preload.ts.
  */
 
+// ─── Types and Global Declarations ──────────────────────────────────────
+interface ProjectInfo {
+    name: string; path: string;
+    config: Record<string, unknown>;
+    hasReports: boolean; reportCount: number;
+}
+
+interface ReportFile {
+    name: string; path: string;
+    projectPath: string;
+    type: 'md' | 'mp4' | 'webm';
+    size: number; modified: number;
+}
+
+interface AtlasGui {
+    scanProjects: (rootPath?: string) => Promise<ProjectInfo[]>;
+    getReportFiles: (projectPath: string) => Promise<ReportFile[]>;
+    readFile: (filePath: string) => Promise<string>;
+    browseFolder: () => Promise<string | undefined>;
+    openProject: (projectPath: string) => Promise<void>;
+}
+
+interface AtlasControls {
+    minimize: () => void;
+    maximize: () => void;
+    close: () => void;
+}
+
+interface Window {
+    atlasGui: AtlasGui;
+    atlasControls: AtlasControls;
+    marked: { parse(md: string): string };
+    mermaid: { 
+        initialize(config: any): void;
+        render(id: string, code: string): Promise<{ svg: string }>;
+    };
+}
+
 (function () {
     'use strict';
 
     // ─── Safe bridge accessors ───────────────────────────────────────────────
-    // contextBridge exposes these on window. Checked at call time, not at load time.
     const bridge = {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        get gui() { return (window as any).atlasGui; },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        get controls() { return (window as any).atlasControls; }
+        get gui() { return (window as unknown as Window).atlasGui; },
+        get controls() { return (window as unknown as Window).atlasControls; }
     };
 
     // ─── Window Controls ─────────────────────────────────────────────────────
@@ -43,19 +78,6 @@
     }
 
     // ─── types ───────────────────────────────────────────────────────────────
-    interface ProjectInfo {
-        name: string; path: string;
-        config: Record<string, unknown>;
-        hasReports: boolean; reportCount: number;
-    }
-
-    interface ReportFile {
-        name: string; path: string;
-        projectPath: string; // Add projectPath to ReportFile
-        type: 'md' | 'mp4' | 'webm';
-        size: number; modified: number;
-    }
-
     interface ReportTab {
         id: string; file: ReportFile;
         tabEl: HTMLElement; panelEl: HTMLElement;
@@ -129,11 +151,10 @@
                 }
 
                 // Build a nested structure from displayNames (names with slashes)
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const tree: any = {};
+                const tree: Record<string, ReportFile | Record<string, unknown>> = {};
                 files.forEach(f => {
                     const parts = f.name.split('/');
-                    let curr = tree;
+                    let curr: any = tree;
                     parts.forEach((p: string, i: number) => {
                         if (i === parts.length - 1) {
                             curr[p] = { ...f, projectPath: project.path };
@@ -151,8 +172,7 @@
             }
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        private renderSubTree(subtree: any, container: HTMLElement, level: number) {
+        private renderSubTree(subtree: Record<string, any>, container: HTMLElement, level: number) {
             const padding = 16 + (level * 12);
             Object.keys(subtree).sort().forEach(key => {
                 const val = subtree[key];

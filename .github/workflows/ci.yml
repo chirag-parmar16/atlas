@@ -18,6 +18,7 @@ jobs:
           cache: 'npm'
       - run: npm install
       - run: npm run lint
+      - run: npm run type-check
       - run: npm run test:unit
       # Integration tests usually require a display/browser, but we can run them in CI
       - name: Install Playwright Browsers
@@ -43,3 +44,9 @@ jobs:
         run: npm run pack
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-package-${{ matrix.os }}
+          path: release/
+          if-no-files-found: error

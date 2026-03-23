@@ -177,6 +177,7 @@ export function scanForPII(
  * Fix for audit finding: "Sensitive Data Exposure in Audit Logs"
  */
 export function maskPII(value: string): string {
+    // Issue 2 Fix: first 4 + **** + last 4
     if (value.length > 8) {
         return value.substring(0, 4) + '****' + value.substring(value.length - 4);
     }

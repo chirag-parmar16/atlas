@@ -154,8 +154,12 @@ Records your development session for retrospective debugging:
 ### 🏥 Security Warden
 The Security Warden actively monitors your app's traffic with a "Zero-Assumption" security model:
 *   **Deep PII Scanning**: Uses the Luhn algorithm for **Credit Card** validation and strict structure checks for **JWT Auth Tokens**.
-*   **Identity Context Filtration**: Prevents false positives by ignoring your own `ATLAS_USER_EMAIL` and `ATLAS_AUTHORIZED_TOKENS`.
-*   **Strict CORS Enforcement**: Blocks responses with `Access-Control-Allow-Origin: *`.
+*   **Zero-Assumption Filtering**: Leverages `ATLAS_USER_EMAIL` and `ATLAS_AUTHORIZED_TOKENS` to filter legitimate traffic from leaks.
+*   **Strict Compliance**: All masking follows the `first4****last4` standard for absolute privacy in logs.
+
+For more details, see [SECURITY.md](file:///d:/Atlas/SECURITY.md).
+
+---
 *   **Strict CSP**: The HUD overlay runs under a strict Content Security Policy to prevent XSS.
 *   **IPC Validation**: All inter-process communication is validated via **Zod schemas** to prevent injection attacks.
 

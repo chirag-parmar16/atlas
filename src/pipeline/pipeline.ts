@@ -4,11 +4,6 @@
  * Typed event bus that connects all layers.
  * Engine, Transport, and Collectors never call each other directly —
  * they publish/subscribe through Pipeline.
- * 
- * Usage:
- *   const pipeline = createPipeline();
- *   pipeline.on('violation', (v) => reportManager.log(v));
- *   pipeline.emit('violation', { source: 'PII', message: '...' });
  */
 
 import { EventEmitter } from 'events';
@@ -39,7 +34,7 @@ export interface PipelineEvents {
 
     // UI → Engine (actions from browser-exposed functions)
     'action:stress': (config: ChaosConfig) => void;
-    'action:security-mode': (mode: string) => void;
+    'action:security-mode': (mode: 'Standard' | 'Strict' | 'Offline') => void;
     'action:start-recording': () => void;
     'action:stop-recording': () => void;
     'action:toggle-pause': (paused: boolean) => void;

@@ -1,6 +1,9 @@
+import { AtlasApi } from '../setup-api';
+
 declare global {
     interface Window {
-        Atlas: any;
+        Atlas: AtlasApi;
+        atlasGui: any; // From contextBridge
         startNativeRecording: () => Promise<boolean>;
     }
 }

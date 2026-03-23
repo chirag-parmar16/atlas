@@ -26,10 +26,11 @@ const TYPE_MAP: Record<string, string> = {
 
 const STATUS_COLORS: Record<string, string> = { '2': '#10b981', '3': '#3b82f6', '4': '#facc15', '5': '#ef4444' };
 
+import { AtlasApi } from '../setup-api';
+
 declare global {
     interface Window {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        Atlas: any;
+        Atlas: AtlasApi;
     }
 }
 

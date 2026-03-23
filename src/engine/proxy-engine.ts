@@ -4,6 +4,7 @@ import { NetworkRequest, Violation } from './state';
 import { PerformanceTracker } from './performance-tracker';
 import { ChaosEngine } from './chaos-engine';
 import { SecurityScanner } from './security-scanner';
+import { headersSchema, queryParamsSchema } from './validation';
 
 export interface ProxyConfig {
     domain: string;
@@ -48,6 +49,37 @@ export class ProxyEngine {
         // 2. Proxy Logic
         if (url.hostname === domain) {
             const targetPath = url.pathname;
+
+            // --- HTTP Input Validation ---
+            const headersValidation = headersSchema.safeParse(request.headers());
+            if (!headersValidation.success) {
+                this.callbacks.onLog(`[Security Warden] Blocked request due to malformed headers on ${url.pathname}`);
+                this.callbacks.onViolation({
+                    source: 'Security Warden',
+                    message: `Malformed headers on ${url.pathname}`,
+                    level: 2,
+                    timestamp: Date.now(),
+                    url: urlString
+                });
+                await request.abort('blockedbyclient');
+                return true;
+            }
+
+            const paramsObj = Object.fromEntries(url.searchParams.entries());
+            const paramsValidation = queryParamsSchema.safeParse(paramsObj);
+            if (!paramsValidation.success) {
+                this.callbacks.onLog(`[Security Warden] Blocked request due to malformed query params on ${url.pathname}`);
+                this.callbacks.onViolation({
+                    source: 'Security Warden',
+                    message: `Malformed query parameters on ${url.pathname}`,
+                    level: 2,
+                    timestamp: Date.now(),
+                    url: urlString
+                });
+                await request.abort('blockedbyclient');
+                return true;
+            }
+
             const localUrl = `http://localhost:${localPort}${targetPath}${url.search}`;
 
             try {
