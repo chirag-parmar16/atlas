@@ -1,6 +1,6 @@
 {
   "name": "atlas-sandbox",
-  "version": "1.0.4",
+  "version": "1.0.2",
   "description": "Chrome-based local development sandbox with production domain masking,load stressor, and session recording",
   "main": "entry.js",
   "bin": {

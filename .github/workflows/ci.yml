@@ -43,7 +43,7 @@ jobs:
       - run: npm install
       - run: npm run build
       - name: Package App & Publish
-        run: npm run pack -- -p always
+        run: npm run dist -- -p always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload Build Artifacts
