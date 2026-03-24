@@ -1,6 +1,6 @@
 {
   "name": "atlas-sandbox",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Chrome-based local development sandbox with production domain masking,load stressor, and session recording",
   "main": "entry.js",
   "bin": {
@@ -12,7 +12,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npm run build:ui && tsc && (if not exist dist\\src\\electron\\assets mkdir dist\\src\\electron\\assets) && xcopy /E /I /Y src\\electron\\assets dist\\src\\electron\\assets && copy dist\\src\\electron\\preload.js dist\\electron\\preload.js && (if not exist dist\\gui mkdir dist\\gui) && copy dist\\src\\gui\\gui-renderer.js dist\\gui\\gui-renderer.js && copy src\\gui\\gui.css dist\\gui\\gui.css && copy src\\gui\\gui-host.html dist\\gui\\gui-host.html && copy src\\electron\\assets\\icon.png dist\\gui\\icon.png && copy node_modules\\mermaid\\dist\\mermaid.min.js dist\\gui\\mermaid.min.js && copy node_modules\\marked\\marked.min.js dist\\gui\\marked.min.js",
+    "build": "npm run build:ui && tsc && node scripts/copy-assets.js",
     "build:ui": "vite build",
     "lint": "eslint \"src/**/*.ts\"",
     "prepublishOnly": "npm run build",
@@ -29,6 +29,12 @@
     "productName": "Atlas-Sandbox",
     "directories": {
       "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "chirag-parmar16",
+      "repo": "atlas",
+      "releaseType": "release"
     },
     "files": [
       "dist",
@@ -61,7 +67,8 @@
         "dmg",
         "zip"
       ],
-      "icon": "dist/src/electron/assets/icon.png"
+      "icon": "dist/src/electron/assets/icon.png",
+      "identity": null
     },
     "linux": {
       "target": [
