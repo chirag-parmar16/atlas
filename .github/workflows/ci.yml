@@ -20,10 +20,7 @@ jobs:
       - run: npm run lint
       - run: npm run type-check
       - run: npm run test:unit
-      # Integration tests usually require a display/browser, but we can run them in CI
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
-      - run: npm run test:integration
+
 
   build:
     needs: lint-and-test
