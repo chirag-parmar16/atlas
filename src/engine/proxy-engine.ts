@@ -5,10 +5,15 @@ import { PerformanceTracker } from './performance-tracker';
 import { ChaosEngine } from './chaos-engine';
 import { SecurityScanner } from './security-scanner';
 import { headersSchema, queryParamsSchema } from './validation';
+import { StrictWarden } from './route-warden';
 
 export interface ProxyConfig {
     domain: string;
     localPort: number;
+    strictMode?: boolean;
+    basePath?: string;
+    allowedRoutes?: string[];
+    appUrl?: string;
 }
 
 export interface ProxyCallbacks {
@@ -21,6 +26,7 @@ export interface ProxyCallbacks {
 export class ProxyEngine {
     private performanceTracker = new PerformanceTracker();
     private securityScanner = new SecurityScanner();
+    private strictWarden = new StrictWarden();
     private requestLogHistory: NetworkRequest[] = [];
     private currentPageViolations: Violation[] = [];
 
@@ -49,6 +55,17 @@ export class ProxyEngine {
         // 2. Proxy Logic
         if (url.hostname === domain) {
             const targetPath = url.pathname;
+
+            // --- STRICT WARDEN CHECKS ---
+            const shouldBlock = this.strictWarden.checkRequest(request, url, this.config, this.callbacks.onViolation, this.callbacks.onLog);
+            if (shouldBlock) {
+                 await request.respond({
+                     status: 404,
+                     contentType: 'text/html',
+                     body: `<html><body><h1>Atlas Edge Block</h1><p>Route Warden actively blocked this request in Strict Mode.</p></body></html>`
+                 });
+                 return true;
+            }
 
             // --- HTTP Input Validation ---
             const headersValidation = headersSchema.safeParse(request.headers());

@@ -121,7 +121,7 @@ export async function run() {
     console.log('');
 
     const configPath = path.join(projectPath, 'atlas.config.json');
-    let atlasConfig: { targetDomain?: string, disabledTabs?: string[] } = {};
+    let atlasConfig: { targetDomain?: string, disabledTabs?: string[], strictMode?: boolean, basePath?: string, allowedRoutes?: string[], appUrl?: string } = {};
     if (fs.existsSync(configPath)) {
         try {
             atlasConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -243,6 +243,9 @@ export async function run() {
     let performCleanup: () => Promise<void>;
     let cleaningUp = false; // Guard against double cleanup
 
+    const isStrictEnv = process.env.ATLAS_STRICT_MODE === 'true';
+    const finalStrictMode = isStrictEnv || atlasConfig.strictMode || false;
+
     const { close, reportManager } = await launchBrowser(
         finalDomain,
         serverPort,
@@ -250,7 +253,13 @@ export async function run() {
         (msg: string) => logToTerminal(msg),
         () => { performCleanup(); },
         atlasConfig.disabledTabs || [],
-        projectName
+        projectName,
+        {
+            strictMode: finalStrictMode,
+            basePath: atlasConfig.basePath,
+            allowedRoutes: atlasConfig.allowedRoutes,
+            appUrl: atlasConfig.appUrl
+        }
     );
 
     performCleanup = async () => {

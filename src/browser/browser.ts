@@ -40,7 +40,7 @@ export interface PipelineEventPayload {
 // UI Suite (Structured)
 
 
-export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = [], projectName: string = ''): Promise<{
+export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = [], projectName: string = '', engineConfig: any = {}): Promise<{
     broadcastLog: (msg: string) => void,
     close: () => Promise<void>,
     process: ChildProcess,
@@ -290,7 +290,14 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
         // 1. Network Interceptor via Engine (wired through Pipeline)
         await targetPage.setCacheEnabled(false);
-        const netInterceptor = createNetworkInterceptor(targetPage, { domain, localPort }, {
+        const netInterceptor = createNetworkInterceptor(targetPage, { 
+            domain, 
+            localPort,
+            strictMode: engineConfig.strictMode,
+            basePath: engineConfig.basePath,
+            allowedRoutes: engineConfig.allowedRoutes,
+            appUrl: engineConfig.appUrl
+        }, {
             onViolation: (v: Violation) => pipeline.emit('violation', { ...v, tabId }),
             onNetworkEvent: (r: NetworkRequest) => pipeline.emit('network:request', { ...r, tabId }),
             onLog: logger,

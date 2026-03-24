@@ -10,6 +10,10 @@ export { NetworkRequest };
 export interface NetworkInterceptorConfig {
     domain: string;
     localPort: number;
+    strictMode?: boolean;
+    basePath?: string;
+    allowedRoutes?: string[];
+    appUrl?: string;
 }
 
 export type NetworkInterceptorCallbacks = ProxyCallbacks;
@@ -25,7 +29,11 @@ export function createNetworkInterceptor(
     const chaosEngine = new ChaosEngine();
     const proxyEngine = new ProxyEngine({
         domain: config.domain,
-        localPort: config.localPort
+        localPort: config.localPort,
+        strictMode: config.strictMode,
+        basePath: config.basePath,
+        allowedRoutes: config.allowedRoutes,
+        appUrl: config.appUrl
     }, callbacks, chaosEngine);
 
     const exposeControls = async () => {

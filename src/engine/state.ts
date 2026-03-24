@@ -114,6 +114,10 @@ export interface AtlasConfig {
     domain: string;
     localPort: number;
     projectPath: string;
+    strictMode?: boolean;
+    basePath?: string;
+    allowedRoutes?: string[];
+    appUrl?: string;
 }
 
 // --- Full State ---

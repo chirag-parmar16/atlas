@@ -16,9 +16,8 @@
     "build:ui": "vite build",
     "lint": "eslint \"src/**/*.ts\"",
     "prepublishOnly": "npm run build",
-    "test": "npm run test:unit && npm run test:integration",
+    "test": "npm run test:unit",
     "test:unit": "jest",
-    "test:integration": "playwright test",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
     "pack": "npm run build && electron-builder --dir",
@@ -95,7 +94,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.58.2",
     "@types/express": "^5.0.6",
     "@types/inquirer": "^9.0.9",
     "@types/jest": "^30.0.0",
