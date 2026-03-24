@@ -64,16 +64,14 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        "dmg"
       ],
       "icon": "dist/src/electron/assets/icon.png",
       "identity": null
     },
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        "AppImage"
       ],
       "icon": "dist/src/electron/assets/icon.png"
     }
