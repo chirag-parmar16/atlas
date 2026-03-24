@@ -120,8 +120,8 @@ export class StrictWarden {
         
         // Handle parameter patterns like /user/:id or /user/{id}
         const regexPattern = pattern
-            .replace(/\/[?:{][^\/{}]+}/g, '/[^/]+')
-            .replace(/\/:[^\/]+/g, '/[^/]+')
+            .replace(/\/[?:{][^/{}]+}/g, '/[^/]+')
+            .replace(/\/:[^/]+/g, '/[^/]+')
             .replace(/\*/g, '.*');
             
         try {

@@ -1,7 +1,6 @@
 /**
  * @jest-environment node
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { StrictWarden } from '../../src/engine/route-warden';
 import { HTTPRequest } from 'puppeteer-core';
 import { URL } from 'url';

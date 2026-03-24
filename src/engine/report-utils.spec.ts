@@ -7,6 +7,9 @@ describe('Report Snapshots', () => {
     
     // Mock Date globally to stabilize snapshots
     const fixedDate = new Date('2026-03-17T12:00:00Z');
+    fixedDate.toLocaleString = () => '17/03/2026, 5:30:00 pm';
+    fixedDate.toLocaleTimeString = () => '5:30:00 pm';
+    
     const originalDate = global.Date;
 
     beforeAll(() => {

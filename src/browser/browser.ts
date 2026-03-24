@@ -40,7 +40,7 @@ export interface PipelineEventPayload {
 // UI Suite (Structured)
 
 
-export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = [], projectName: string = '', engineConfig: any = {}): Promise<{
+export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = [], projectName: string = '', engineConfig: { strictMode?: boolean, basePath?: string, allowedRoutes?: string[], appUrl?: string } = {}): Promise<{
     broadcastLog: (msg: string) => void,
     close: () => Promise<void>,
     process: ChildProcess,

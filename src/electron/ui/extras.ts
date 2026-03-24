@@ -3,7 +3,7 @@ import { AtlasApi } from '../setup-api';
 declare global {
     interface Window {
         Atlas: AtlasApi;
-        atlasGui: any; // From contextBridge
+        atlasGui: unknown; // From contextBridge
         startNativeRecording: () => Promise<boolean>;
     }
 }

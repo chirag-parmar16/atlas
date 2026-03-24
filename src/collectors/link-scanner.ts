@@ -132,8 +132,10 @@ export async function scanLinksForPage(
                 ...categorizedLinks.fragments
             ];
 
-            await mainWindow.evaluate((ls: any[], tId: string) => {
+            await mainWindow.evaluate((ls: { href: string, text: string }[], tId: string) => {
+                // @ts-ignore
                 if (window.updateLinks) {
+                    // @ts-expect-error updateLinks signature in some .d.ts expects NavigationEntry
                     window.updateLinks(ls, tId);
                 }
             }, allLinksForUI, tabId);

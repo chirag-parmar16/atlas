@@ -38,6 +38,7 @@ interface Window {
     atlasControls: AtlasControls;
     marked: { parse(md: string): string };
     mermaid: { 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         initialize(config: any): void;
         render(id: string, code: string): Promise<{ svg: string }>;
     };
@@ -154,6 +155,7 @@ interface Window {
                 const tree: Record<string, ReportFile | Record<string, unknown>> = {};
                 files.forEach(f => {
                     const parts = f.name.split('/');
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     let curr: any = tree;
                     parts.forEach((p: string, i: number) => {
                         if (i === parts.length - 1) {
@@ -172,6 +174,7 @@ interface Window {
             }
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         private renderSubTree(subtree: Record<string, any>, container: HTMLElement, level: number) {
             const padding = 16 + (level * 12);
             Object.keys(subtree).sort().forEach(key => {

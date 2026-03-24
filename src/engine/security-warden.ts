@@ -129,8 +129,8 @@ export function scanForPII(
                     const contextStr = cleanText.substring(index + m.length, index + m.length + 15);
                     const isBoilerplate = contextStr.includes('${') || contextStr.includes('+') || 
                                         contextStr.includes('`') || contextStr.includes('template') ||
-                                        contextStr.includes('\')') || contextStr.includes('\']') || 
-                                        contextStr.includes('",') || contextStr.includes("\',");
+                                        contextStr.includes("')") || contextStr.includes("']") || 
+                                        contextStr.includes('",') || contextStr.includes("',");
                     
                     if (isBoilerplate || contextStr.trim().length === 0) {
                         continue;
