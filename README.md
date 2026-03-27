@@ -14,15 +14,15 @@ Atlas is a powerful **standalone development sandbox** powered by **Electron**. 
 
 Atlas is distributed as a standalone executable for Windows, macOS, and Linux.
 
-1. **Download the latest installer** for your platform from the [GitHub Releases page](https://github.com/chirag-parmar16/atlas/releases):
-   - **Windows**: `.exe` or `.msi`
-   - **macOS**: `.dmg` or `.app.zip`
-   - **Linux**: `.AppImage` or `.deb`
+1. **Download the latest installer** directly from our [**Documentation Site**](https://chirag-parmar16.github.io/atlas/) (Recommended) or from the [GitHub Releases page](https://github.com/chirag-parmar16/atlas/releases):
+   - **Windows**: `.exe` (Visual GUI Hub)
+   - **macOS**: `.dmg` (Apple Silicon & Intel)
+   - **Linux**: `.AppImage`
 2. **Install the application**:
-   - **Windows**: Double-click the installer. Atlas will automatically install and configure your system `PATH`.
-   - **macOS**: Open the `.dmg` and drag Atlas to your `Applications` folder.
-   - **Linux**: Make the `.AppImage` executable (`chmod +x`) or install the `.deb` package.
-3. You can now use the `atlas` command globally from any terminal! (Note: On macOS and Linux, the binary is named `atlas`).
+   - **Windows**: Run the setup. Atlas automatically configures your system `PATH`.
+   - **macOS**: Open the `.dmg` and drag Atlas to your `Applications`.
+   - **Linux**: Make the `.AppImage` executable (`chmod +x`).
+3. Open any terminal and type `atlas` to begin! 🗺️
 
 *Note: Your projects must be running on Node.js v18+.*
 
