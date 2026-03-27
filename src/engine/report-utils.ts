@@ -141,7 +141,19 @@ export function translateViolation(v: Violation, localSource: string) {
     let recommendation = "Review the affected resource and ensure it is accessible.";
     let icon = v.level === 2 ? '🔴' : '🟡';
 
-    if (v.source === 'Network' && v.message.includes('404')) {
+    if (v.source === 'Network' && v.message.includes('HTTP 406')) {
+        title = "Access Blocked (Not Acceptable)";
+        impact = "Your web server or a firewall (e.g. Pixie Proxy / WAF) has rejected this specific request because it didn't like the headers or content.";
+        recommendation = "Check your backend server logs (Apache/Nginx/PHP) to see why its firewall is blocking the 'Atlas' traffic.";
+    } else if (v.source === 'Network' && v.message.includes('HTTP 403')) {
+        title = "Permission Denied (Forbidden)";
+        impact = "The server understood the request but refuses to authorize it. This often happens due to missing cookies or invalid cross-site protection.";
+        recommendation = "Verify that the authenticated session is still valid and that the requested resource exists.";
+    } else if (v.source === 'Network' && v.message.includes('HTTP 500')) {
+        title = "Internal Server Error";
+        impact = "The backend crashed or encountered an unhandled exception while trying to process this request.";
+        recommendation = "Check your application's error logs to debug the server-side crash.";
+    } else if (v.source === 'Network' && v.message.includes('404')) {
         title = `Broken Link: ${v.message.split(' on ')[1] || 'Unknown'}`;
         impact = "Users will encounter missing content or broken navigation, hurting trust.";
         recommendation = "Update the link to a valid URL or remove the broken reference.";

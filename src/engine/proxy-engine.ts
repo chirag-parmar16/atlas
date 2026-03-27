@@ -151,7 +151,7 @@ export class ProxyEngine {
                     this.callbacks.onViolation({
                         source: 'Network',
                         message: `HTTP ${response.status} on ${url.pathname}`,
-                        level: response.status >= 500 ? 2 : 1,
+                        level: 2, // Always critical
                         timestamp: Date.now(),
                         url: urlString
                     });
