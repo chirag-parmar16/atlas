@@ -292,23 +292,15 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
         console.log(`[Atlas] [DEBUG] setupPage start for: ${targetPage.url()}`);
 
-        // Fetch the tabId injected by Electron
+        // tabId is declared early and captured by reference in all callbacks below.
+        // This means once it is resolved (async, below), all future callback invocations
+        // will automatically use the real tabId — no rewiring needed.
         let tabId = '';
-        try {
-            // Wait up to 2s for identity to be injected
-            for (let i = 0; i < 20; i++) {
-                tabId = await targetPage.evaluate(() => (window as { __atlasTabId?: string }).__atlasTabId) || '';
-                if (tabId) break;
-                await new Promise(r => setTimeout(r, 100));
-            }
-        } catch (e) { }
 
-        if (tabId) {
-            pageToTabId.set(targetPage, tabId);
-            console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}`);
-        }
-
-        // 1. Network Interceptor via Engine (wired through Pipeline)
+        // ─── PHASE 1: Attach network interceptor IMMEDIATELY ──────────────────────
+        // CRITICAL: Must happen before any navigation, especially for target="_blank"
+        // links. Waiting for tabId first creates a 2s gap where requests bypass Atlas
+        // and hit the system proxy (Pixy Proxy → 406 error).
         await targetPage.setCacheEnabled(true);
         const netInterceptor = createNetworkInterceptor(targetPage, { 
             domain, 
@@ -327,6 +319,24 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         await netInterceptor.init();
         console.log(`[Atlas] [DEBUG] netInterceptor initialized.`);
         networkManagers.push(netInterceptor);
+
+        // ─── PHASE 2: Resolve tab ID (up to 2s, deferred) ────────────────────────
+        // Runs after the interceptor is already live. Early requests during resolution
+        // will have tabId='' which is acceptable — they still go through Atlas proxy.
+        try {
+            for (let i = 0; i < 20; i++) {
+                tabId = await targetPage.evaluate(() => (window as { __atlasTabId?: string }).__atlasTabId) || '';
+                if (tabId) break;
+                await new Promise(r => setTimeout(r, 100));
+            }
+        } catch (e) { }
+
+        if (tabId) {
+            pageToTabId.set(targetPage, tabId);
+            console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}`);
+        }
+
+
 
         // 1.5. Bridge Guest Console & Errors to Pipeline
         targetPage.on('console', async msg => {
