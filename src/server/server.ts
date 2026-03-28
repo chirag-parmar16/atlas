@@ -126,29 +126,34 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     stdio: 'pipe'
                 });
 
+                // ANSI Color Stripper (removes formatting that confuses regex)
+                const stripAnsi = (str: string) => str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+
                 // Dynamic Port Detection: Listen for logs that suggest a port override
                 let detectedPort: number | null = null;
                 const portPatterns = [
                     /http:\/\/localhost:(\d+)/i,
                     /http:\/\/127\.0\.0\.1:(\d+)/i,
-                    /Local: .*?(?:http:\/\/localhost:)?(\d+)/i,
+                    /Local:\s*.*?(?:http:\/\/localhost:)?(\d+)/i,
                     /Server running on (?:http:\/\/localhost:)?(\d+)/i,
-                    /ready in .*?http:\/\/localhost:(\d+)/i // Vite/Next default
+                    /ready in .*?http:\/\/localhost:(\d+)/i,
+                    /➜\s+Local:\s+http:\/\/localhost:(\d+)/i // Vite specific
                 ];
 
                 let lastLogs: string[] = [];
                 const addLog = (msg: string) => {
-                    lastLogs.push(msg);
+                    const cleanMsg = stripAnsi(msg);
+                    lastLogs.push(cleanMsg);
                     if (lastLogs.length > 20) lastLogs.shift();
                     
-                    // Scan for port
+                    // Scan for port in cleaned message
                     for (const pattern of portPatterns) {
-                        const match = msg.match(pattern);
+                        const match = cleanMsg.match(pattern);
                         if (match && match[1]) {
                             const newPort = parseInt(match[1]);
                             if (newPort !== port && !detectedPort) {
                                 detectedPort = newPort;
-                                onLog(`[Atlas] Dynamic Port Detected! App chose port ${newPort} instead of requested ${port}. Adjusting proxy...`);
+                                onLog(`[Atlas] Port Override Detected! App is on port ${newPort}. Self-adjusting...`);
                             }
                         }
                     }
@@ -164,50 +169,62 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     if (msg) { addLog(`[ERR] ${msg}`); onLog(`[ERR] ${msg}`); }
                 });
 
-                // Wait for readiness (Enhanced with Dynamic Port Awareness)
+                // Proactive Health Check (Probing multiple ports to find the app)
                 let consecutiveSuccesses = 0;
                 const requiredSuccesses = 2;
+                const commonPorts = [3000, 3001, 5173, 5174, 8080];
+                let currentProbePort = port;
 
                 const checkInterval = setInterval(() => {
-                    const targetPort = detectedPort || port;
-                    const req = http.get(`http://127.0.0.1:${targetPort}`, (res) => {
-                        res.resume();
-                        const status = res.statusCode || 0;
-                        if (status > 0 && status < 500) {
-                            consecutiveSuccesses++;
-                            if (consecutiveSuccesses >= requiredSuccesses) {
-                                clearInterval(checkInterval);
-                                resolve({
-                                    port: targetPort,
-                                    child,
-                                    cleanup: async () => {
-                                        if (!child || !child.pid) return;
-                                        const treeKill = require('tree-kill');
-                                        return new Promise<void>((resolve) => {
-                                            treeKill(child.pid, 'SIGTERM', (err?: Error) => {
-                                                if (err) { resolve(); return; }
-                                                const gracePeriod = setTimeout(() => {
-                                                    try {
-                                                        process.kill(child.pid!, 0);
-                                                        treeKill(child.pid, 'SIGKILL', () => resolve());
-                                                    } catch (e) { resolve(); }
-                                                }, 5000);
-                                                child.on('exit', () => {
-                                                    clearTimeout(gracePeriod);
-                                                    resolve();
+                    // Decide which port to check: Detected > Common Fallbacks > Original
+                    const portsToCheck = detectedPort ? [detectedPort] : [port, ...commonPorts];
+                    
+                    const checkPort = (p: number) => {
+                        return new Promise<boolean>((res) => {
+                            const req = http.get(`http://127.0.0.1:${p}`, (response) => {
+                                response.resume();
+                                res(response.statusCode! > 0 && response.statusCode! < 500);
+                            });
+                            req.on('error', () => res(false));
+                            req.setTimeout(200, () => { req.destroy(); res(false); });
+                            req.end();
+                        });
+                    };
+
+                    (async () => {
+                        for (const p of portsToCheck) {
+                            if (await checkPort(p)) {
+                                if (p !== port && !detectedPort) {
+                                    detectedPort = p;
+                                    onLog(`[Atlas] Proactive detection: Found app running on port ${p}.`);
+                                }
+                                consecutiveSuccesses++;
+                                if (consecutiveSuccesses >= requiredSuccesses) {
+                                    clearInterval(checkInterval);
+                                    resolve({
+                                        port: p,
+                                        child,
+                                        cleanup: async () => {
+                                            if (!child || !child.pid) return;
+                                            const treeKill = require('tree-kill');
+                                            return new Promise<void>((resolve) => {
+                                                treeKill(child.pid, 'SIGTERM', (err?: Error) => {
+                                                    if (err) { resolve(); return; }
+                                                    const gracePeriod = setTimeout(() => {
+                                                        try { process.kill(child.pid!, 0); treeKill(child.pid, 'SIGKILL', () => resolve()); } catch (e) { resolve(); }
+                                                    }, 5000);
+                                                    child.on('exit', () => { clearTimeout(gracePeriod); resolve(); });
                                                 });
                                             });
-                                        });
-                                    }
-                                });
+                                        }
+                                    });
+                                }
+                                return; // Found the active port
                             }
-                        } else {
-                            consecutiveSuccesses = 0;
                         }
-                    });
-                    req.on('error', () => { consecutiveSuccesses = 0; });
-                    req.end();
-                }, 500);
+                        consecutiveSuccesses = 0; // None of the ports responded
+                    })();
+                }, 800);
 
                 // Configurable Timeout
                 let startupTimeout = 30000;
@@ -222,7 +239,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 setTimeout(() => {
                     if (consecutiveSuccesses < requiredSuccesses) {
                         clearInterval(checkInterval);
-                        reject(new Error(`Server start timed out after ${startupTimeout}ms. (Checked ports: ${port}${detectedPort ? `, ${detectedPort}` : ''}).\nLast Logs:\n${lastLogs.join('\n')}`));
+                        reject(new Error(`Server start timed out after ${startupTimeout}ms. Probed multiple ports but none responded.\nLast Logs:\n${lastLogs.join('\n')}`));
                         try { child.kill(); } catch (e) {}
                     }
                 }, startupTimeout);
@@ -230,7 +247,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 child.on('exit', (code) => {
                     if (code !== null && code !== 0 && consecutiveSuccesses < requiredSuccesses) {
                         clearInterval(checkInterval);
-                        reject(new Error(`Server process exited early (Code: ${code}).\nLast Logs:\n${lastLogs.join('\n')}`));
+                        reject(new Error(`Server exited (code ${code}).\nLast Logs:\n${lastLogs.join('\n')}`));
                     }
                 });
             } catch (e) {
