@@ -86,37 +86,28 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     }
                 }
 
-                // Find Port: BUG-003 — Minimize race window by resolving as quickly as possible
-                const getFreePort = (retries = 3): Promise<number> => new Promise(async (res, rej) => {
-                    for (let i = 0; i < retries; i++) {
-                        const portFound = await new Promise<number>((r) => {
-                            const srv = http.createServer();
-                            srv.unref();
-                            srv.listen(0, '127.0.0.1', () => {
-                                const p = (srv.address() as AddressInfo).port;
-                                srv.close(() => r(p));
+                // Guard Port: Reserve a port and keep it until the child process needs it.
+                // This eliminates the TOCTOU (Time-of-check to time-of-use) race condition.
+                const reservePort = (): Promise<{ port: number, release: () => Promise<void> }> => {
+                    return new Promise((res, rej) => {
+                        const srv = http.createServer();
+                        srv.unref();
+                        srv.on('error', rej);
+                        srv.listen(0, '127.0.0.1', () => {
+                            const p = (srv.address() as AddressInfo).port;
+                            res({
+                                port: p,
+                                release: () => new Promise((r) => srv.close(() => r()))
                             });
                         });
-                        
-                        // Verification: quickly check if we can listen again
-                        const isStillFree = await new Promise<boolean>((r) => {
-                            const tester = http.createServer();
-                            tester.unref();
-                            tester.on('error', () => r(false));
-                            tester.listen(portFound, '127.0.0.1', () => {
-                                tester.close(() => r(true));
-                            });
-                        });
+                    });
+                };
 
-                        if (isStillFree) {
-                            res(portFound);
-                            return;
-                        }
-                    }
-                    rej(new Error("Failed to find a guaranteed free port after retries."));
-                });
+                const { port, release } = await reservePort();
+                onLog(`[Atlas] Reserved port ${port}. Preparig to spawn app...`);
 
-                const port = await getFreePort();
+                // We release the port IMMEDIATELY before spawn to minimize the race window to micro-seconds.
+                await release();
                 onLog(`[Atlas] Spawning app (${cmd} ${args.join(' ')}) on port ${port}...`);
                 // --- Start the actual child process ---
                 const isWin = process.platform === 'win32';
@@ -126,7 +117,11 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
 
                 const child = spawn(finalCmd, args, {
                     cwd: projectPath,
-                    env: { ...process.env, PORT: port.toString(), NODE_ENV: 'production' },
+                    env: { 
+                        ...process.env, 
+                        PORT: port.toString(), 
+                        NODE_ENV: process.env.NODE_ENV || 'development' 
+                    },
                     shell: useShell, // Audit Fix: Security hardening to prevent RCE
                     stdio: 'pipe'
                 });
@@ -147,55 +142,65 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     if (msg) { addLog(`[ERR] ${msg}`); onLog(`[ERR] ${msg}`); }
                 });
 
-                // Wait for readiness
+                // Wait for readiness (Enhanced with Stability Guard)
+                let consecutiveSuccesses = 0;
+                const requiredSuccesses = 2; // Resolve only after 2 stable responses
+
                 const checkInterval = setInterval(() => {
                     const req = http.get(`http://127.0.0.1:${port}`, (res) => {
-                        if (res.statusCode) {
-                            clearInterval(checkInterval);
-                            resolve({
-                                port,
-                                child,
-                                cleanup: async () => {
-                                    if (!child || !child.pid) return;
+                        const status = res.statusCode || 0;
+                        if (status > 0 && status < 500) {
+                            consecutiveSuccesses++;
+                            if (consecutiveSuccesses >= requiredSuccesses) {
+                                clearInterval(checkInterval);
+                                resolve({
+                                    port,
+                                    child,
+                                    cleanup: async () => {
+                                        if (!child || !child.pid) return;
 
-                                    // Use tree-kill for cross-platform process tree termination
-                                    const treeKill = require('tree-kill');
+                                        // Use tree-kill for cross-platform process tree termination
+                                        const treeKill = require('tree-kill');
 
-                                    return new Promise<void>((resolve) => {
-                                        // Attempt graceful shutdown first
-                                        treeKill(child.pid, 'SIGTERM', (err?: Error) => {
-                                            if (err) {
-                                                // Process already dead or error occurred
-                                                resolve();
-                                                return;
-                                            }
-
-                                            // Wait 5 seconds for graceful shutdown
-                                            const gracePeriod = setTimeout(() => {
-                                                // Force kill if still alive after grace period
-                                                try {
-                                                    process.kill(child.pid!, 0); // Check if still alive
-                                                    treeKill(child.pid, 'SIGKILL', () => {
-                                                        resolve();
-                                                    });
-                                                } catch (e) {
-                                                    // Process already dead
+                                        return new Promise<void>((resolve) => {
+                                            // Attempt graceful shutdown first
+                                            treeKill(child.pid, 'SIGTERM', (err?: Error) => {
+                                                if (err) {
+                                                    // Process already dead or error occurred
                                                     resolve();
+                                                    return;
                                                 }
-                                            }, 5000);
 
-                                            // If process dies during grace period, clear timeout
-                                            child.on('exit', () => {
-                                                clearTimeout(gracePeriod);
-                                                resolve();
+                                                // Wait 5 seconds for graceful shutdown
+                                                const gracePeriod = setTimeout(() => {
+                                                    // Force kill if still alive after grace period
+                                                    try {
+                                                        process.kill(child.pid!, 0); // Check if still alive
+                                                        treeKill(child.pid, 'SIGKILL', () => {
+                                                            resolve();
+                                                        });
+                                                    } catch (e) {
+                                                        // Process already dead
+                                                        resolve();
+                                                    }
+                                                }, 5000);
+
+                                                // If process dies during grace period, clear timeout
+                                                child.on('exit', () => {
+                                                    clearTimeout(gracePeriod);
+                                                    resolve();
+                                                });
                                             });
                                         });
-                                    });
-                                }
-                            });
+                                    }
+                                });
+                            }
+                        } else {
+                            consecutiveSuccesses = 0; // Reset on 5xx or bad status
                         }
                     });
                     req.on('error', () => {
+                        consecutiveSuccesses = 0; // Reset on connection failure
                         // Server not HTTP-ready yet, ignore connection refused and keep polling
                     });
                     req.end();

@@ -289,7 +289,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         }
 
         // 1. Network Interceptor via Engine (wired through Pipeline)
-        await targetPage.setCacheEnabled(false);
+        await targetPage.setCacheEnabled(true);
         const netInterceptor = createNetworkInterceptor(targetPage, { 
             domain, 
             localPort,

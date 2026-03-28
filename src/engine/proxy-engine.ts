@@ -101,13 +101,24 @@ export class ProxyEngine {
 
             try {
                 const startTime = Date.now();
-                const headers: Record<string, string> = { ...request.headers(), 'x-forwarded-proto': 'https' };
+                const headers: Record<string, string> = { 
+                    ...request.headers(), 
+                    'x-forwarded-proto': 'https',
+                    'x-forwarded-host': request.headers()['host'] || domain,
+                    'host': `localhost:${localPort}` // Internal routing bypass
+                };
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s Proxy Timeout
 
                 const response = await fetch(localUrl, {
                     method: request.method(),
                     headers: headers as HeadersInit,
-                    body: request.postData()
+                    body: request.postData(),
+                    signal: controller.signal
                 });
+
+                clearTimeout(timeoutId);
 
                 const buffer = await response.arrayBuffer();
                 const duration = Date.now() - startTime;
