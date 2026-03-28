@@ -127,6 +127,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 });
 
                 // ANSI Color Stripper (removes formatting that confuses regex)
+                // eslint-disable-next-line no-control-regex
                 const stripAnsi = (str: string) => str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
 
                 // Dynamic Port Detection: Listen for logs that suggest a port override
