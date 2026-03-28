@@ -242,11 +242,20 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const webviewTarget = await browser.waitForTarget((t: Target) => {
         const type = t.type();
         const url = t.url();
-        // Log all targets to help debug why the webview isn't being caught
+
+        // Target matching: prioritizes 'webview'. 
+        // Also accepts 'page' or 'other' if they are about:blank (initial state) 
+        // or contain the target domain but are NOT the Host HUD.
+        const isWebview = type === 'webview';
+        const isBlankOther = type === 'other' && url === 'about:blank';
+        const isGuestPage = (type === 'page' || type === 'other') && url.includes(domain) && !url.includes('index.html');
+
         if (type !== 'background_page') {
-            console.log(`[Atlas] Scanning target: ${type} (${url})`);
+            const status = (isWebview || isBlankOther || isGuestPage) ? 'MATCHED' : 'SKIPPED';
+            console.log(`[Atlas] Scanning target: ${type} (${url || 'empty'}) -> ${status}`);
         }
-        return type === 'webview' || (type === 'other' && url === 'about:blank');
+
+        return isWebview || isBlankOther || isGuestPage;
     }, { timeout: 15000 }).catch((err: Error) => {
         console.error('[Atlas] FATAL: Timeout waiting for Guest page. Is the HUD visible?');
         throw err;
@@ -255,10 +264,12 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     page = await webviewTarget.page();
 
     if (!page) {
+        // If it's a webview target but page() is null, we might need a retry or it's a fatal Electron issue
+        console.error('[Atlas] Target found but page() is null. Type:', webviewTarget.type());
         throw new Error('[Atlas] Failed to attach to Guest page. Host UI may be broken.');
     }
 
-    console.log('[Atlas] Guest page attached.');
+    console.log(`[Atlas] Guest page attached (${webviewTarget.type()}).`);
     await page.setUserAgent(userAgentStr);
 
     // DEBUG: Bridge Console (Silenced for cleaner terminal)

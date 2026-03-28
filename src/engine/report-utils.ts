@@ -195,7 +195,12 @@ export function generateMarkdown(entries: Violation[], localSource: string, repo
     const healthScore = violations.length === 0 ? "Perfect" : (criticalCount > 0 ? "Attention Required" : "Stable");
     const healthIcon = violations.length === 0 ? "🟢" : (criticalCount > 0 ? "🔴" : "🟡");
 
-    const uniquePages = new Set(entries.filter(e => e.type === 'navigation').map(e => getNormalizedEffectiveUrl(e.url, localSource)));
+    const uniquePages = new Set();
+    entries.filter(e => e.type === 'navigation').forEach(e => {
+        try {
+            uniquePages.add(getNormalizedEffectiveUrl(e.url, localSource));
+        } catch { /* Skip malformed captures */ }
+    });
     const navigableSteps = entries.filter(e => e.type === 'navigation' && e.metrics);
     const avgLoadTime = navigableSteps.length > 0
         ? Math.round(navigableSteps.reduce((acc, curr) => acc + (curr.metrics?.loadTime || 0), 0) / navigableSteps.length)
@@ -225,12 +230,13 @@ export function generateMarkdown(entries: Violation[], localSource: string, repo
     });
 
     visitCounts.forEach((data, url) => {
-        const local = getLocalUrl(url, localSource);
         let displayUrl = url;
+        let local = url;
         try {
+            local = getLocalUrl(url, localSource);
             displayUrl = (new URL(url).pathname === '/' || url === 'http://test/') ? '/' : new URL(url).pathname;
         } catch (e) {
-            displayUrl = url;
+            displayUrl = url || 'Unknown URL';
         }
         md += `| [${displayUrl}](${local}) | **${data.count}** | ${new Date(data.lastTime).toLocaleTimeString()} |\n`;
     });

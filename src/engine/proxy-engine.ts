@@ -105,16 +105,23 @@ export class ProxyEngine {
                     ...request.headers(), 
                     'x-forwarded-proto': 'https',
                     'x-forwarded-host': request.headers()['host'] || domain,
-                    'host': `localhost:${localPort}` // Internal routing bypass
                 };
+                
+                // Audit Fix: Remove manual 'host' override. Modern fetch/undici 
+                // generates the correct Host header from the URL. Manual overrides 
+                // are often rejected by the runtime or backend WAFs.
+                delete headers['host'];
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s Proxy Timeout
 
+                const method = request.method();
+                const hasBody = method !== 'GET' && method !== 'HEAD' && !!request.postData();
+
                 const response = await fetch(localUrl, {
-                    method: request.method(),
+                    method,
                     headers: headers as HeadersInit,
-                    body: request.postData(),
+                    body: hasBody ? request.postData() : undefined,
                     signal: controller.signal
                 });
 

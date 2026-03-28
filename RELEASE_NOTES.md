@@ -1,29 +1,28 @@
-# Atlas Sandbox v1.1.0
+# Atlas Sandbox v1.1.1
 
 ## 🚀 Overview
-This release focuses on systemic stability and performance, resolving critical 502 Proxy Errors and port race conditions that affected application startup in complex environments.
+This is a critical stability patch addressing regressions in target discovery and proxy header handling introduced in v1.1.0.
 
-## 🛠️ Key Improvements & Bug Fixes
+## 🛠️ Key Bug Fixes
 
-### 1. **Port Guard Strategy** (New)
-- Replaced unsafe port allocation with a deterministic `reservePort` mechanism.
-- Ports are now held by the system until the exact moment of child process spawning, eliminating "Address already in use" errors during multi-step initialization.
+### 1. **Enhanced Target Discovery**
+- Updated the connection logic in `src/browser/browser.ts` to be more inclusive of different Electron/Chromium versions.
+- Atlas now accurately identifies the Guest viewport even when reported as a standard `page` or `other` type.
+- Added detailed "Scanning target" logging with `MATCHED`/`SKIPPED` status for easier field debugging.
 
-### 2. **Proxy Resilience (Pixy Engine)**
-- Added **30-second timeouts** to proxy requests via `AbortSignal`, preventing browser hangs on stagnant connections.
-- Fixed **Host Header Forwarding**: Correctly overrides the `host` header to `localhost` for internal routing while preserving the original host in `x-forwarded-host`.
-- Enhanced stream handling for improved performance under high load.
+### 2. **Proxy Resilience & Header Fixes**
+- **Removed manual `Host` header override**: Restored default `fetch` behavior to prevent request rejection by backend servers and libraries that strict-check the Host header.
+- **GET/HEAD Safety**: Corrected `fetch` body handling to avoid illegal body errors on non-POST methods.
 
-### 3. **Smart Readiness Checks**
-- Upgraded the server readiness monitor to require **two consecutive successful health checks** before marking the sandbox as "Ready".
-- Now correctly ignores unstable 500-level errors during cold starts.
+### 3. **Report Generation Hardening**
+- Implemented `try-catch` wrappers for URL parsing in `report-utils.ts`.
+- The audit report generator now gracefully handles malformed or empty captures, ensuring the session summary is saved even if errors occurred during the session.
 
-### 4. **Environment & Performance**
-- Removed forced `NODE_ENV=production`; Atlas now respects the developer environment or defaults to `development` for better debugging.
-- Re-enabled **Browser Caching** for guest pages to reduce proxy overhead and significantly improve interaction speed.
+### 4. **CLI Updates**
+- Corrected all version markers to `v1.1.1`.
 
 ---
 ## 📦 Version Information
-- **Tag**: `v1.1.0`
-- **Release Type**: Minor (Stability Focus)
+- **Tag**: `v1.1.1`
+- **Release Type**: Patch (Stability Focus)
 - **Minimum Node**: `>=18.0.0`
