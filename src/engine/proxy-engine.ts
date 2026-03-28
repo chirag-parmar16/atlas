@@ -21,6 +21,7 @@ export interface ProxyCallbacks {
     onNetworkEvent: (req: NetworkRequest) => void;
     onLog: (msg: string) => void;
     onNavigation: (url: string) => void;
+    onTrafficCleared?: () => void;
 }
 
 export class ProxyEngine {
@@ -38,7 +39,10 @@ export class ProxyEngine {
 
     public getHistory() { return this.requestLogHistory; }
     public getViolations() { return this.currentPageViolations; }
-    public clearHistory() { this.requestLogHistory = []; }
+    public clearHistory() { 
+        this.requestLogHistory = []; 
+        this.callbacks.onTrafficCleared?.();
+    }
     public clearViolations() { this.currentPageViolations = []; }
     public setSecurityMode(mode: 'Standard' | 'Strict' | 'Offline') { this.securityScanner.setMode(mode); }
 

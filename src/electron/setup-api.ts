@@ -48,6 +48,8 @@ export interface AtlasApi {
     on: (event: string, callback: Function) => void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     emit: (event: string, data?: any) => void;
+    clearTraffic: (tabId?: string) => void;
+    clearViolations: (tabId?: string) => void;
     addTool: (name: string, renderCallback?: () => HTMLElement | null, onShow?: () => void) => void;
     reportViolation: (source: string, message: string, level: number) => void;
 }
@@ -60,6 +62,8 @@ declare global {
         updateConsole: (entry: ConsoleEntry, tabId?: string) => void;
         updateTraffic: (reqs: NetworkRequest[], tabId?: string) => void;
         addNetworkRequest: (req: NetworkRequest, tabId?: string) => void;
+        clearTraffic: (tabId?: string) => void;
+        clearViolations: (tabId?: string) => void;
         updateStorage: (metrics: StorageMetrics, tabId?: string) => void;
         updateLinks: (links: NavigationEntry[], tabId?: string) => void;
         __atlasSwapTab: (tabId: string) => void;
@@ -139,6 +143,25 @@ window.Atlas = {
         getActiveTabData().violations.push(v);
         window.updateViolationCount(this.violations.length);
         this.emit('violationsUpdated', this.violations);
+    },
+    clearTraffic: function (tabId: string = '') {
+        const targetId = tabId || activeTabId || '__default__';
+        const data = getOrCreateTabData(targetId);
+        data.requests = [];
+        if (targetId === activeTabId || !activeTabId) {
+            this.networkRequests = [];
+            this.emit('networkTrafficUpdated', []);
+        }
+    },
+    clearViolations: function (tabId: string = '') {
+        const targetId = tabId || activeTabId || '__default__';
+        const data = getOrCreateTabData(targetId);
+        data.violations = [];
+        if (targetId === activeTabId || !activeTabId) {
+            this.violations = [];
+            this.emit('violationsUpdated', []);
+            window.updateViolationCount(0);
+        }
     }
 };
 
@@ -195,6 +218,14 @@ window.addNetworkRequest = (req: NetworkRequest, tabId: string = '') => {
         window.Atlas.networkRequests = data.requests;
         window.Atlas.emit('networkTrafficUpdated', data.requests);
     }
+};
+
+window.clearTraffic = (tabId: string = '') => {
+    window.Atlas.clearTraffic(tabId);
+};
+
+window.clearViolations = (tabId: string = '') => {
+    window.Atlas.clearViolations(tabId);
 };
 
 window.updateStorage = (metrics: StorageMetrics, tabId: string = '') => {

@@ -283,6 +283,21 @@ function renderRequests() {
     });
     filterBar.appendChild(filterTabs);
 
+    const clearBtn = document.createElement('button');
+    clearBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>';
+    clearBtn.title = 'Clear Network Log';
+    clearBtn.style.cssText = 'background:transparent; border:none; color:#71717a; cursor:pointer; padding:4px; margin-left:8px; display:flex; align-items:center; justify-content:center; border-radius:4px; transition:all 0.2s;';
+    clearBtn.onmouseover = () => { clearBtn.style.color = '#ef4444'; clearBtn.style.background = 'rgba(239, 68, 68, 0.1)'; };
+    clearBtn.onmouseout = () => { clearBtn.style.color = '#71717a'; clearBtn.style.background = 'transparent'; };
+    clearBtn.onclick = () => {
+        // 1. Clear HUD memory
+        atlas.clearTraffic();
+        // 2. Clear Backend (Cli/Proxy) history
+        // @ts-ignore
+        if (window.__atlasClearTraffic) window.__atlasClearTraffic();
+    };
+    filterBar.appendChild(clearBtn);
+
     const searchWrapper = document.createElement('div');
     searchWrapper.style.cssText = 'flex:1; display:flex; align-items:center; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:0 10px; margin-left:12px;';
     const search = document.createElement('input');

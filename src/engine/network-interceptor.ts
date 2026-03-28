@@ -34,7 +34,10 @@ export function createNetworkInterceptor(
         basePath: config.basePath,
         allowedRoutes: config.allowedRoutes,
         appUrl: config.appUrl
-    }, callbacks, chaosEngine);
+    }, {
+        ...callbacks,
+        onTrafficCleared: () => callbacks.onTrafficCleared?.()
+    }, chaosEngine);
 
     const exposeControls = async () => {
         const methods = {
@@ -125,6 +128,7 @@ export function createNetworkInterceptor(
         setStressConfig: (c: unknown) => {
             if (isChaosConfig(c)) chaosEngine.setConfig(c);
         },
+        clearHistory: () => proxyEngine.clearHistory(),
         getRequestHistory: () => proxyEngine.getHistory(),
         getViolations: () => proxyEngine.getViolations()
     };

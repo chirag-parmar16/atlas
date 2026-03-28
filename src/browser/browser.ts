@@ -71,7 +71,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const allPages = await browser.pages();
     const mainWindow = allPages[0];
 
-    const networkManagers: { cleanup: () => Promise<void> }[] = [];
+    const networkManagers: { cleanup: () => Promise<void>; clearHistory: () => void }[] = [];
     let page: Page | null = null;
     const activePages = new Set<Page>();
     const pageToTabId = new Map<Page, string>();
@@ -198,6 +198,11 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
             // Reset violations on navigation
             currentViolations = [];
+            // Reset network traffic in HUD on navigation (Default behavior: don't preserve log)
+            await mainWindow.evaluate(() => {
+                // @ts-ignore
+                if (window.clearTraffic) window.clearTraffic();
+            });
             await syncHUD();
         } catch (e) {
             console.error('[Atlas] Navigation pipeline handler error:', (e as Error).message);
@@ -234,7 +239,12 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     await mainWindow.exposeFunction('__atlasTabSwitched', () => {
         currentViolations = [];
         console.log('[Atlas] Tab switched — HUD violations cleared.');
-    }).catch(() => { }); // Ignore if already exposed (hot reload)
+    }).catch(() => { });
+
+    await mainWindow.exposeFunction('__atlasClearTraffic', () => {
+        networkManagers.forEach(mgr => mgr.clearHistory());
+        console.log('[Atlas] HUD requested traffic clear — Backend history wiped.');
+    }).catch(() => { });
 
     console.log('[Atlas] Hub attached. Waiting for guest viewport...');
 
