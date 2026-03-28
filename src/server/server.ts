@@ -40,7 +40,7 @@ function spawnAsync(command: string, args: string[], cwd: string, onLog: (msg: s
 
 export function startServer(projectPath: string, onLog: (msg: string) => void = () => { }): Promise<{ port: number, child?: ChildProcess, cleanup?: () => void }> {
     return new Promise(async (resolve, reject) => {
-        let startupTimer: any;
+        let startupTimer: ReturnType<typeof setTimeout> | undefined;
 
         // --- DYNAMIC NODE APP ---
         if (fs.existsSync(path.join(projectPath, 'package.json'))) {
