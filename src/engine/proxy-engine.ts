@@ -261,7 +261,7 @@ export class ProxyEngine {
                             <li><strong>Port conflict</strong>: Ensure your dev server didn't pick a different port than expected.</li>
                         </ul>
                         <div class="footer">
-                            Atlas Sandbox v1.1.1 Stability Layer
+                            Atlas Sandbox v1.1.2 Stability Layer
                         </div>
                     </div>
                 `;

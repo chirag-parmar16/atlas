@@ -114,7 +114,7 @@ export async function run() {
     console.log(NEON_GREEN.bold(`   /   |/_  __/ /   /   | / __/`));
     console.log(NEON_GREEN.bold(`  / /| | / / / /   / /| | \\ \\  `));
     console.log(NEON_GREEN.bold(` / ___ |/ / / /___/ ___ |__/ / `));
-    console.log(NEON_GREEN.bold(`/_/  |_/_/ /_____/_/  |_|___/  `) + GRAY(' v1.1.1'));
+    console.log(NEON_GREEN.bold(`/_/  |_/_/ /_____/_/  |_|___/  `) + GRAY(' v1.1.2'));
     console.log(GRAY('   ────────────────────────────────────────────────────────'));
     console.log(`   ${CYAN('Project:')} ${projectName} ${GRAY(`(${projectPath})`)}`);
     console.log(GRAY('   ────────────────────────────────────────────────────────'));
@@ -229,7 +229,7 @@ export async function run() {
     console.log(NEON_GREEN.bold(`   /   |/_  __/ /   /   | / __/`));
     console.log(NEON_GREEN.bold(`  / /| | / / / /   / /| | \\ \\  `));
     console.log(NEON_GREEN.bold(` / ___ |/ / / /___/ ___ |__/ / `));
-    console.log(NEON_GREEN.bold(`/_/  |_/_/ /_____/_/  |_|___/  `) + GRAY(' v1.1.1'));
+    console.log(NEON_GREEN.bold(`/_/  |_/_/ /_____/_/  |_|___/  `) + GRAY(' v1.1.2'));
     console.log('');
 
     // Info & Matrix Badges (Static Block)
