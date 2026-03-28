@@ -104,7 +104,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 };
 
                 const { port, release } = await reservePort();
-                onLog(`[Atlas] Reserved port ${port}. Preparig to spawn app...`);
+                onLog(`[Atlas] Reserved port ${port}. Preparing to spawn app...`);
 
                 // We release the port IMMEDIATELY before spawn to minimize the race window to micro-seconds.
                 await release();
@@ -148,6 +148,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
 
                 const checkInterval = setInterval(() => {
                     const req = http.get(`http://127.0.0.1:${port}`, (res) => {
+                        res.resume(); // Consume response to free up socket
                         const status = res.statusCode || 0;
                         if (status > 0 && status < 500) {
                             consecutiveSuccesses++;
