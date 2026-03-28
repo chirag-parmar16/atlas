@@ -84,7 +84,9 @@ export async function scanLinksForPage(
                 return fetch(link.href, { 
                     method: 'HEAD', 
                     signal: controller.signal,
-                    mode: 'no-cors' 
+                    headers: { 'x-atlas-internal': 'link-scan' }
+                    // NOTE: No mode:'no-cors' — we need cors to send custom headers.
+                    // x-atlas-internal tag lets proxy skip logging this scan request.
                 })
                 .then((res) => {
                     clearTimeout(timeout);
@@ -94,7 +96,8 @@ export async function scanLinksForPage(
                     // Failover to GET if HEAD failed
                     return fetch(link.href, { 
                         method: 'GET', 
-                        signal: controller.signal 
+                        signal: controller.signal,
+                        headers: { 'x-atlas-internal': 'link-scan' }
                     })
                     .then((res) => {
                         clearTimeout(timeout);

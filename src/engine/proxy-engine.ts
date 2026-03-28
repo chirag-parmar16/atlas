@@ -168,69 +168,71 @@ export class ProxyEngine {
                     _page: lastNavPath || '/'
                 };
 
-                // HTTP error violations
-                if (response.status >= 400) {
-                    this.callbacks.onViolation({
-                        source: 'Network',
-                        message: `HTTP ${response.status} on ${url.pathname}`,
-                        level: 2, // Always critical
-                        timestamp: Date.now(),
-                        url: urlString
-                    });
+                // Skip logging for internal Atlas requests (e.g. link scanner scans)
+                const isInternalScan = headers['x-atlas-internal'] === 'link-scan';
+
+                if (!isInternalScan) {
+                    // HTTP error violations
+                    if (response.status >= 400) {
+                        this.callbacks.onViolation({
+                            source: 'Network',
+                            message: `HTTP ${response.status} on ${url.pathname}`,
+                            level: 2,
+                            timestamp: Date.now(),
+                            url: urlString
+                        });
+                    }
+
+                    // Body capture and PII scan
+                    const contentType = response.headers.get('content-type') || '';
+                    const isTextual = contentType.includes('json') || 
+                                     contentType.includes('text') || 
+                                     contentType.includes('xml') || 
+                                     contentType.includes('javascript') || 
+                                     contentType.includes('css');
+
+                    if (isTextual) {
+                        const str = Buffer.from(buffer).toString('utf-8');
+                        networkEvent.body = str.length > 100000 ? str.substring(0, 100000) + '... (Truncated)' : str;
+
+                        const authHeader = request.headers()['authorization'] || '';
+                        const authorizedTokens: string[] = [];
+                        if (authHeader.startsWith('Bearer ')) authorizedTokens.push(authHeader.substring(7));
+                        
+                        const cookieStr = request.headers()['cookie'] || '';
+                        const emailMatch = cookieStr.match(/user_email=([^;]+)/) || 
+                                         str.match(/"email"\s*:\s*"([^"]+)"/); 
+                        
+                        const envEmail = process.env.ATLAS_USER_EMAIL;
+                        const envTokens = process.env.ATLAS_AUTHORIZED_TOKENS?.split(',').map(t => t.trim()).filter(Boolean) || [];
+
+                        const identityContext = {
+                            email: emailMatch ? emailMatch[1] : envEmail,
+                            authorizedTokens: [...authorizedTokens, ...envTokens]
+                        };
+
+                        this.securityScanner.scanResponse(
+                            url.pathname, 
+                            urlString, 
+                            str, 
+                            contentType, 
+                            contentType.includes('html'), 
+                            false, 
+                            identityContext,
+                            this.callbacks.onViolation, 
+                            this.callbacks.onLog
+                        );
+                    } else {
+                        networkEvent.body = `[Binary Data: ${contentType}]`;
+                    }
+
+                    this.requestLogHistory.push(networkEvent);
+                    if (this.requestLogHistory.length > 500) this.requestLogHistory.shift();
+                    this.callbacks.onNetworkEvent(networkEvent);
+
+                    // CORS check
+                    this.securityScanner.checkCORS(url.pathname, urlString, resHeaders, this.callbacks.onViolation);
                 }
-
-                // Body capture and PII scan
-                const contentType = response.headers.get('content-type') || '';
-                const isTextual = contentType.includes('json') || 
-                                 contentType.includes('text') || 
-                                 contentType.includes('xml') || 
-                                 contentType.includes('javascript') || 
-                                 contentType.includes('css');
-
-                if (isTextual) {
-                    const str = Buffer.from(buffer).toString('utf-8');
-                    networkEvent.body = str.length > 100000 ? str.substring(0, 100000) + '... (Truncated)' : str;
-
-                    // Identity Harvesting (Zero Assumption)
-                    // We try to find the current user's identity to avoid false positives.
-                    const authHeader = request.headers()['authorization'] || '';
-                    const authorizedTokens: string[] = [];
-                    if (authHeader.startsWith('Bearer ')) authorizedTokens.push(authHeader.substring(7));
-                    
-                    // Harvest email from cookies or headers if possible
-                    const cookieStr = request.headers()['cookie'] || '';
-                    const emailMatch = cookieStr.match(/user_email=([^;]+)/) || 
-                                     str.match(/"email"\s*:\s*"([^"]+)"/); // Optimistic harvest from JSON
-                    
-                    const envEmail = process.env.ATLAS_USER_EMAIL;
-                    const envTokens = process.env.ATLAS_AUTHORIZED_TOKENS?.split(',').map(t => t.trim()).filter(Boolean) || [];
-
-                    const identityContext = {
-                        email: emailMatch ? emailMatch[1] : envEmail,
-                        authorizedTokens: [...authorizedTokens, ...envTokens]
-                    };
-
-                    this.securityScanner.scanResponse(
-                        url.pathname, 
-                        urlString, 
-                        str, 
-                        contentType, 
-                        contentType.includes('html'), 
-                        false, 
-                        identityContext,
-                        this.callbacks.onViolation, 
-                        this.callbacks.onLog
-                    );
-                } else {
-                    networkEvent.body = `[Binary Data: ${contentType}]`;
-                }
-
-                this.requestLogHistory.push(networkEvent);
-                if (this.requestLogHistory.length > 500) this.requestLogHistory.shift();
-                this.callbacks.onNetworkEvent(networkEvent);
-
-                // CORS check
-                this.securityScanner.checkCORS(url.pathname, urlString, resHeaders, this.callbacks.onViolation);
 
                 await request.respond({
                     status: response.status,

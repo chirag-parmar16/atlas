@@ -508,17 +508,29 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     browser.on('targetcreated', async (target: Target) => {
         const url = target.url();
         const type = target.type();
-        if ((type === 'page' || type === 'webview' || type === 'other') && !url.includes('index.html') && url !== 'about:blank') {
-            const newPage = await target.page();
-            if (newPage) {
-                try {
-                    const userAgentStr = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
-                    await newPage.setUserAgent(userAgentStr);
-                    await setupPage(newPage);
-                    page = newPage;
-                } catch (e) {
-                    console.error('[Atlas] Error setting up new target page:', (e as Error).message);
-                }
+
+        // Always skip the HUD window itself
+        if (url.includes('index.html')) return;
+
+        // For new user-opened tabs (type === 'page'), set up proxy intercept
+        // even if the current URL is 'about:blank'. The user will navigate after.
+        // Without this, requests go through the system proxy (e.g. Pixy) → 406.
+        const isNewTab = type === 'page';
+        // For webview/other targets, still skip about:blank (an intermediate internal state)
+        const isUsefulWebview = (type === 'webview' || type === 'other') && url !== 'about:blank';
+
+        if (!isNewTab && !isUsefulWebview) return;
+
+        const newPage = await target.page().catch(() => null);
+        if (newPage) {
+            if (activePages.has(newPage)) return;
+            try {
+                const userAgentStr = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
+                await newPage.setUserAgent(userAgentStr);
+                await setupPage(newPage);
+                page = newPage;
+            } catch (e) {
+                console.error('[Atlas] Error setting up new target page:', (e as Error).message);
             }
         }
     });
