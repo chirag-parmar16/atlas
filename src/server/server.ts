@@ -126,10 +126,32 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     stdio: 'pipe'
                 });
 
+                // Dynamic Port Detection: Listen for logs that suggest a port override
+                let detectedPort: number | null = null;
+                const portPatterns = [
+                    /http:\/\/localhost:(\d+)/i,
+                    /http:\/\/127\.0\.0\.1:(\d+)/i,
+                    /Local: .*?(?:http:\/\/localhost:)?(\d+)/i,
+                    /Server running on (?:http:\/\/localhost:)?(\d+)/i,
+                    /ready in .*?http:\/\/localhost:(\d+)/i // Vite/Next default
+                ];
+
                 let lastLogs: string[] = [];
                 const addLog = (msg: string) => {
                     lastLogs.push(msg);
-                    if (lastLogs.length > 10) lastLogs.shift();
+                    if (lastLogs.length > 20) lastLogs.shift();
+                    
+                    // Scan for port
+                    for (const pattern of portPatterns) {
+                        const match = msg.match(pattern);
+                        if (match && match[1]) {
+                            const newPort = parseInt(match[1]);
+                            if (newPort !== port && !detectedPort) {
+                                detectedPort = newPort;
+                                onLog(`[Atlas] Dynamic Port Detected! App chose port ${newPort} instead of requested ${port}. Adjusting proxy...`);
+                            }
+                        }
+                    }
                 };
 
                 // Pipe Logs
@@ -142,51 +164,34 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     if (msg) { addLog(`[ERR] ${msg}`); onLog(`[ERR] ${msg}`); }
                 });
 
-                // Wait for readiness (Enhanced with Stability Guard)
+                // Wait for readiness (Enhanced with Dynamic Port Awareness)
                 let consecutiveSuccesses = 0;
-                const requiredSuccesses = 2; // Resolve only after 2 stable responses
+                const requiredSuccesses = 2;
 
                 const checkInterval = setInterval(() => {
-                    const req = http.get(`http://127.0.0.1:${port}`, (res) => {
-                        res.resume(); // Consume response to free up socket
+                    const targetPort = detectedPort || port;
+                    const req = http.get(`http://127.0.0.1:${targetPort}`, (res) => {
+                        res.resume();
                         const status = res.statusCode || 0;
                         if (status > 0 && status < 500) {
                             consecutiveSuccesses++;
                             if (consecutiveSuccesses >= requiredSuccesses) {
                                 clearInterval(checkInterval);
                                 resolve({
-                                    port,
+                                    port: targetPort,
                                     child,
                                     cleanup: async () => {
                                         if (!child || !child.pid) return;
-
-                                        // Use tree-kill for cross-platform process tree termination
                                         const treeKill = require('tree-kill');
-
                                         return new Promise<void>((resolve) => {
-                                            // Attempt graceful shutdown first
                                             treeKill(child.pid, 'SIGTERM', (err?: Error) => {
-                                                if (err) {
-                                                    // Process already dead or error occurred
-                                                    resolve();
-                                                    return;
-                                                }
-
-                                                // Wait 5 seconds for graceful shutdown
+                                                if (err) { resolve(); return; }
                                                 const gracePeriod = setTimeout(() => {
-                                                    // Force kill if still alive after grace period
                                                     try {
-                                                        process.kill(child.pid!, 0); // Check if still alive
-                                                        treeKill(child.pid, 'SIGKILL', () => {
-                                                            resolve();
-                                                        });
-                                                    } catch (e) {
-                                                        // Process already dead
-                                                        resolve();
-                                                    }
+                                                        process.kill(child.pid!, 0);
+                                                        treeKill(child.pid, 'SIGKILL', () => resolve());
+                                                    } catch (e) { resolve(); }
                                                 }, 5000);
-
-                                                // If process dies during grace period, clear timeout
                                                 child.on('exit', () => {
                                                     clearTimeout(gracePeriod);
                                                     resolve();
@@ -197,49 +202,35 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                                 });
                             }
                         } else {
-                            consecutiveSuccesses = 0; // Reset on 5xx or bad status
+                            consecutiveSuccesses = 0;
                         }
                     });
-                    req.on('error', () => {
-                        consecutiveSuccesses = 0; // Reset on connection failure
-                        // Server not HTTP-ready yet, ignore connection refused and keep polling
-                    });
+                    req.on('error', () => { consecutiveSuccesses = 0; });
                     req.end();
                 }, 500);
 
-                // Configurable Timeout (Env Var > Config File > Default 30s)
-                let startupTimeout = 30000; // Default
+                // Configurable Timeout
+                let startupTimeout = 30000;
                 try {
                     const configPath = path.join(projectPath, 'atlas.config.json');
                     if (fs.existsSync(configPath)) {
                         const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
                         if (config.startupTimeout) startupTimeout = config.startupTimeout;
                     }
-                    if (process.env.ATLAS_STARTUP_TIMEOUT) {
-                        startupTimeout = parseInt(process.env.ATLAS_STARTUP_TIMEOUT);
-                    }
-                } catch (e) {
-                    onLog(`[Atlas] Warning: Error parsing atlas.config.json, using default timeout ${startupTimeout}ms.`);
-                }
-
-                if (startupTimeout === 30000) {
-                    onLog(`[Atlas] Using default startup timeout: ${startupTimeout}ms`);
-                }
+                } catch (e) {}
 
                 setTimeout(() => {
-                    clearInterval(checkInterval);
-                    // Fix: Reject cleanly instead of launching dead
-                    reject(new Error(`Server start timed out (${startupTimeout}ms). Port did not become active.`));
-                    try { child.kill(); } catch (e) {
-                        onLog(`[Atlas] Warning: Failed to kill timed-out process: ${(e as Error).message}`);
+                    if (consecutiveSuccesses < requiredSuccesses) {
+                        clearInterval(checkInterval);
+                        reject(new Error(`Server start timed out after ${startupTimeout}ms. (Checked ports: ${port}${detectedPort ? `, ${detectedPort}` : ''}).\nLast Logs:\n${lastLogs.join('\n')}`));
+                        try { child.kill(); } catch (e) {}
                     }
                 }, startupTimeout);
 
-                // Early Exit Watch
                 child.on('exit', (code) => {
-                    if (code !== null && code !== 0) {
+                    if (code !== null && code !== 0 && consecutiveSuccesses < requiredSuccesses) {
                         clearInterval(checkInterval);
-                        reject(new Error(`Server process exited early with code ${code}.\nLast Logs:\n${lastLogs.join('\n')}`));
+                        reject(new Error(`Server process exited early (Code: ${code}).\nLast Logs:\n${lastLogs.join('\n')}`));
                     }
                 });
             } catch (e) {
@@ -248,7 +239,6 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
             return;
         }
 
-        // --- STATIC FALLBACK ---
         const app = express();
         app.use(express.static(projectPath));
         const staticServer = http.createServer(app);
