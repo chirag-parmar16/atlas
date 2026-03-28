@@ -238,10 +238,37 @@ export class ProxyEngine {
 
             } catch (error) {
                 const errorMsg = (error as Error).message || 'Unknown Error';
+                const html = `
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; line-height: 1.6; color: #333; background: #fdf2f2; }
+                        .container { max-width: 600px; margin: 0 auto; background: #fff; border: 1px solid #feb2b2; padding: 32px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+                        h1 { color: #c53030; margin-top: 0; font-size: 24px; }
+                        code { background: #fee2e2; padding: 2px 6px; border-radius: 4px; color: #9b2c2c; font-family: monospace; font-weight: bold; }
+                        .suggestion { list-style: none; padding: 0; margin-top: 20px; border-top: 1px solid #eee; pt: 20px; }
+                        .suggestion li { margin-bottom: 12px; padding-left: 24px; position: relative; }
+                        .suggestion li:before { content: "→"; position: absolute; left: 0; color: #e53e3e; font-weight: bold; }
+                        .footer { margin-top: 24px; font-size: 13px; color: #718096; }
+                    </style>
+                    <div class="container">
+                        <h1>Atlas Proxy Error</h1>
+                        <p><strong>Status:</strong> 502 Bad Gateway</p>
+                        <p><strong>Cause:</strong> <code>${errorMsg}</code></p>
+                        <p>Atlas reached the proxy layer but could not connect to your local application backend.</p>
+                        
+                        <ul class="suggestion">
+                            <li><strong>Check your server</strong>: Is your app running on <code>localhost:${localPort}</code>?</li>
+                            <li><strong>Verify config</strong>: Check if <code>atlas.config.json</code> needs an <code>appUrl</code> override.</li>
+                            <li><strong>Port conflict</strong>: Ensure your dev server didn't pick a different port than expected.</li>
+                        </ul>
+                        <div class="footer">
+                            Atlas Sandbox v1.1.1 Stability Layer
+                        </div>
+                    </div>
+                `;
                 await request.respond({
                     status: 502,
                     contentType: 'text/html',
-                    body: `<html><body><h1>Atlas Proxy Error</h1><p>${errorMsg}</p></body></html>`
+                    body: html
                 });
                 return true;
             }

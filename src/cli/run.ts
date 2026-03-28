@@ -161,8 +161,21 @@ export async function run() {
     let finalDomain: string = '';
 
     const hasPackageJson = fs.existsSync(path.join(projectPath, 'package.json'));
+    const configAppUrl = atlasConfig.appUrl;
 
-    if (hasPackageJson) {
+    if (configAppUrl) {
+        console.log(YELLOW('   MODE CONNECT') + GRAY(` • Using existing server: ${configAppUrl}`));
+        
+        try {
+            const url = new URL(configAppUrl);
+            serverPort = parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80);
+            finalDomain = atlasConfig.targetDomain || url.hostname;
+            console.log(`   ${NEON_GREEN('✓')} Connected to ${CYAN(url.origin)} (Port: ${serverPort})`);
+        } catch (e) {
+            console.log(`   ${chalk.red.bold('ERROR')} Invalid appUrl in atlas.config.json: ${configAppUrl}`);
+            process.exit(1);
+        }
+    } else if (hasPackageJson) {
         console.log(YELLOW('   MODE AUTO') + GRAY(' • package.json detected'));
         console.log('');
 
