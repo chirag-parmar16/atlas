@@ -97,7 +97,7 @@ export class ProxyEngine {
                 return true;
             }
 
-            const localUrl = `http://localhost:${localPort}${targetPath}${url.search}`;
+            const localUrl = `http://127.0.0.1:${localPort}${targetPath}${url.search}`;
 
             try {
                 const startTime = Date.now();
@@ -105,12 +105,9 @@ export class ProxyEngine {
                     ...request.headers(), 
                     'x-forwarded-proto': 'https',
                     'x-forwarded-host': request.headers()['host'] || domain,
+                    // Keep the original 'host' header intact so the backend knows its masked domain
+                    // This is essential for absolute redirects to work properly.
                 };
-                
-                // Audit Fix: Remove manual 'host' override. Modern fetch/undici 
-                // generates the correct Host header from the URL. Manual overrides 
-                // are often rejected by the runtime or backend WAFs.
-                delete headers['host'];
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s Proxy Timeout

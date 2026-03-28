@@ -86,29 +86,8 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     }
                 }
 
-                // Guard Port: Reserve a port and keep it until the child process needs it.
-                // This eliminates the TOCTOU (Time-of-check to time-of-use) race condition.
-                const reservePort = (): Promise<{ port: number, release: () => Promise<void> }> => {
-                    return new Promise((res, rej) => {
-                        const srv = http.createServer();
-                        srv.unref();
-                        srv.on('error', rej);
-                        srv.listen(0, '127.0.0.1', () => {
-                            const p = (srv.address() as AddressInfo).port;
-                            res({
-                                port: p,
-                                release: () => new Promise((r) => srv.close(() => r()))
-                            });
-                        });
-                    });
-                };
-
-                const { port, release } = await reservePort();
-                onLog(`[Atlas] Reserved port ${port}. Preparing to spawn app...`);
-
-                // We release the port IMMEDIATELY before spawn to minimize the race window to micro-seconds.
-                await release();
-                onLog(`[Atlas] Spawning app (${cmd} ${args.join(' ')}) on port ${port}...`);
+                onLog(`[Atlas] Spawning app (${cmd} ${args.join(' ')})...`);
+                
                 // --- Start the actual child process ---
                 const isWin = process.platform === 'win32';
                 const isCmd = cmd === 'npm' || cmd === 'npx';
@@ -119,7 +98,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     cwd: projectPath,
                     env: { 
                         ...process.env, 
-                        PORT: port.toString(), 
+                        // DELIBERATELY OMITTING 'PORT' ENV VAR - Let the user project decide its own port
                         NODE_ENV: process.env.NODE_ENV || 'development' 
                     },
                     shell: useShell, // Audit Fix: Security hardening to prevent RCE
@@ -130,7 +109,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 // eslint-disable-next-line no-control-regex
                 const stripAnsi = (str: string) => str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
 
-                // Dynamic Port Detection: Listen for logs that suggest a port override
+                // Dynamic Port Detection: Listen for logs that suggest the actual port used
                 let detectedPort: number | null = null;
                 const portPatterns = [
                     /http:\/\/localhost:(\d+)/i,
@@ -152,9 +131,9 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                         const match = cleanMsg.match(pattern);
                         if (match && match[1]) {
                             const newPort = parseInt(match[1]);
-                            if (newPort !== port && !detectedPort) {
+                            if (!detectedPort) {
                                 detectedPort = newPort;
-                                onLog(`[Atlas] Port Override Detected! App is on port ${newPort}. Self-adjusting...`);
+                                onLog(`[Atlas] Detected app running natively on port ${newPort}.`);
                             }
                         }
                     }
@@ -170,15 +149,14 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     if (msg) { addLog(`[ERR] ${msg}`); onLog(`[ERR] ${msg}`); }
                 });
 
-                // Proactive Health Check (Probing multiple ports to find the app)
+                // Proactive Health Check (Probing multiple ports to find the app since we didn't force one)
                 let consecutiveSuccesses = 0;
                 const requiredSuccesses = 2;
-                const commonPorts = [3000, 3001, 5173, 5174, 8080];
-                let currentProbePort = port;
+                const commonPorts = [3000, 3001, 8080, 5173, 5174, 4200];
 
                 const checkInterval = setInterval(() => {
-                    // Decide which port to check: Detected > Common Fallbacks > Original
-                    const portsToCheck = detectedPort ? [detectedPort] : [port, ...commonPorts];
+                    // Decide which port to check: Detected > Common Fallbacks
+                    const portsToCheck = detectedPort ? [detectedPort] : commonPorts;
                     
                     const checkPort = (p: number) => {
                         return new Promise<boolean>((res) => {
@@ -195,9 +173,9 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     (async () => {
                         for (const p of portsToCheck) {
                             if (await checkPort(p)) {
-                                if (p !== port && !detectedPort) {
+                                if (!detectedPort) {
                                     detectedPort = p;
-                                    onLog(`[Atlas] Proactive detection: Found app running on port ${p}.`);
+                                    onLog(`[Atlas] Discovered app active on port ${p}.`);
                                 }
                                 consecutiveSuccesses++;
                                 if (consecutiveSuccesses >= requiredSuccesses) {
@@ -220,10 +198,10 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                                         }
                                     });
                                 }
-                                return; // Found the active port
+                                return; // Found the active port, wait for next tick to re-verify
                             }
                         }
-                        consecutiveSuccesses = 0; // None of the ports responded
+                        consecutiveSuccesses = 0; // None of the ports responded yet
                     })();
                 }, 800);
 
@@ -240,7 +218,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 setTimeout(() => {
                     if (consecutiveSuccesses < requiredSuccesses) {
                         clearInterval(checkInterval);
-                        reject(new Error(`Server start timed out after ${startupTimeout}ms. Probed multiple ports but none responded.\nLast Logs:\n${lastLogs.join('\n')}`));
+                        reject(new Error(`Server start timed out after ${startupTimeout}ms. Probed common ports but none responded.\nLast Logs:\n${lastLogs.join('\n')}`));
                         try { child.kill(); } catch (e) {}
                     }
                 }, startupTimeout);
@@ -248,6 +226,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 child.on('exit', (code) => {
                     if (code !== null && code !== 0 && consecutiveSuccesses < requiredSuccesses) {
                         clearInterval(checkInterval);
+
                         reject(new Error(`Server exited (code ${code}).\nLast Logs:\n${lastLogs.join('\n')}`));
                     }
                 });

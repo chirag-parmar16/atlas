@@ -244,18 +244,17 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         const url = t.url();
 
         // Target matching: prioritizes 'webview'. 
-        // Also accepts 'page' or 'other' if they are about:blank (initial state) 
-        // or contain the target domain but are NOT the Host HUD.
+        // Also accepts 'page' if it's explicitly on the target domain.
+        // We removed 'about:blank' and 'other' matching to prevent double-initialization bugs.
         const isWebview = type === 'webview';
-        const isBlankOther = type === 'other' && url === 'about:blank';
-        const isGuestPage = (type === 'page' || type === 'other') && url.includes(domain) && !url.includes('index.html');
+        const isGuestPage = type === 'page' && url.includes(domain) && !url.includes('index.html');
 
-        if (type !== 'background_page') {
-            const status = (isWebview || isBlankOther || isGuestPage) ? 'MATCHED' : 'SKIPPED';
+        if (type !== 'background_page' && type !== 'browser') {
+            const status = (isWebview || isGuestPage) ? 'MATCHED' : 'SKIPPED';
             console.log(`[Atlas] Scanning target: ${type} (${url || 'empty'}) -> ${status}`);
         }
 
-        return isWebview || isBlankOther || isGuestPage;
+        return isWebview || isGuestPage;
     }, { timeout: 15000 }).catch((err: Error) => {
         console.error('[Atlas] FATAL: Timeout waiting for Guest page. Is the HUD visible?');
         throw err;
