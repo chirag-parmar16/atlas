@@ -1,4 +1,3 @@
-
 import express from 'express';
 import http from 'http';
 import { AddressInfo } from 'net';
@@ -41,6 +40,7 @@ function spawnAsync(command: string, args: string[], cwd: string, onLog: (msg: s
 
 export function startServer(projectPath: string, onLog: (msg: string) => void = () => { }): Promise<{ port: number, child?: ChildProcess, cleanup?: () => void }> {
     return new Promise(async (resolve, reject) => {
+        let startupTimer: any;
 
         // --- DYNAMIC NODE APP ---
         if (fs.existsSync(path.join(projectPath, 'package.json'))) {
@@ -154,7 +154,6 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 const requiredSuccesses = 2;
                 const commonPorts = [3000, 3001, 8080, 5173, 5174, 4200];
 
-                let startupTimer: any;
                 const checkInterval = setInterval(() => {
                     // Decide which port to check: Detected > Common Fallbacks
                     const portsToCheck = detectedPort ? [detectedPort] : commonPorts;
@@ -228,11 +227,12 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 child.on('exit', (code) => {
                     if (code !== null && code !== 0 && consecutiveSuccesses < requiredSuccesses) {
                         clearInterval(checkInterval);
-
+                        if (startupTimer) clearTimeout(startupTimer);
                         reject(new Error(`Server exited (code ${code}).\nLast Logs:\n${lastLogs.join('\n')}`));
                     }
                 });
             } catch (e) {
+                if (startupTimer) clearTimeout(startupTimer);
                 reject(e);
             }
             return;
@@ -243,8 +243,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
         const staticServer = http.createServer(app);
         staticServer.listen(0, '127.0.0.1', () => {
             const port = (staticServer.address() as AddressInfo).port;
-            if (startupTimer) clearTimeout(startupTimer);
-                                    resolve({
+            resolve({
                 port,
                 cleanup: async () => { staticServer.close(); }
             });
