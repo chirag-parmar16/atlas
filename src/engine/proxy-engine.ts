@@ -115,14 +115,17 @@ export class ProxyEngine {
                 const method = request.method();
                 const hasBody = method !== 'GET' && method !== 'HEAD' && !!request.postData();
 
-                const response = await fetch(localUrl, {
-                    method,
-                    headers: headers as HeadersInit,
-                    body: hasBody ? request.postData() : undefined,
-                    signal: controller.signal
-                });
-
-                clearTimeout(timeoutId);
+                let response: Response;
+                try {
+                    response = await fetch(localUrl, {
+                        method,
+                        headers: headers as HeadersInit,
+                        body: hasBody ? request.postData() : undefined,
+                        signal: controller.signal
+                    });
+                } finally {
+                    clearTimeout(timeoutId);
+                }
 
                 const buffer = await response.arrayBuffer();
                 const duration = Date.now() - startTime;

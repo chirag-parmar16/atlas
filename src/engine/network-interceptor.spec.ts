@@ -98,7 +98,7 @@ describe('NetworkInterceptor', () => {
 
         await requestHandler(mockRequest);
 
-        expect(mockFetch).toHaveBeenCalledWith('http://localhost:8080/api', expect.objectContaining({
+        expect(mockFetch).toHaveBeenCalledWith('http://127.0.0.1:8080/api', expect.objectContaining({
             method: 'GET'
         }));
         expect(mockRequest.respond).toHaveBeenCalled();

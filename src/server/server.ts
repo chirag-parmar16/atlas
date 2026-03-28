@@ -154,6 +154,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                 const requiredSuccesses = 2;
                 const commonPorts = [3000, 3001, 8080, 5173, 5174, 4200];
 
+                let startupTimer: any;
                 const checkInterval = setInterval(() => {
                     // Decide which port to check: Detected > Common Fallbacks
                     const portsToCheck = detectedPort ? [detectedPort] : commonPorts;
@@ -180,6 +181,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                                 consecutiveSuccesses++;
                                 if (consecutiveSuccesses >= requiredSuccesses) {
                                     clearInterval(checkInterval);
+                                    if (startupTimer) clearTimeout(startupTimer);
                                     resolve({
                                         port: p,
                                         child,
@@ -215,7 +217,7 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     }
                 } catch (e) {}
 
-                setTimeout(() => {
+                startupTimer = setTimeout(() => {
                     if (consecutiveSuccesses < requiredSuccesses) {
                         clearInterval(checkInterval);
                         reject(new Error(`Server start timed out after ${startupTimeout}ms. Probed common ports but none responded.\nLast Logs:\n${lastLogs.join('\n')}`));
@@ -241,7 +243,8 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
         const staticServer = http.createServer(app);
         staticServer.listen(0, '127.0.0.1', () => {
             const port = (staticServer.address() as AddressInfo).port;
-            resolve({
+            if (startupTimer) clearTimeout(startupTimer);
+                                    resolve({
                 port,
                 cleanup: async () => { staticServer.close(); }
             });
