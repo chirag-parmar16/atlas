@@ -234,11 +234,28 @@ export class ProxyEngine {
                     this.securityScanner.checkCORS(url.pathname, urlString, resHeaders, this.callbacks.onViolation);
                 }
 
+                // ── Atlas Loading Screen Dismissal ──────────────────────────────────
+                // Inject a tiny script into every HTML response that calls __atlasReady().
+                // This fires synchronously as the browser parses the page — no Puppeteer
+                // events needed. Most reliable possible dismissal trigger.
+                let responseBody: Buffer = Buffer.from(buffer);
+                const contentTypeHeader = response.headers.get('content-type') || '';
+                if (contentTypeHeader.includes('text/html')) {
+                    let html = responseBody.toString('utf-8');
+                    const dismissScript = '<script>try{if(typeof window.__atlasReady==="function")window.__atlasReady();}catch(e){}</script>';
+                    if (html.includes('</body>')) {
+                        html = html.replace('</body>', dismissScript + '</body>');
+                    } else {
+                        html += dismissScript;
+                    }
+                    responseBody = Buffer.from(html, 'utf-8');
+                }
+
                 await request.respond({
                     status: response.status,
                     contentType: response.headers.get('content-type') || undefined,
                     headers: resHeaders,
-                    body: Buffer.from(buffer)
+                    body: responseBody
                 });
                 return true;
 
