@@ -246,9 +246,13 @@ export class TabManager {
         const { webview, tabEl } = tab;
 
         // Inject tab identity so browser.ts can map Puppeteer pages to Electron tabs
-        webview.addEventListener('dom-ready', () => {
-            webview.executeJavaScript(`window.__atlasTabId = "${tab.id}";`);
-        });
+        const injectId = () => {
+            webview.executeJavaScript(`window.__atlasTabId = "${tab.id}";`).catch(() => {});
+        };
+
+        webview.addEventListener('dom-ready', injectId);
+        webview.addEventListener('did-start-navigation', injectId);
+        webview.addEventListener('did-navigate', injectId);
 
         // Intercept new-window (target="_blank") → open as tab
         webview.addEventListener('new-window', (e: Event) => {

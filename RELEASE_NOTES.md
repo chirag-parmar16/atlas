@@ -1,29 +1,18 @@
 # Atlas Sandbox v1.1.3
 
-## 🚀 Overview
+### 🚀 Overview
+Critical stability patch for Atlas Loading Lifecycle. Implemented a network-level readiness gate to prevent premature rendering of uncontrolled projects and eliminated the "double-loading" effect.
 
-Network stability patch eliminating duplicate request logging, fixing the fatal "Requesting main frame too early" crash, resolving Pixy Proxy 406 errors on `target="_blank"` links, and introducing a premium Atlas Loading Screen.
-
-## 🛠 Key Fixes
-
-1. **Eliminated Duplicate Network Requests**
-   - Link Scanner HEAD/GET validation fetches are now tagged `x-atlas-internal: link-scan` and transparently skipped by the proxy logger — zero impact on the Network tab.
-
-2. **Fixed Fatal Process Crash**
-   - `startLinkScanner` called `p.url()` on pages not yet attached by Chromium → `"Requesting main frame too early!"` → process killed.
-   - All `p.url()` calls in the link scanner are now wrapped in `try/catch` with `about:blank` filtering.
-
-3. **Fixed `target="_blank"` Links → Pixy Proxy 406**
-   - New tabs opened via `_blank` links are now handled by `framenavigated` — interceptor attaches at the very start of the real navigation, before any resource requests fire.
-   - Stable deduplication via `Set<Target>` prevents double-setup on renderer process swaps.
-
-4. **New: Atlas Loading Screen**
-   - A premium dark glassmorphism overlay (`#__atlas_shield`) is injected before any page scripts via `evaluateOnNewDocument`.
-   - Automatically fades out (0.5s ease) once Atlas has full proxy control and tabId is resolved.
-   - Zero flash, zero Pixy Proxy exposure.
-
-5. **CI/CD Release Flow Fixed**
-   - `npm run dist -p always` now only runs on `v*` tag pushes, not on every main branch push.
+### 🛠 Key Stabilizations
+1. **Project Initialization Gate**
+   - The `ProxyEngine` now holds the initial project HTML response until Atlas signals "Full Control Ready" (TabID resolved, Interceptor active).
+   - This eliminates the "Raw Render" flash of uncontrolled projects at boot.
+2. **Optimized Loading Screen Lifecycle**
+   - The Loading Shield now uses a robust `window.__ATLAS_READY__` flag.
+   - Dismissal script injected immediately after opening `<body>` tag to suppress loader on internal navigations.
+3. **Double-Load Elimination**
+   - Removed the redundant `page.reload()` and replaced it with a unified network-level holding pattern.
+   - The very first navigation now results in a perfectly initialized state.
 
 ---
 

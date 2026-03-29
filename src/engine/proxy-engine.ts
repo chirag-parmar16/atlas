@@ -25,6 +25,10 @@ export interface ProxyCallbacks {
 }
 
 export class ProxyEngine {
+    private initializationComplete = false;
+    private initResolver: (() => void) | null = null;
+    private initPromise: Promise<void>;
+
     private performanceTracker = new PerformanceTracker();
     private securityScanner = new SecurityScanner();
     private strictWarden = new StrictWarden();
@@ -35,7 +39,18 @@ export class ProxyEngine {
         private config: ProxyConfig,
         private callbacks: ProxyCallbacks,
         private chaosEngine: ChaosEngine
-    ) { }
+    ) { 
+        this.initPromise = new Promise(resolve => {
+            this.initResolver = resolve;
+        });
+    }
+
+    /** Signal that Atlas has established "Full Control" and the project can now be served. */
+    public setInitialized() {
+        if (this.initializationComplete) return;
+        this.initializationComplete = true;
+        if (this.initResolver) this.initResolver();
+    }
 
     public getHistory() { return this.requestLogHistory; }
     public getViolations() { return this.currentPageViolations; }
@@ -47,6 +62,12 @@ export class ProxyEngine {
     public setSecurityMode(mode: 'Standard' | 'Strict' | 'Offline') { this.securityScanner.setMode(mode); }
 
     public async handleRequest(request: HTTPRequest, page: Page, lastNavPath: string): Promise<boolean> {
+        // 0. Initialization Gate: Hold the very first document request until Atlas is "Ready"
+        // This prevents the "Raw Render" before TabID/Auth/Handshake is complete.
+        if (!this.initializationComplete && request.isNavigationRequest() && request.resourceType() === 'document') {
+            await this.initPromise;
+        }
+
         const urlString = request.url();
         const url = new URL(urlString);
         const { domain, localPort } = this.config;
@@ -243,10 +264,12 @@ export class ProxyEngine {
                 if (contentTypeHeader.includes('text/html')) {
                     let html = responseBody.toString('utf-8');
                     const dismissScript = '<script>try{if(typeof window.__atlasReady==="function")window.__atlasReady();}catch(e){}</script>';
-                    if (html.includes('</body>')) {
-                        html = html.replace('</body>', dismissScript + '</body>');
+                    
+                    // Inject immediately after <body> tag to win the race against DOMContentLoaded
+                    if (html.match(/<body[^>]*>/i)) {
+                        html = html.replace(/(<body[^>]*>)/i, `$1${dismissScript}`);
                     } else {
-                        html += dismissScript;
+                        html = dismissScript + html; 
                     }
                     responseBody = Buffer.from(html, 'utf-8');
                 }

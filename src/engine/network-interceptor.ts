@@ -130,6 +130,7 @@ export function createNetworkInterceptor(
         },
         clearHistory: () => proxyEngine.clearHistory(),
         getRequestHistory: () => proxyEngine.getHistory(),
-        getViolations: () => proxyEngine.getViolations()
+        getViolations: () => proxyEngine.getViolations(),
+        setInitialized: () => proxyEngine.setInitialized()
     };
 }

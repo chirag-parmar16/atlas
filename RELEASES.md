@@ -4,20 +4,25 @@ All notable changes to the Atlas Sandbox project will be documented in this file
 
 ---
 
-## [v1.1.3] - 2026-03-29
+## [v1.1.4] - 2026-03-29
 
 ### 🚀 Overview
-Network stability patch eliminating duplicate request logging, fixing the fatal "Requesting main frame too early" crash, resolving Pixy Proxy 406 errors on `target="_blank"` links, and introducing a premium Atlas Loading Screen.
+Critical stability patch for Atlas Loading Lifecycle. Implemented a network-level readiness gate to prevent premature rendering of uncontrolled projects and eliminated the "double-loading" effect.
 
-### 🛠 Key Fixes
-1. **Eliminated Duplicate Network Requests**
-   - Link Scanner HEAD/GET validation fetches are now tagged `x-atlas-internal: link-scan` and transparently skipped by the proxy logger — zero impact on the Network tab.
-2. **Fixed Fatal Process Crash**
-   - `startLinkScanner` called `p.url()` on pages not yet attached by Chromium if navigation was fast.
-   - All `p.url()` calls in the link scanner are now wrapped in `try/catch` with `about:blank` filtering.
-3. **Fixed `target="_blank"` Links → Pixy Proxy 406**
-   - New tabs opened via `_blank` links are now handled by `framenavigated` — interceptor attaches at the very start of the real navigation.
-   - Stable deduplication via `Set<Target>` prevents double-setup on renderer process swaps.
+### 🛠 Key Stabilizations
+1. **Project Initialization Gate**
+   - The `ProxyEngine` now holds the initial project HTML response until Atlas signals "Full Control Ready" (TabID resolved, Interceptor active).
+   - This eliminates the "Raw Render" flash of uncontrolled projects at boot.
+2. **Optimized Loading Screen Lifecycle**
+   - The Loading Shield now uses a robust `window.__ATLAS_READY__` flag.
+   - Dismissal script injected immediately after opening `<body>` tag to suppress loader on internal navigations.
+3. **Double-Load Elimination**
+   - Removed the redundant `page.reload()` and replaced it with a unified network-level holding pattern.
+   - The very first navigation now results in a perfectly initialized state.
+
+---
+
+## [v1.1.3] - 2026-03-29
 4. **New: Atlas Loading Screen**
    - A premium dark glassmorphism overlay (`#__atlas_shield`) is injected before any page scripts via `evaluateOnNewDocument`.
    - Injected directly into proxied HTML bodies for 100% reliable dismissal.
@@ -60,7 +65,7 @@ Global stability patch addressing regressions in target discovery, proxy header 
 ## [v1.0.3] - 2026-03-26
 - **Version Bump**: Enhanced HTTP error reporting and improved stability in manual mode.
 
-## [v1.0.2] - 2025-03-25
+## [v1.0.2] - 2026-03-25
 - **Build**: Limited build targets to Windows only to reduce release artifact clutter and speed up CI.
 
 ## [v1.0.1] - 2026-03-24

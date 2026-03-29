@@ -87,6 +87,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         'use strict';
         if(window.__atlasLoadingInjected)return;
         window.__atlasLoadingInjected=true;
+        
+        // Default to not ready. Proxy will inject a script to set this to true on first project load.
+        if(typeof window.__ATLAS_READY__ === 'undefined') window.__ATLAS_READY__ = false;
+
         var css=[
             '#__atlas_shield{position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;',
             'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;',
@@ -102,6 +106,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             '#__atlas_status{font-size:12px;color:#58a6ff;letter-spacing:0.06em;text-transform:uppercase;font-weight:600;}',
             '#__atlas_sub{font-size:11px;color:#6e7681;margin-top:-10px;}'
         ].join('');
+
         var s=document.createElement('style');s.textContent=css;
         var shield=document.createElement('div');shield.id='__atlas_shield';
         shield.innerHTML=[
@@ -116,18 +121,21 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             '<div id="__atlas_status">Securing connection\u2026</div>',
             '<div id="__atlas_sub">Taking control of the sandbox</div>'
         ].join('');
-        // Works in both modes: evaluateOnNewDocument (readyState='loading') and page.evaluate (DOM ready)
+
         var inject=function(){
-            if(document.getElementById('__atlas_shield'))return;
+            if(window.__ATLAS_READY__ || document.getElementById('__atlas_shield')) return;
             document.head.appendChild(s);
             (document.body||document.documentElement).appendChild(shield);
         };
+
         if(document.readyState==='loading'){
             document.addEventListener('DOMContentLoaded',inject,{once:true});
         } else {
-            inject(); // DOM already ready — inject immediately (initial page coverage)
+            inject();
         }
+
         window.__atlasReady=function(){
+            window.__ATLAS_READY__ = true;
             var el=document.getElementById('__atlas_shield');
             if(el){el.classList.add('--ready');setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},600);}
         };
@@ -381,8 +389,8 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         try { await targetPage.evaluateOnNewDocument(ATLAS_LOADING_SCREEN); } catch (_) { }
 
         // ─── PHASE 2: Resolve tab ID (up to 2s, deferred) ────────────────────────
-        // Runs after the interceptor is already live. Early requests during resolution
-        // will have tabId='' which is acceptable — they still go through Atlas proxy.
+        // This is where "Full Control" is finalized. Once we have the tabId,
+        // we can signal the ProxyEngine to release the holding pattern.
         try {
             for (let i = 0; i < 20; i++) {
                 tabId = await targetPage.evaluate(() => (window as { __atlasTabId?: string }).__atlasTabId) || '';
@@ -393,29 +401,17 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
         if (tabId) {
             pageToTabId.set(targetPage, tabId);
-            console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}`);
+            console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}. Signaling Proxy initialization.`);
+        } else {
+            console.log(`[Atlas] [DEBUG] tabId resolution timed out for ${targetPage.url()}. Signaling Proxy regardless to prevent lockup.`);
         }
 
-        // ── Inject loading screen on current document (covers initial page before goto) ──
-        // evaluateOnNewDocument only covers FUTURE navigations. This call covers the
-        // page that's already loaded (e.g., localhost:3000 before redirect to e-book).
-        try { await targetPage.evaluate(ATLAS_LOADING_SCREEN); } catch (_) { }
+        // ─── PHASE 3: Signal Readiness & Final Injection ──────────────────────
+        // Release the gated request in ProxyEngine
+        (netInterceptor as any).setInitialized();
 
-        // ── Dismiss loading screen on every page load ──────────────────────────
-        // page.on('load') fires after every full page load (all resources done).
-        // This is the CORRECT place to dismiss — it works for:
-        //   • Initial navigation: goto('e-book') finishes → load fires → screen fades
-        //   • Internal navigation: user clicks link → new doc loads → load fires → screen fades
-        //   • _blank tabs: framenavigated → setupPage → resources load → load fires → screen fades
-        targetPage.on('load', async () => {
-            try {
-                await targetPage.evaluate(() => {
-                    if (typeof (window as { __atlasReady?: () => void }).__atlasReady === 'function') {
-                        (window as { __atlasReady?: () => void }).__atlasReady!();
-                    }
-                });
-            } catch (_) { /* page may be closed */ }
-        });
+        // Inject loading screen on current document (covers initial page before goto)
+        try { await targetPage.evaluate(ATLAS_LOADING_SCREEN); } catch (_) { }
 
         // 1.5. Bridge Guest Console & Errors to Pipeline
         targetPage.on('console', async msg => {
