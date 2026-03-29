@@ -179,7 +179,10 @@ export function startLinkScanner(
         // Give the page a moment to render DOM before scanning
         setTimeout(() => {
             for (const p of getActivePages()) {
-                if (p.url() === entry.url && !p.isClosed()) {
+                if (p.isClosed()) continue;
+                let pageUrl = '';
+                try { pageUrl = p.url(); } catch { continue; } // Guard: page may not be ready yet
+                if (pageUrl === entry.url) {
                     const tabId = pageToTabIdMap.get(p) || '';
                     scanLinksForPage(p, tabId, mainWindow, pipeline, userAgent);
                     break;
@@ -196,10 +199,12 @@ export function startLinkScanner(
         if (!mainWindow) return;
 
         for (const p of getActivePages()) {
-            if (!p.isClosed()) {
-                const tabId = pageToTabIdMap.get(p) || '';
-                await scanLinksForPage(p, tabId, mainWindow, pipeline, userAgent);
-            }
+            if (p.isClosed()) continue;
+            let pageUrl = '';
+            try { pageUrl = p.url(); } catch { continue; } // Guard: page may not be ready yet
+            if (!pageUrl || pageUrl === 'about:blank') continue;
+            const tabId = pageToTabIdMap.get(p) || '';
+            await scanLinksForPage(p, tabId, mainWindow, pipeline, userAgent);
         }
     };
 

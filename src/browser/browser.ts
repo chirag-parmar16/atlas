@@ -75,6 +75,55 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     let page: Page | null = null;
     const activePages = new Set<Page>();
     const pageToTabId = new Map<Page, string>();
+    // Track stable Puppeteer Target objects to prevent duplicate setup across renderer swaps
+    const processedTargets = new Set<Target>();
+
+    // ── Loading Screen ────────────────────────────────────────────────────────
+    // Injected via evaluateOnNewDocument — runs before any page script.
+    // Dismissed automatically once Atlas proxy takes full control (end of setupPage).
+    const ATLAS_LOADING_SCREEN = `(function(){
+        'use strict';
+        if(window.__atlasLoadingInjected)return;
+        window.__atlasLoadingInjected=true;
+        var css=[
+            '#__atlas_shield{position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;',
+            'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;',
+            'background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);',
+            'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,sans-serif;',
+            'transition:opacity 0.5s ease,transform 0.5s ease;}',
+            '#__atlas_shield.--ready{opacity:0;transform:scale(1.04);pointer-events:none;}',
+            '#__atlas_spinner{width:44px;height:44px;border:3px solid rgba(88,166,255,0.15);',
+            'border-top-color:#58a6ff;border-radius:50%;animation:__atlasSpin 0.75s linear infinite;}',
+            '@keyframes __atlasSpin{to{transform:rotate(360deg)}}',
+            '#__atlas_badge{display:flex;align-items:center;gap:10px;}',
+            '#__atlas_badge span{font-size:20px;font-weight:700;color:#f0f6fc;letter-spacing:-0.03em;}',
+            '#__atlas_status{font-size:12px;color:#58a6ff;letter-spacing:0.06em;text-transform:uppercase;font-weight:600;}',
+            '#__atlas_sub{font-size:11px;color:#6e7681;margin-top:-10px;}'
+        ].join('');
+        var s=document.createElement('style');s.textContent=css;
+        var shield=document.createElement('div');shield.id='__atlas_shield';
+        shield.innerHTML=[
+            '<div id="__atlas_spinner"></div>',
+            '<div id="__atlas_badge">',
+            '<svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">',
+            '<circle cx="16" cy="16" r="14" stroke="#58a6ff" stroke-width="1.5" opacity="0.4"/>',
+            '<polygon points="16,5 27,26 5,26" fill="#58a6ff" opacity="0.95"/>',
+            '</svg>',
+            '<span>Atlas</span>',
+            '</div>',
+            '<div id="__atlas_status">Securing connection\u2026</div>',
+            '<div id="__atlas_sub">Taking control of the sandbox</div>'
+        ].join('');
+        document.addEventListener('DOMContentLoaded',function(){
+            if(document.getElementById('__atlas_shield'))return;
+            document.head.appendChild(s);
+            document.body.appendChild(shield);
+        },{once:true});
+        window.__atlasReady=function(){
+            var el=document.getElementById('__atlas_shield');
+            if(el){el.classList.add('--ready');setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},600);}
+        };
+    })();`;
 
     // --- Pipeline (Bloodline): Event Bus ---
     const pipeline = createPipeline();
@@ -320,6 +369,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         console.log(`[Atlas] [DEBUG] netInterceptor initialized.`);
         networkManagers.push(netInterceptor);
 
+        // Inject loading screen for future navigations on this page
+        try { await targetPage.evaluateOnNewDocument(ATLAS_LOADING_SCREEN); } catch (_) { }
+
         // ─── PHASE 2: Resolve tab ID (up to 2s, deferred) ────────────────────────
         // Runs after the interceptor is already live. Early requests during resolution
         // will have tabId='' which is acceptable — they still go through Atlas proxy.
@@ -336,7 +388,14 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}`);
         }
 
-
+        // ─── Atlas has full control — dismiss loading screen ──────────────────
+        try {
+            await targetPage.evaluate(() => {
+                if (typeof (window as { __atlasReady?: () => void }).__atlasReady === 'function') {
+                    (window as { __atlasReady?: () => void }).__atlasReady!();
+                }
+            });
+        } catch (_) { /* page may have just navigated — non-fatal */ }
 
         // 1.5. Bridge Guest Console & Errors to Pipeline
         targetPage.on('console', async msg => {
@@ -516,40 +575,71 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     // 3. Navigation Lock & Multi-Tab Support
     browser.on('targetcreated', async (target: Target) => {
-        const url = target.url();
+        const targetUrl = target.url();
         const type = target.type();
 
-        // Always skip the HUD window itself
-        if (url.includes('index.html')) return;
+        // Always skip the Atlas HUD window itself
+        if (targetUrl.includes('index.html')) return;
 
-        // For new user-opened tabs (type === 'page'), set up proxy intercept
-        // even if the current URL is 'about:blank'. The user will navigate after.
-        // Without this, requests go through the system proxy (e.g. Pixy) → 406.
         const isNewTab = type === 'page';
-        // For webview/other targets, still skip about:blank (an intermediate internal state)
-        const isUsefulWebview = (type === 'webview' || type === 'other') && url !== 'about:blank';
-
+        const isUsefulWebview = (type === 'webview' || type === 'other') && targetUrl !== 'about:blank';
         if (!isNewTab && !isUsefulWebview) return;
 
+        // Stable deduplication by Target object reference.
+        // Puppeteer reuses the same Target instance for the same browser tab.
+        if (processedTargets.has(target)) return;
+        processedTargets.add(target);
+
         const newPage = await target.page().catch(() => null);
-        if (newPage) {
-            if (activePages.has(newPage)) return;
+        if (!newPage) return;
+
+        if (isNewTab && (targetUrl === 'about:blank' || targetUrl === '')) {
+            // ── Blank new tab (target="_blank" link clicked) ──────────────────
+            // CRITICAL: Do NOT call any Page methods here (url, evaluate, setCacheEnabled)
+            // Chromium hasn't created the main frame yet → "Requesting main frame too early!"
+            //
+            // Strategy:
+            //  1. Pre-inject loading screen script (safe CDP-level call, no frame needed)
+            //  2. Listen for framenavigated — fires at start of real navigation, before any resource
+            //  3. THEN do full setupPage (network interceptor, tabId, etc.)
             try {
-                const userAgentStr = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
-                await newPage.setUserAgent(userAgentStr);
-                await setupPage(newPage);
-                page = newPage;
-            } catch (e) {
-                console.error('[Atlas] Error setting up new target page:', (e as Error).message);
-            }
+                await newPage.evaluateOnNewDocument(ATLAS_LOADING_SCREEN);
+            } catch (_) { /* non-fatal if page isn't ready for CDP scripts yet */ }
+
+            newPage.once('framenavigated', async (frame) => {
+                if (newPage.isClosed()) return;
+                try {
+                    // Only handle the main frame's first real navigation
+                    if (frame !== newPage.mainFrame()) return;
+                    const navUrl = frame.url();
+                    if (!navUrl || navUrl === 'about:blank') return;
+
+                    console.log(`[Atlas] _blank tab navigated to: ${navUrl} — setting up proxy`);
+                    await newPage.setUserAgent(userAgentStr);
+                    await setupPage(newPage);
+                    page = newPage;
+                } catch (e) {
+                    console.error('[Atlas] Error setting up _blank tab after navigation:', (e as Error).message);
+                }
+            });
+            return;
+        }
+
+        // ── Webview / non-blank page: setup immediately ───────────────────────
+        try {
+            await newPage.setUserAgent(userAgentStr);
+            await setupPage(newPage);
+            page = newPage;
+        } catch (e) {
+            console.error('[Atlas] Error setting up new target page:', (e as Error).message);
         }
     });
 
-    browser.on('targetdestroyed', async (target: Target) => {
-        const p = await target.page();
-        if (p) {
-            activePages.delete(p);
-            pageToTabId.delete(p);
+    browser.on('targetdestroyed', (target: Target) => {
+        processedTargets.delete(target);
+        // Clean up any stale closed pages from activePages
+        for (const p of activePages) {
+            try { if (p.isClosed()) { activePages.delete(p); pageToTabId.delete(p); } } catch (_) { }
         }
     });
 

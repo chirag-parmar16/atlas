@@ -1,4 +1,34 @@
+# Atlas Sandbox v1.1.3
+
+## 🚀 Overview
+
+Network stability patch eliminating duplicate request logging, fixing the fatal "Requesting main frame too early" crash, resolving Pixy Proxy 406 errors on `target="_blank"` links, and introducing a premium Atlas Loading Screen.
+
+## 🛠 Key Fixes
+
+1. **Eliminated Duplicate Network Requests**
+   - Link Scanner HEAD/GET validation fetches are now tagged `x-atlas-internal: link-scan` and transparently skipped by the proxy logger — zero impact on the Network tab.
+
+2. **Fixed Fatal Process Crash**
+   - `startLinkScanner` called `p.url()` on pages not yet attached by Chromium → `"Requesting main frame too early!"` → process killed.
+   - All `p.url()` calls in the link scanner are now wrapped in `try/catch` with `about:blank` filtering.
+
+3. **Fixed `target="_blank"` Links → Pixy Proxy 406**
+   - New tabs opened via `_blank` links are now handled by `framenavigated` — interceptor attaches at the very start of the real navigation, before any resource requests fire.
+   - Stable deduplication via `Set<Target>` prevents double-setup on renderer process swaps.
+
+4. **New: Atlas Loading Screen**
+   - A premium dark glassmorphism overlay (`#__atlas_shield`) is injected before any page scripts via `evaluateOnNewDocument`.
+   - Automatically fades out (0.5s ease) once Atlas has full proxy control and tabId is resolved.
+   - Zero flash, zero Pixy Proxy exposure.
+
+5. **CI/CD Release Flow Fixed**
+   - `npm run dist -p always` now only runs on `v*` tag pushes, not on every main branch push.
+
+---
+
 # Atlas Sandbox v1.1.2
+
 
 ## 🚀 Overview
 
