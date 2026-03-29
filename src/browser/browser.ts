@@ -406,11 +406,12 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             console.log(`[Atlas] [DEBUG] tabId resolution timed out for ${targetPage.url()}. Signaling Proxy regardless to prevent lockup.`);
         }
 
-        // ─── PHASE 3: Signal Readiness & Final Injection ──────────────────────
-        // Release the gated request in ProxyEngine
-        netInterceptor.setInitialized();
+        // ─── PHASE 3: Final Injection ─────────────────────────────────────────
+        // NOTE: setInitialized() is NOT called here.
+        // It will be called by the caller AFTER the first page.goto() to the
+        // masked domain completes — that is the true "Full Control" moment.
 
-        // Inject loading screen on current document (covers initial page before goto)
+        // Inject loading screen on current document (covers page already in the webview)
         try { await targetPage.evaluate(ATLAS_LOADING_SCREEN); } catch (_) { }
 
         // 1.5. Bridge Guest Console & Errors to Pipeline
@@ -584,10 +585,11 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             }
         }
         console.log(`[Atlas] [DEBUG] setupPage complete for: ${targetPage.url()}`);
+        return netInterceptor;
     };
 
-    // 4. Attach Modules (Initial Page)
-    if (page) await setupPage(page);
+    // 4. Attach Modules (Initial Page) — keep a handle to signal readiness after goto
+    const mainInterceptor = page ? await setupPage(page) : null;
 
     // 3. Navigation Lock & Multi-Tab Support
     browser.on('targetcreated', async (target: Target) => {
@@ -680,6 +682,13 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 waitUntil: 'domcontentloaded',
                 timeout: 30000
             });
+
+            // ── FULL CONTROL ACHIEVED ─────────────────────────────────────────────
+            // The goto to the masked domain has succeeded. Atlas now owns the page.
+            // Signal the ProxyEngine to release its gate and dismiss the loading screen.
+            if (i === 0 && mainInterceptor) {
+                mainInterceptor.setInitialized();
+            }
 
             // Navigation is logged automatically by the network interceptor's
             // handleRequest() → pipeline.emit('navigation') → reportManager.logNavigation().
