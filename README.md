@@ -157,7 +157,7 @@ The Security Warden actively monitors your app's traffic with a "Zero-Assumption
 *   **Zero-Assumption Filtering**: Leverages `ATLAS_USER_EMAIL` and `ATLAS_AUTHORIZED_TOKENS` to filter legitimate traffic from leaks.
 *   **Strict Compliance**: All masking follows the `first4****last4` standard for absolute privacy in logs.
 
-For more details, see [SECURITY.md](file:///d:/Atlas/SECURITY.md).
+For more details, see [RELEASES.md](file:///d:/Atlas/RELEASES.md) and [SECURITY.md](file:///d:/Atlas/SECURITY.md).
 
 ---
 *   **Strict CSP**: The HUD overlay runs under a strict Content Security Policy to prevent XSS.
