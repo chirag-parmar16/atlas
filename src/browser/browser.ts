@@ -346,9 +346,11 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     console.log(`[Atlas] Guest page attached (${webviewTarget.type()}).`);
     await page.setUserAgent(userAgentStr);
 
-    // DEBUG: Bridge Console (Silenced for cleaner terminal)
-    // page.on('console', msg => console.log(`[Browser Console] ${msg.type().toUpperCase()}: ${msg.text()}`));
-    // page.on('pageerror', (err: Error) => console.error(`[Browser Error] ${err.toString()}`));
+    // ── CRITICAL: Show loading screen IMMEDIATELY ────────────────────────────
+    // Inject before setupPage() starts — setupPage takes up to 2s (tabId polling).
+    // Without this, the user sees the raw localhost project during that window.
+    try { await page.evaluateOnNewDocument(ATLAS_LOADING_SCREEN); } catch (_) { }
+    try { await page.evaluate(ATLAS_LOADING_SCREEN); } catch (_) { }
 
     // Generic Tool Injection
     const setupPage = async (targetPage: Page) => {
@@ -406,12 +408,15 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             console.log(`[Atlas] [DEBUG] tabId resolution timed out for ${targetPage.url()}. Signaling Proxy regardless to prevent lockup.`);
         }
 
-        // ─── PHASE 3: Final Injection ─────────────────────────────────────────
-        // NOTE: setInitialized() is NOT called here.
-        // It will be called by the caller AFTER the first page.goto() to the
-        // masked domain completes — that is the true "Full Control" moment.
+        // ─── PHASE 3: Signal Readiness & Dismiss Loading Screen ──────────────
+        // Open the proxy gate — requests can now flow through properly.
+        // This MUST happen before page.goto() is called, otherwise goto() deadlocks:
+        // goto() sends a document request → proxy holds it → goto() waits → setInitialized()
+        // is never reached → infinite wait.
+        netInterceptor.setInitialized();
 
-        // Inject loading screen on current document (covers page already in the webview)
+        // Also evaluate on the current page (localhost:3000) to ensure the loading
+        // screen is visible during this window in case evaluateOnNewDocument missed it.
         try { await targetPage.evaluate(ATLAS_LOADING_SCREEN); } catch (_) { }
 
         // 1.5. Bridge Guest Console & Errors to Pipeline
@@ -585,11 +590,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             }
         }
         console.log(`[Atlas] [DEBUG] setupPage complete for: ${targetPage.url()}`);
-        return netInterceptor;
     };
 
-    // 4. Attach Modules (Initial Page) — keep a handle to signal readiness after goto
-    const mainInterceptor = page ? await setupPage(page) : null;
+    // 4. Attach Modules (Initial Page)
+    if (page) await setupPage(page);
 
     // 3. Navigation Lock & Multi-Tab Support
     browser.on('targetcreated', async (target: Target) => {
@@ -682,13 +686,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 waitUntil: 'domcontentloaded',
                 timeout: 30000
             });
-
-            // ── FULL CONTROL ACHIEVED ─────────────────────────────────────────────
-            // The goto to the masked domain has succeeded. Atlas now owns the page.
-            // Signal the ProxyEngine to release its gate and dismiss the loading screen.
-            if (i === 0 && mainInterceptor) {
-                mainInterceptor.setInitialized();
-            }
 
             // Navigation is logged automatically by the network interceptor's
             // handleRequest() → pipeline.emit('navigation') → reportManager.logNavigation().

@@ -4,6 +4,22 @@ All notable changes to the Atlas Sandbox project will be documented in this file
 
 ---
 
+## [v1.0.1] - 2026-03-29
+
+### 🔥 Critical Hotfix — Loading Screen Deadlock
+
+**Bug:** The loading screen was stuck in an infinite loop ("SECURING CONNECTION..." never dismissed).
+
+**Root Cause:** `setInitialized()` was being called after `page.goto()`, creating a deadlock:
+- `goto()` sends a document request → proxy holds it (gate closed) → `goto()` waits for response → `setInitialized()` never reached → infinite wait.
+
+**Fix:**
+1. **Loading screen injected IMMEDIATELY** when the webview is first attached — before `setupPage()` starts its ~2s tabId polling window. This eliminates the raw localhost flash the user saw.
+2. **`setInitialized()` restored to inside `setupPage()`** — opens the proxy gate BEFORE `goto()` is called, so the navigation can proceed without deadlock.
+3. The proxy still injects `__atlasReady()` into every HTML response body, which correctly dismisses the loading screen once the masked domain page is fully served.
+
+---
+
 ## [v1.0.0] - 2026-03-29
 
 ### 🚀 Initial Stable Release
