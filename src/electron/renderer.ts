@@ -51,7 +51,9 @@ const tagPort = document.getElementById('tag-port');
 const initialDomain = params.get('domain') || '';
 const initialPort = params.get('port') || '';
 const projectName = params.get('projectName') || '';
-const initialUrl = initialPort ? `http://localhost:${initialPort}` : 'about:blank';
+// IMPORTANT: Start at about:blank. The webview must NOT navigate to the domain here.
+// Puppeteer's browser.ts sets up the request interceptor AFTER attaching to this webview.
+const initialUrl = 'about:blank';
 
 if (params.has('domain') && tagDomain) tagDomain.textContent = initialDomain;
 if (params.has('port') && tagPort) tagPort.textContent = ':' + initialPort;
@@ -84,6 +86,54 @@ tabManager.createTab(initialUrl);
 
 // Expose tabManager globally so extras.ts can reach the active webview
 window._atlasTabManager = tabManager;
+
+// 1. Splash Screen Timing Tracking
+const atlasStartTime = Date.now();
+let atlasSplashDismissed = false;
+
+// 2. Initial Handshake Signal Receiver
+// This is called by the Brain (Node.js) once the Security Engine is active.
+(window as any).__atlasProxyReady = (tabId: string) => {
+    if (atlasSplashDismissed) return;
+
+    const elapsed = Date.now() - atlasStartTime;
+    const minWait = 3000; // User wants at least 3s for smoothness
+    const remaining = Math.max(0, minWait - elapsed);
+
+    console.log(`[Atlas] Security Ready for ${tabId}. Smooth transition in ${remaining}ms...`);
+    
+    setTimeout(() => {
+        tabManager.finalizeHandshake(tabId);
+    }, remaining);
+};
+
+// 3. Failsafe Timeout (Max 10s)
+// Ensures the user isn't stuck if the handshake misses a signal.
+setTimeout(() => {
+    if (!atlasSplashDismissed) {
+        console.warn('[Atlas] Initialization timeout (10s). Forcing project load.');
+        // tab-1 is the predictable ID of the first tab created on launch
+        tabManager.finalizeHandshake('tab-1');
+        
+        // Final fallback to clear UI
+        const splash = document.getElementById('atlas-init-splash');
+        if (splash) {
+            splash.style.opacity = '0';
+            setTimeout(() => { splash.remove(); atlasSplashDismissed = true; }, 360);
+        }
+    }
+}, 10000);
+
+// Dismiss init splash on first real URL load
+tabManager.onUrlChange = (url: string) => {
+    if (url && url !== 'about:blank' && url !== 'ABOUT:BLANK') {
+        const splash = document.getElementById('atlas-init-splash');
+        if (splash && !atlasSplashDismissed) {
+            splash.style.opacity = '0';
+            setTimeout(() => { splash.remove(); atlasSplashDismissed = true; }, 360);
+        }
+    }
+};
 
 // Listen for main-process new-window interceptions (target="_blank" links)
 // Main process blocks the native new window and tells us to open it as a tab instead
@@ -120,29 +170,13 @@ function formatDisplayURL(rawUrl: string) {
 // New Tab Button
 document.getElementById('atlas-new-tab-btn')!.onclick = () => tabManager.createTab('about:blank');
 
-// URL Input Handler — validates that manual navigation stays within the project
+// URL Input Handler — Allow any valid URL (no longer strictly project-only)
 urlInput.onkeydown = (e) => {
     if (e.key !== 'Enter') return;
     const rawInput = urlInput.value.trim();
-    if (!rawInput) return;
+    if (!rawInput || rawInput === 'about:blank') return;
 
-    // Allow relative paths (e.g. "/about") and same-domain inputs
-    let isExternal = false;
-    try {
-        const parsed = new URL(rawInput.startsWith('http') ? rawInput : 'https://' + rawInput);
-        const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-        const isSameDomain = initialDomain && parsed.hostname === initialDomain;
-        isExternal = !isLocalhost && !isSameDomain && rawInput.includes('.');
-    } catch (_) {
-        // Relative path or unparseable — allow
-    }
-
-    if (isExternal) {
-        showNavBlockedToast(rawInput);
-        urlInput.value = formatDisplayURL(tabManager.getActiveTab()?.url || '');
-    } else {
-        tabManager.navigate(rawInput);
-    }
+    tabManager.navigate(rawInput);
     urlInput.blur();
 };
 

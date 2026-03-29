@@ -75,7 +75,17 @@
             </div>
 
             <div class="sidebar-footer">
-                <span id="gui-scan-root-label" class="scan-root-label">Scanning drives...</span>
+                <div class="sidebar-footer-top">
+                    <span id="gui-scan-root-label" class="scan-root-label">Scanning drives...</span>
+                </div>
+                <div class="sidebar-footer-actions">
+                    <button id="gui-settings-btn" class="icon-btn" title="AI Brain Settings">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                        </svg>
+                        <span>SMART SETTINGS</span>
+                    </button>
+                </div>
             </div>
         </aside>
 
@@ -108,6 +118,49 @@
                         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4a5568" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                         <p>Select a file to view.</p>
                     </div>
+                </div>
+            </div>
+
+            <!-- Settings view -->
+            <div id="gui-settings-view" class="gui-settings-view" style="display:none;">
+                <div class="settings-container">
+                    <div class="settings-header">
+                        <h2>Smart AI Brain Settings</h2>
+                        <p>Configure Atlas to use Google Gemini for intelligent diagnostics.</p>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <label for="gemini-api-key">Gemini API Key</label>
+                                <p>Enter your Google AI Studio API key. This is stored locally.</p>
+                            </div>
+                            <div class="setting-input-group">
+                                <input type="password" id="gemini-api-key" placeholder="Enter API Key...">
+                                <button id="test-ai-btn" class="secondary-btn">Test Connection</button>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <label>Enable AI Analysis</label>
+                                <p>Allow Atlas to send violation data to Gemini for smart reporting.</p>
+                            </div>
+                            <div class="setting-control">
+                                <label class="switch">
+                                    <input type="checkbox" id="ai-enabled-toggle">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-actions">
+                        <button id="save-settings-btn" class="primary-btn">Save Changes</button>
+                        <button id="close-settings-btn" class="outline-btn">Close</button>
+                    </div>
+                    
+                    <div id="settings-status" class="settings-status"></div>
                 </div>
             </div>
 

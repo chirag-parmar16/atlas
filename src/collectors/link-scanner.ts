@@ -10,6 +10,10 @@ export interface ExtractedLink {
     text: string;
 }
 
+// Optimization: Track last scan time per page to prevent redundant hammering
+const lastScanTime = new WeakMap<Page, number>();
+const SCAN_COOLDOWN_MS = 2000; // 2 seconds
+
 /**
  * Scans a single page for all HTTP links and validates them.
  * Emits accessibility results to the UI and broken links as violations to the engine.
@@ -22,6 +26,14 @@ export async function scanLinksForPage(
     userAgent: string
 ): Promise<void> {
     if (!targetPage || targetPage.isClosed()) return;
+
+    // Optimization: Throttling scan frequency per page to save CPU/Memory
+    const now = Date.now();
+    const lastTime = lastScanTime.get(targetPage) || 0;
+    if (now - lastTime < SCAN_COOLDOWN_MS) {
+        return; 
+    }
+    lastScanTime.set(targetPage, now);
 
     try {
         // Step 1: Extract and Categorize ALL links from the page for the UI

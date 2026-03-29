@@ -58,6 +58,10 @@ export class TabManager {
     private onActivate: TabEventCallback;
     private onClose: TabEventCallback;
     private tabCounter = 0;
+    /** Map of tabId -> real target URL to load once proxy is ready */
+    private intendedUrls: Map<string, string> = new Map();
+    /** Called whenever the active tab's URL changes. Used by renderer.ts to dismiss init splash. */
+    public onUrlChange: ((url: string) => void) | null = null;
     /** Allowed hostnames — navigation outside these is blocked for user gestures */
     private allowedHostnames: Set<string> = new Set(['localhost', '127.0.0.1']);
 
@@ -86,30 +90,31 @@ export class TabManager {
         if (domain) this.allowedHostnames.add(domain);
     }
 
-    /** Check whether a URL is within the allowed project boundaries. */
-    private isAllowedUrl(url: string): boolean {
-        if (!url || url === 'about:blank') return true;
-        try {
-            const parsed = new URL(url);
-            // Always allow non-http protocols (file:, data:, etc.)
-            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
-            return this.allowedHostnames.has(parsed.hostname);
-        } catch (_) {
-            return true; // Relative or unparseable — allow
-        }
+    /** Allow all URLs now. The user requested to remove the external restriction. */
+    private isAllowedUrl(_url: string): boolean {
+        return true;
     }
 
     /** Create a new tab and optionally navigate to `url`. */
     createTab(url: string = 'about:blank'): AtlasTab {
         const id = `tab-${++this.tabCounter}`;
 
-        // 1. Create the webview
+        // 1. Create the webview.
+        //    PERFORMANCE & RELIABILITY FIX:
+        //    We start all new tabs at 'about:blank' to ensure Puppeteer and the 
+        //    NetworkInterceptor have time to attach BEFORE the real request starts.
+        //    This prevents the dreaded 406 "Pixy Proxy" error on cold boot.
         const webview = document.createElement('webview') as ElectronWebview;
         webview.id = `webview-${id}`;
         webview.className = 'atlas-webview';
-        webview.setAttribute('src', url);
-        webview.setAttribute('allowpopups', ''); // Required for new-window event
-        // No inline styles - let CSS class handle position/size for correct viewport calc
+        
+        // Store the real URL for the "Sync Handshake"
+        if (url && url !== 'about:blank') {
+            this.intendedUrls.set(id, url);
+        }
+        webview.setAttribute('src', 'about:blank');
+
+        webview.setAttribute('allowpopups', ''); 
         this.container.appendChild(webview);
 
         // 2. Create the tab strip element
@@ -150,7 +155,7 @@ export class TabManager {
         // 4. Wire webview events
         this.wireWebviewEvents(tab);
 
-        // 5. Activate this new tab
+        // 6. Activate this new tab
         this.activateTab(id);
         return tab;
     }
@@ -237,6 +242,17 @@ export class TabManager {
     goForward() { this.getActiveTab()?.webview.goForward(); }
     reload() { this.getActiveTab()?.webview.reload(); }
 
+    /** Complete the handshake: Navigate a specific tab to its intended project URL. */
+    finalizeHandshake(id: string) {
+        const tab = this.tabs.get(id);
+        const targetUrl = this.intendedUrls.get(id);
+        if (tab && targetUrl) {
+            console.log(`[Atlas] [HANDSHAKE] Signal received for ${id}. Navigating to: ${targetUrl}`);
+            tab.webview.src = targetUrl;
+            this.intendedUrls.delete(id);
+        }
+    }
+
     /** Count of open tabs. */
     get count() { return this.tabs.size; }
 
@@ -269,24 +285,22 @@ export class TabManager {
             const webviewEvent = e as WebviewNavigationEvent;
             if (!webviewEvent.isMainFrame || !webviewEvent.url) return;
 
-            // If this is a user-initiated navigation to an external hostname, stop it
-            if (webviewEvent.userGesture && !this.isAllowedUrl(webviewEvent.url)) {
-                webview.stop();
-                console.log(`[Atlas] Blocked user navigation to external URL: ${webviewEvent.url}`);
-                // Show a brief visual notification via a custom event on the host window
-                window.dispatchEvent(new CustomEvent('atlas-nav-blocked', { detail: { url: webviewEvent.url } }));
-                return;
-            }
-
+            // Replaced domain blocking with a no-op to allow all URLs
             tab.url = webviewEvent.url;
-            if (this.activeTabId === tab.id) this.onActivate(tab);
+            if (this.activeTabId === tab.id) {
+                this.onActivate(tab);
+                this.onUrlChange?.(tab.url);
+            }
         });
 
         webview.addEventListener('did-navigate', (e: Event) => {
             const webviewEvent = e as WebviewNavigationEvent;
             if (webviewEvent.url) {
                 tab.url = webviewEvent.url;
-                if (this.activeTabId === tab.id) this.onActivate(tab);
+                if (this.activeTabId === tab.id) {
+                    this.onActivate(tab);
+                    this.onUrlChange?.(tab.url);
+                }
             }
         });
 
@@ -294,7 +308,10 @@ export class TabManager {
             const webviewEvent = e as WebviewNavigationEvent;
             if (webviewEvent.url) {
                 tab.url = webviewEvent.url;
-                if (this.activeTabId === tab.id) this.onActivate(tab);
+                if (this.activeTabId === tab.id) {
+                    this.onActivate(tab);
+                    this.onUrlChange?.(tab.url);
+                }
             }
         });
 

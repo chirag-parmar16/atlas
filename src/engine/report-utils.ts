@@ -181,7 +181,7 @@ export function translateViolation(v: Violation, localSource: string) {
     return { title, impact, recommendation, icon };
 }
 
-export function generateMarkdown(entries: Violation[], localSource: string, reportId: string): string {
+export function generateMarkdown(entries: Violation[], localSource: string, reportId: string, aiSummary?: string): string {
     const violations = entries.filter(e => e.type === 'violation');
     const criticalCount = violations.filter(v => v.level === 2).length;
     const warningCount = violations.filter(v => v.level !== 2).length;
@@ -189,6 +189,12 @@ export function generateMarkdown(entries: Violation[], localSource: string, repo
     let md = `# 📊 Atlas Audit Executive Summary\n\n`;
     md += `> **Session ID:** \`${reportId}\`  \n`;
     md += `> **Date:** ${new Date().toLocaleString()}  \n\n`;
+
+    if (aiSummary) {
+        md += `## 🧠 AI Brain Diagnostic\n\n`;
+        md += `${aiSummary}\n\n`;
+        md += `--- \n\n`;
+    }
 
     md += `## 📈 Health Overview\n\n`;
 

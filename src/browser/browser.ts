@@ -77,69 +77,9 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const pageToTabId = new Map<Page, string>();
     // Track stable Puppeteer Target objects to prevent duplicate setup across renderer swaps
     const processedTargets = new Set<Target>();
+    // Performance Guard: Track pages currently undergoing initialization to prevent redundant setupPage cycles
+    const pageInitializationInProgress = new Set<Page>();
 
-    // ── Loading Screen ────────────────────────────────────────────────────────
-    // Two delivery modes:
-    //  1. evaluateOnNewDocument: runs before page scripts on future navigations
-    //  2. page.evaluate(): injects immediately on current document (if DOM already ready)
-    // Dismissed via page.on('load') in setupPage — fires after every page finish.
-    const ATLAS_LOADING_SCREEN = `(function(){
-        'use strict';
-        if(window.__atlasLoadingInjected)return;
-        window.__atlasLoadingInjected=true;
-        
-        // Default to not ready. Proxy will inject a script to set this to true on first project load.
-        if(typeof window.__ATLAS_READY__ === 'undefined') window.__ATLAS_READY__ = false;
-
-        var css=[
-            '#__atlas_shield{position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;',
-            'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;',
-            'background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);',
-            'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,sans-serif;',
-            'transition:opacity 0.5s ease,transform 0.5s ease;}',
-            '#__atlas_shield.--ready{opacity:0;transform:scale(1.04);pointer-events:none;}',
-            '#__atlas_spinner{width:44px;height:44px;border:3px solid rgba(88,166,255,0.15);',
-            'border-top-color:#58a6ff;border-radius:50%;animation:__atlasSpin 0.75s linear infinite;}',
-            '@keyframes __atlasSpin{to{transform:rotate(360deg)}}',
-            '#__atlas_badge{display:flex;align-items:center;gap:10px;}',
-            '#__atlas_badge span{font-size:20px;font-weight:700;color:#f0f6fc;letter-spacing:-0.03em;}',
-            '#__atlas_status{font-size:12px;color:#58a6ff;letter-spacing:0.06em;text-transform:uppercase;font-weight:600;}',
-            '#__atlas_sub{font-size:11px;color:#6e7681;margin-top:-10px;}'
-        ].join('');
-
-        var s=document.createElement('style');s.textContent=css;
-        var shield=document.createElement('div');shield.id='__atlas_shield';
-        shield.innerHTML=[
-            '<div id="__atlas_spinner"></div>',
-            '<div id="__atlas_badge">',
-            '<svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">',
-            '<circle cx="16" cy="16" r="14" stroke="#58a6ff" stroke-width="1.5" opacity="0.4"/>',
-            '<polygon points="16,5 27,26 5,26" fill="#58a6ff" opacity="0.95"/>',
-            '</svg>',
-            '<span>Atlas</span>',
-            '</div>',
-            '<div id="__atlas_status">Securing connection\u2026</div>',
-            '<div id="__atlas_sub">Taking control of the sandbox</div>'
-        ].join('');
-
-        var inject=function(){
-            if(window.__ATLAS_READY__ || document.getElementById('__atlas_shield')) return;
-            document.head.appendChild(s);
-            (document.body||document.documentElement).appendChild(shield);
-        };
-
-        if(document.readyState==='loading'){
-            document.addEventListener('DOMContentLoaded',inject,{once:true});
-        } else {
-            inject();
-        }
-
-        window.__atlasReady=function(){
-            window.__ATLAS_READY__ = true;
-            var el=document.getElementById('__atlas_shield');
-            if(el){el.classList.add('--ready');setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},600);}
-        };
-    })();`;
 
     // --- Pipeline (Bloodline): Event Bus ---
     const pipeline = createPipeline();
@@ -318,19 +258,18 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         const type = t.type();
         const url = t.url();
 
-        // Target matching: prioritizes 'webview'. 
-        // Also accepts 'page' if it's explicitly on the target domain.
-        // We removed 'about:blank' and 'other' matching to prevent double-initialization bugs.
+        // Target matching: Loosened to support more Electron environments
+        // Prioritizes 'webview', but also accepts 'page' or 'other' if it's not the HUD itself.
         const isWebview = type === 'webview';
-        const isGuestPage = type === 'page' && url.includes(domain) && !url.includes('index.html');
+        const isGuestPage = (type === 'page' || type === 'other') && !url.includes('index.html');
 
+        const status = (isWebview || isGuestPage) ? 'MATCHED' : 'SKIPPED';
         if (type !== 'background_page' && type !== 'browser') {
-            const status = (isWebview || isGuestPage) ? 'MATCHED' : 'SKIPPED';
             console.log(`[Atlas] Scanning target: ${type} (${url || 'empty'}) -> ${status}`);
         }
 
         return isWebview || isGuestPage;
-    }, { timeout: 15000 }).catch((err: Error) => {
+    }, { timeout: 20000 }).catch((err: Error) => {
         console.error('[Atlas] FATAL: Timeout waiting for Guest page. Is the HUD visible?');
         throw err;
     });
@@ -346,28 +285,19 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     console.log(`[Atlas] Guest page attached (${webviewTarget.type()}).`);
     await page.setUserAgent(userAgentStr);
 
-    // ── CRITICAL: Show loading screen IMMEDIATELY ────────────────────────────
-    // Inject before setupPage() starts — setupPage takes up to 2s (tabId polling).
-    // Without this, the user sees the raw localhost project during that window.
-    try { await page.evaluateOnNewDocument(ATLAS_LOADING_SCREEN); } catch (_) { }
-    try { await page.evaluate(ATLAS_LOADING_SCREEN); } catch (_) { }
-
     // Generic Tool Injection
     const setupPage = async (targetPage: Page) => {
         if (activePages.has(targetPage)) return;
-        activePages.add(targetPage);
-
-        console.log(`[Atlas] [DEBUG] setupPage start for: ${targetPage.url()}`);
-
-        // tabId is declared early and captured by reference in all callbacks below.
-        // This means once it is resolved (async, below), all future callback invocations
-        // will automatically use the real tabId — no rewiring needed.
-        let tabId = '';
+        if (pageInitializationInProgress.has(targetPage)) return;
+        
+        pageInitializationInProgress.add(targetPage);
+        try {
+            activePages.add(targetPage);
+            // tabId is declared early and captured by reference in all callbacks below.
+            let tabId = '';
 
         // ─── PHASE 1: Attach network interceptor IMMEDIATELY ──────────────────────
-        // CRITICAL: Must happen before any navigation, especially for target="_blank"
-        // links. Waiting for tabId first creates a 2s gap where requests bypass Atlas
-        // and hit the system proxy (Pixy Proxy → 406 error).
+        // CRITICAL: Must happen before any navigation.
         await targetPage.setCacheEnabled(true);
         const netInterceptor = createNetworkInterceptor(targetPage, { 
             domain, 
@@ -382,42 +312,41 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             onLog: logger,
             onNavigation: (url: string) => pipeline.emit('navigation', { url, timestamp: Date.now(), tabId })
         });
-        console.log(`[Atlas] [DEBUG] Initializing netInterceptor...`);
+        
+        // Critical: Wait for network engine to be READY.
         await netInterceptor.init();
-        console.log(`[Atlas] [DEBUG] netInterceptor initialized.`);
-        networkManagers.push(netInterceptor);
-
-        // Inject loading screen for future navigations on this page
-        try { await targetPage.evaluateOnNewDocument(ATLAS_LOADING_SCREEN); } catch (_) { }
-
-        // ─── PHASE 2: Resolve tab ID (up to 2s, deferred) ────────────────────────
-        // This is where "Full Control" is finalized. Once we have the tabId,
-        // we can signal the ProxyEngine to release the holding pattern.
-        try {
-            for (let i = 0; i < 20; i++) {
-                tabId = await targetPage.evaluate(() => (window as { __atlasTabId?: string }).__atlasTabId) || '';
-                if (tabId) break;
-                await new Promise(r => setTimeout(r, 100));
-            }
-        } catch (e) { }
-
-        if (tabId) {
-            pageToTabId.set(targetPage, tabId);
-            console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}. Signaling Proxy initialization.`);
-        } else {
-            console.log(`[Atlas] [DEBUG] tabId resolution timed out for ${targetPage.url()}. Signaling Proxy regardless to prevent lockup.`);
-        }
-
-        // ─── PHASE 3: Signal Readiness & Dismiss Loading Screen ──────────────
-        // Open the proxy gate — requests can now flow through properly.
-        // This MUST happen before page.goto() is called, otherwise goto() deadlocks:
-        // goto() sends a document request → proxy holds it → goto() waits → setInitialized()
-        // is never reached → infinite wait.
         netInterceptor.setInitialized();
 
-        // Also evaluate on the current page (localhost:3000) to ensure the loading
-        // screen is visible during this window in case evaluateOnNewDocument missed it.
-        try { await targetPage.evaluate(ATLAS_LOADING_SCREEN); } catch (_) { }
+        // ─── PHASE 2: Parallel Setup ──────────────────────────────────────────
+        // Run non-critical telemetry and bridge setup in the background to speed up startup.
+        (async () => {
+            try {
+                // Resolve tab ID (Optimization: max 250ms lookup)
+                for (let i = 0; i < 5; i++) {
+                    tabId = await targetPage.evaluate(() => (window as { __atlasTabId?: string }).__atlasTabId) || '';
+                    if (tabId) break;
+                    await new Promise(r => setTimeout(r, 50));
+                }
+
+                if (tabId) {
+                    pageToTabId.set(targetPage, tabId);
+                    
+                    // Final Handshake check: Did the host UI provide a target URL for this tabId?
+                    // 2-Way Update: We now explicitly tell the Host that THIS tab is ready.
+                    // The Host (renderer.ts) then handles the navigation logic and splash removal.
+                    await mainWindow.evaluate((tid) => {
+                        // @ts-ignore
+                        if (window.__atlasProxyReady) window.__atlasProxyReady(tid);
+                    }, tabId).catch(() => {});
+                }
+            } catch (e) {
+                // Page might have closed or navigated - safe to ignore background errors
+            }
+        })();
+        console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}. Signaling Proxy initialization.`);
+        
+        pageInitializationInProgress.delete(targetPage);
+
 
         // 1.5. Bridge Guest Console & Errors to Pipeline
         targetPage.on('console', async msg => {
@@ -589,7 +518,12 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                 // Function already exposed - safe to ignore on navigations
             }
         }
-        console.log(`[Atlas] [DEBUG] setupPage complete for: ${targetPage.url()}`);
+        } catch (e) {
+            console.error(`[Atlas] setupPage error for ${targetPage.url()}:`, (e as Error).message);
+        } finally {
+            pageInitializationInProgress.delete(targetPage);
+            console.log(`[Atlas] [DEBUG] setupPage complete for: ${targetPage.url()}`);
+        }
     };
 
     // 4. Attach Modules (Initial Page)
@@ -599,12 +533,13 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     browser.on('targetcreated', async (target: Target) => {
         const targetUrl = target.url();
         const type = target.type();
-
+        
         // Always skip the Atlas HUD window itself
         if (targetUrl.includes('index.html')) return;
 
         const isNewTab = type === 'page';
-        const isUsefulWebview = (type === 'webview' || type === 'other') && targetUrl !== 'about:blank';
+        // Reliability Fix: Allow about:blank for webviews to enable the "Sync Handshake"
+        const isUsefulWebview = (type === 'webview' || type === 'other');
         if (!isNewTab && !isUsefulWebview) return;
 
         // Stable deduplication by Target object reference.
@@ -624,9 +559,6 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             //  1. Pre-inject loading screen script (safe CDP-level call, no frame needed)
             //  2. Listen for framenavigated — fires at start of real navigation, before any resource
             //  3. THEN do full setupPage (network interceptor, tabId, etc.)
-            try {
-                await newPage.evaluateOnNewDocument(ATLAS_LOADING_SCREEN);
-            } catch (_) { /* non-fatal if page isn't ready for CDP scripts yet */ }
 
             newPage.once('framenavigated', async (frame) => {
                 if (newPage.isClosed()) return;
@@ -652,6 +584,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             await newPage.setUserAgent(userAgentStr);
             await setupPage(newPage);
             page = newPage;
+
+            // ────── Handshake Check ──────
+            // Note: Explicit bridge __atlasRegisterIntendedUrl handles most transitions.
+            // This setupPage logic ensures even delayed loads are caught.
         } catch (e) {
             console.error('[Atlas] Error setting up new target page:', (e as Error).message);
         }
@@ -659,37 +595,35 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
     browser.on('targetdestroyed', (target: Target) => {
         processedTargets.delete(target);
-        // Clean up any stale closed pages from activePages
+        // Clean up any stale closed pages from activePages and guards
         for (const p of activePages) {
-            try { if (p.isClosed()) { activePages.delete(p); pageToTabId.delete(p); } } catch (_) { }
+            try { if (p.isClosed()) { activePages.delete(p); pageToTabId.delete(p); pageInitializationInProgress.delete(p); } } catch (_) { }
         }
     });
 
     // 6. Navigation
+    // The webview starts at about:blank. After the proxy interceptor is set up and
+    // setInitialized() has been called, we navigate to the masked domain.
+    // This is the ONLY place that should trigger the first real page load.
+    const isLocal =
+        domain.includes('localhost') ||
+        domain.startsWith('127.') ||
+        domain.endsWith('.local') ||
+        domain.endsWith('.test') ||
+        !domain.includes('.');
+    const protocol = isLocal ? 'http://' : 'https://';
+    const targetUrl = `${protocol}${domain}`;
+
     const maxRetries = 3;
     for (let i = 0; i < maxRetries; i++) {
         try {
-            const isLocal =
-                domain.includes('localhost') ||
-                domain.startsWith('127.') ||
-                domain.endsWith('.local') ||
-                domain.endsWith('.test') ||
-                !domain.includes('.'); // Single word like 'test', 'dev'
+            if (i === 0) console.log(`[Atlas] Navigating to ${targetUrl}...`);
+            else console.log(`[Atlas] Navigation retry ${i}/${maxRetries} to ${targetUrl}...`);
 
-            const protocol = isLocal ? 'http://' : 'https://';
-            const url = `${protocol}${domain}`;
-
-            if (i === 0) console.log(`[Atlas] Navigating to ${url}...`);
-            else console.log(`[Atlas] Navigation retry ${i}/${maxRetries} to ${url}...`);
-
-            await page!.goto(url, {
+            await page!.goto(targetUrl, {
                 waitUntil: 'domcontentloaded',
                 timeout: 30000
             });
-
-            // Navigation is logged automatically by the network interceptor's
-            // handleRequest() → pipeline.emit('navigation') → reportManager.logNavigation().
-            // Do NOT call logNavigation() again here — it would create a duplicate entry.
             break; // Success!
 
         } catch (e) {
@@ -697,8 +631,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             console.warn(`[Atlas] Navigation attempt ${i + 1} failed: ${err.message}`);
 
             if (err.message.includes('Session closed') || err.message.includes('Target closed') || err.message.includes('detached Frame')) {
-                // Process swap or target loss occurred. 
-                console.log(`[Atlas] [DEBUG] Session/Target/Frame lost. Attempting to re-find guest page...`);
+                console.log(`[Atlas] [DEBUG] Session/Target/Frame lost during navigation. Waiting to retry...`);
                 await new Promise(r => setTimeout(r, 2000));
 
                 // Re-find the webview target robustly
@@ -714,15 +647,15 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
                     if (newGuestPage) {
                         page = newGuestPage;
                         console.log(`[Atlas] [DEBUG] Re-attached to fresh guest page: ${newGuestPage.url()}`);
-                        // Ensure tools are set up on this fresh page (if not already done by targetcreated)
                         await setupPage(newGuestPage);
                     }
                 }
             } else if (i === maxRetries - 1) {
-                console.error("Navigation failed after all retries", e);
+                console.error('[Atlas] Navigation failed after all retries', e);
             }
         }
     }
+
 
     // 7. Browser Disconnect Handler — graceful cleanup when browser is closed manually
     browser.on('disconnected', () => {

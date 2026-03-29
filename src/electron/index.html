@@ -6,8 +6,73 @@
     <title>Atlas</title>
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';">
     <link rel="stylesheet" href="./renderer.css">
+    <style>
+        /* ── Atlas Init Splash ─────────────────────────────────────────────── */
+        #atlas-init-splash {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            background: #0d0d0f;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            transition: opacity 0.35s ease;
+            -webkit-app-region: drag;
+            user-select: none;
+        }
+        #atlas-init-splash .splash-logo {
+            color: #10b981;
+            animation: splash-pulse 2s ease-in-out infinite;
+        }
+        #atlas-init-splash .splash-name {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 22px;
+            font-weight: 700;
+            color: #e2e8f0;
+            letter-spacing: 0.04em;
+        }
+        #atlas-init-splash .splash-status {
+            font-family: monospace;
+            font-size: 11px;
+            color: #10b981;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            opacity: 0.8;
+        }
+        #atlas-init-splash .splash-dots::after {
+            content: '';
+            animation: splash-ellipsis 1.4s steps(1, end) infinite;
+        }
+        @keyframes splash-pulse {
+            0%, 100% { opacity: 1;   transform: scale(1);    }
+            50%       { opacity: 0.6; transform: scale(0.95); }
+        }
+        @keyframes splash-ellipsis {
+            0%   { content: ''; }
+            33%  { content: '.'; }
+            66%  { content: '..'; }
+            100% { content: '...'; }
+        }
+    </style>
 </head>
 <body>
+    <!-- ── INIT SPLASH: shown while webview is still about:blank ────────── -->
+    <div id="atlas-init-splash">
+        <div class="splash-logo">
+            <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+        </div>
+        <div class="splash-name">Atlas</div>
+        <div class="splash-status">Atlas is initializing<span class="splash-dots"></span></div>
+    </div>
+
+    <!-- ── MAIN HUD CHROME: hidden until proxy is ready ────────────────── -->
+    <div id="atlas-hud-chrome" style="display:contents;">
     <div id="atlas-tab-bar">
         <div class="atlas-tab-scroll-container" id="atlas-tab-scroll-container">
             <!-- Tabs injected by tab-manager.ts -->
@@ -97,6 +162,8 @@
 
     <!-- Global Bottom Accent Bar -->
     <div class="bottom-accent"></div>
+    </div><!-- end #atlas-hud-chrome -->
+
     <script type="module" src="./renderer.ts"></script>
 </body>
 </html>

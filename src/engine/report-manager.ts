@@ -137,7 +137,23 @@ export class ReportManager {
             const entries = await this.getReports();
             if (entries.length === 0) return;
 
-            const md = generateMarkdown(entries, this.localSource, path.basename(this.reportPath, '.json'));
+            // Fetch AI Summary if enabled
+            let aiSummary = '';
+            try {
+                const { globalConfig } = require('./config-manager');
+                const { aiService } = require('./ai-service');
+                const config = await globalConfig.getConfig();
+                if (config.aiEnabled !== false && config.geminiApiKey) {
+                    const violations = entries.filter(e => e.type === 'violation');
+                    if (violations.length > 0) {
+                        aiSummary = await aiService.generateExecutiveSummary(violations);
+                    }
+                }
+            } catch (aiErr) {
+                console.warn('[Atlas AI] Summary generation failed:', aiErr);
+            }
+
+            const md = generateMarkdown(entries, this.localSource, path.basename(this.reportPath, '.json'), aiSummary);
             await fs.writeFile(this.mdReportPath, md, 'utf-8');
             console.log(`\n[Atlas] ✅ Premium Audit Report Generated: ${this.mdReportPath}`);
         } catch (error) {

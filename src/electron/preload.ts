@@ -28,4 +28,8 @@ contextBridge.exposeInMainWorld('atlasGui', {
     readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
     browseFolder: () => ipcRenderer.invoke('browse-folder'),
     openProject: (projectPath: string) => ipcRenderer.invoke('open-project', projectPath),
+    getConfig: () => ipcRenderer.invoke('get-atlas-config'),
+    setConfig: (config: any) => ipcRenderer.invoke('set-atlas-config', config),
+    testAiConnection: () => ipcRenderer.invoke('test-ai-connection'),
+    getAiExplanation: (errorData: { message: string, context?: any }) => ipcRenderer.invoke('get-ai-explanation', errorData),
 });

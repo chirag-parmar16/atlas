@@ -25,6 +25,9 @@ interface AtlasGui {
     readFile: (filePath: string) => Promise<string>;
     browseFolder: () => Promise<string | undefined>;
     openProject: (projectPath: string) => Promise<void>;
+    getConfig: () => Promise<{ geminiApiKey?: string; aiEnabled?: boolean }>;
+    setConfig: (config: { geminiApiKey?: string; aiEnabled?: boolean }) => Promise<void>;
+    testAiConnection: () => Promise<boolean>;
 }
 
 interface AtlasControls {
@@ -449,15 +452,88 @@ interface Window {
         explorer = new ExplorerTree($('gui-project-list'));
         reportTabManager = new ReportTabManager($('gui-report-tabs'), $('gui-panels'), $('gui-no-files'));
 
+        loadExplorer();
+        setupSettings();
+
+        // Restore scan/browse listeners
         $('gui-scan-btn')?.addEventListener('click', () => loadExplorer());
         $('gui-browse-btn')?.addEventListener('click', async () => {
             if (!bridge.gui?.browseFolder) return;
             const folder = await bridge.gui.browseFolder();
             if (folder) loadExplorer(folder);
         });
-
-        loadExplorer();
     });
+
+    async function setupSettings() {
+        const settingsBtn = $('gui-settings-btn');
+        const settingsView = $('gui-settings-view');
+        const closeSettingsBtn = $('close-settings-btn');
+        const saveSettingsBtn = $('save-settings-btn');
+        const testAiBtn = $('test-ai-btn');
+        const apiKeyInput = $('gemini-api-key') as HTMLInputElement;
+        const aiToggle = $('ai-enabled-toggle') as HTMLInputElement;
+        const statusEl = $('settings-status');
+
+        if (!settingsBtn || !settingsView) return;
+
+        settingsBtn.onclick = async () => {
+            const config = await bridge.gui.getConfig();
+            if (config) {
+                apiKeyInput.value = config.geminiApiKey || '';
+                aiToggle.checked = config.aiEnabled !== false; // Default true if not set
+            }
+            settingsView.style.display = 'flex';
+        };
+
+        closeSettingsBtn.onclick = () => {
+            settingsView.style.display = 'none';
+        };
+
+        saveSettingsBtn.onclick = async () => {
+            try {
+                await bridge.gui.setConfig({
+                    geminiApiKey: apiKeyInput.value,
+                    aiEnabled: aiToggle.checked
+                });
+                showStatus('Settings saved successfully!', 'success');
+                setTimeout(() => { settingsView.style.display = 'none'; }, 1000);
+            } catch (err) {
+                showStatus('Failed to save settings: ' + err, 'error');
+            }
+        };
+
+        testAiBtn.onclick = async () => {
+            const key = apiKeyInput.value;
+            if (!key) {
+                showStatus('Please enter an API key first.', 'error');
+                return;
+            }
+
+            testAiBtn.textContent = 'Testing...';
+            (testAiBtn as HTMLButtonElement).disabled = true;
+            showStatus('Connecting to Gemini...', '');
+
+            try {
+                const success = await bridge.gui.testAiConnection();
+                if (success) {
+                    showStatus('Connection successful! Gemini is ready.', 'success');
+                } else {
+                    showStatus('Connection failed. Please check your API key.', 'error');
+                }
+            } catch (err) {
+                showStatus('Connection failed: ' + err, 'error');
+            } finally {
+                (testAiBtn as HTMLButtonElement).disabled = false;
+                testAiBtn.textContent = 'Test Connection';
+            }
+        };
+
+        function showStatus(msg: string, type: string) {
+            if (!statusEl) return;
+            statusEl.textContent = msg;
+            statusEl.className = 'settings-status ' + type;
+        }
+    }
 
     async function loadExplorer(rootPath?: string) {
         const listEl = $('gui-project-list');

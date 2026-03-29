@@ -143,6 +143,30 @@ app.on('ready', () => {
         return atlasSource?.id || null;
     });
 
+    // --- GLOBAL CONFIG IPC ---
+    ipcMain.handle('get-atlas-config', () => {
+        const { globalConfig } = require('../engine/config-manager');
+        return globalConfig.getConfig();
+    });
+
+    ipcMain.handle('set-atlas-config', (_event, config) => {
+        const { globalConfig } = require('../engine/config-manager');
+        const { aiService } = require('../engine/ai-service');
+        const success = globalConfig.saveConfig(config);
+        if (success) aiService.reinitialize();
+        return success;
+    });
+
+    ipcMain.handle('get-ai-explanation', async (_event, errorData: { message: string, context?: any }) => {
+        const { aiService } = require('../engine/ai-service');
+        return await aiService.explainError(errorData.message, errorData.context);
+    });
+
+    ipcMain.handle('test-ai-connection', async () => {
+        const { aiService } = require('../engine/ai-service');
+        return await aiService.testConnection();
+    });
+
     // Active file handles for recording
     const activeRecordings = new Map<string, fs.WriteStream>();
 
