@@ -79,8 +79,10 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const processedTargets = new Set<Target>();
 
     // ── Loading Screen ────────────────────────────────────────────────────────
-    // Injected via evaluateOnNewDocument — runs before any page script.
-    // Dismissed automatically once Atlas proxy takes full control (end of setupPage).
+    // Two delivery modes:
+    //  1. evaluateOnNewDocument: runs before page scripts on future navigations
+    //  2. page.evaluate(): injects immediately on current document (if DOM already ready)
+    // Dismissed via page.on('load') in setupPage — fires after every page finish.
     const ATLAS_LOADING_SCREEN = `(function(){
         'use strict';
         if(window.__atlasLoadingInjected)return;
@@ -114,11 +116,17 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             '<div id="__atlas_status">Securing connection\u2026</div>',
             '<div id="__atlas_sub">Taking control of the sandbox</div>'
         ].join('');
-        document.addEventListener('DOMContentLoaded',function(){
+        // Works in both modes: evaluateOnNewDocument (readyState='loading') and page.evaluate (DOM ready)
+        var inject=function(){
             if(document.getElementById('__atlas_shield'))return;
             document.head.appendChild(s);
-            document.body.appendChild(shield);
-        },{once:true});
+            (document.body||document.documentElement).appendChild(shield);
+        };
+        if(document.readyState==='loading'){
+            document.addEventListener('DOMContentLoaded',inject,{once:true});
+        } else {
+            inject(); // DOM already ready — inject immediately (initial page coverage)
+        }
         window.__atlasReady=function(){
             var el=document.getElementById('__atlas_shield');
             if(el){el.classList.add('--ready');setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},600);}
@@ -388,14 +396,26 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
             console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}`);
         }
 
-        // ─── Atlas has full control — dismiss loading screen ──────────────────
-        try {
-            await targetPage.evaluate(() => {
-                if (typeof (window as { __atlasReady?: () => void }).__atlasReady === 'function') {
-                    (window as { __atlasReady?: () => void }).__atlasReady!();
-                }
-            });
-        } catch (_) { /* page may have just navigated — non-fatal */ }
+        // ── Inject loading screen on current document (covers initial page before goto) ──
+        // evaluateOnNewDocument only covers FUTURE navigations. This call covers the
+        // page that's already loaded (e.g., localhost:3000 before redirect to e-book).
+        try { await targetPage.evaluate(ATLAS_LOADING_SCREEN); } catch (_) { }
+
+        // ── Dismiss loading screen on every page load ──────────────────────────
+        // page.on('load') fires after every full page load (all resources done).
+        // This is the CORRECT place to dismiss — it works for:
+        //   • Initial navigation: goto('e-book') finishes → load fires → screen fades
+        //   • Internal navigation: user clicks link → new doc loads → load fires → screen fades
+        //   • _blank tabs: framenavigated → setupPage → resources load → load fires → screen fades
+        targetPage.on('load', async () => {
+            try {
+                await targetPage.evaluate(() => {
+                    if (typeof (window as { __atlasReady?: () => void }).__atlasReady === 'function') {
+                        (window as { __atlasReady?: () => void }).__atlasReady!();
+                    }
+                });
+            } catch (_) { /* page may be closed */ }
+        });
 
         // 1.5. Bridge Guest Console & Errors to Pipeline
         targetPage.on('console', async msg => {
