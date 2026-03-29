@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 
 // Engine (Brain)
-import { createNetworkInterceptor } from '../engine/network-interceptor';
+import { createNetworkInterceptor, NetworkInterceptor } from '../engine/network-interceptor';
 import { attachRecorder } from '../engine/session-recorder';
 import { ReportManager } from '../engine/report-manager';
 
@@ -71,7 +71,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
     const allPages = await browser.pages();
     const mainWindow = allPages[0];
 
-    const networkManagers: { cleanup: () => Promise<void>; clearHistory: () => void }[] = [];
+    const networkManagers: NetworkInterceptor[] = [];
     let page: Page | null = null;
     const activePages = new Set<Page>();
     const pageToTabId = new Map<Page, string>();
@@ -408,7 +408,7 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
 
         // ─── PHASE 3: Signal Readiness & Final Injection ──────────────────────
         // Release the gated request in ProxyEngine
-        (netInterceptor as any).setInitialized();
+        netInterceptor.setInitialized();
 
         // Inject loading screen on current document (covers initial page before goto)
         try { await targetPage.evaluate(ATLAS_LOADING_SCREEN); } catch (_) { }

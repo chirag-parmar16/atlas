@@ -18,11 +18,23 @@ export interface NetworkInterceptorConfig {
 
 export type NetworkInterceptorCallbacks = ProxyCallbacks;
 
+export interface NetworkInterceptor {
+    init: () => Promise<void>;
+    attach: (p: Page) => Promise<void>;
+    cleanup: () => Promise<void>;
+    setSecurityMode: (m: unknown) => void;
+    setStressConfig: (c: unknown) => void;
+    clearHistory: () => void;
+    getRequestHistory: () => NetworkRequest[];
+    getViolations: () => Violation[];
+    setInitialized: () => void;
+}
+
 export function createNetworkInterceptor(
     page: Page,
     config: NetworkInterceptorConfig,
     callbacks: NetworkInterceptorCallbacks
-) {
+): NetworkInterceptor {
     let lastNavPathname: string = '';
     let isCleanedUp = false;
 
