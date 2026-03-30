@@ -49,7 +49,10 @@ describe('TabManager', () => {
 
         expect(tabManager.count).toBe(1);
         expect(tabManager.getActiveTab()).toBe(tab);
-        expect(tab.webview.getAttribute('src')).toBe('https://example.com');
+        // Webview always starts at 'about:blank' to allow Puppeteer/NetworkInterceptor
+        // to attach before real navigation begins (prevents 406 cold-boot errors).
+        expect(tab.webview.getAttribute('src')).toBe('about:blank');
+        // The intended URL is preserved on the tab object for deferred navigation.
         expect(tab.url).toBe('https://example.com');
 
         // Assert DOM
