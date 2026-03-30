@@ -72,6 +72,7 @@ export async function run() {
     console.log(GRAY('   ────────────────────────────────────────────────────────'));
 
     const configPath = path.join(projectPath, 'atlas.config.json');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let atlasConfig: any = {};
     if (fs.existsSync(configPath)) atlasConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
@@ -89,9 +90,12 @@ export async function run() {
     };
 
     let serverPort = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let serverCleanup: any = null;
     let finalDomain = atlasConfig.targetDomain || '';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let browserClose: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let reportManager: any = null;
     let cleaningUp = false;
 

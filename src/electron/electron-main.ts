@@ -157,6 +157,7 @@ app.on('ready', () => {
         return success;
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ipcMain.handle('get-ai-explanation', async (_event, errorData: { message: string, context?: any }) => {
         const { aiService } = require('../engine/ai-service');
         return await aiService.explainError(errorData.message, errorData.context);

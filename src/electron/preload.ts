@@ -29,7 +29,9 @@ contextBridge.exposeInMainWorld('atlasGui', {
     browseFolder: () => ipcRenderer.invoke('browse-folder'),
     openProject: (projectPath: string) => ipcRenderer.invoke('open-project', projectPath),
     getConfig: () => ipcRenderer.invoke('get-atlas-config'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setConfig: (config: any) => ipcRenderer.invoke('set-atlas-config', config),
     testAiConnection: () => ipcRenderer.invoke('test-ai-connection'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getAiExplanation: (errorData: { message: string, context?: any }) => ipcRenderer.invoke('get-ai-explanation', errorData),
 });

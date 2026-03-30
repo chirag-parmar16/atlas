@@ -87,52 +87,135 @@ tabManager.createTab(initialUrl);
 // Expose tabManager globally so extras.ts can reach the active webview
 window._atlasTabManager = tabManager;
 
-// 1. Splash Screen Timing Tracking
+// 1. JARVIS Splash Progression Logic
 const atlasStartTime = Date.now();
 let atlasSplashDismissed = false;
+let backendReady = false;
 
-// 2. Initial Handshake Signal Receiver
-// This is called by the Brain (Node.js) once the Security Engine is active.
-(window as any).__atlasProxyReady = (tabId: string) => {
+const splashFill = document.getElementById('splash-progress-fill');
+const splashProgressText = document.getElementById('splash-progress-text');
+const splashStatusText = document.getElementById('splash-status-text');
+const splashFooter = document.querySelector('.progress-footer');
+
+let currentProgress = 0;
+const milestones = [
+    { target: 10,  delay: 200 },
+    { target: 17,  delay: 400 },
+    { target: 26,  delay: 300 },
+    { target: 40,  delay: 600 },
+    { target: 50,  pause: 1200 }, // Processing Pause
+    { target: 80,  pause: 800 },  // Preparing Pause
+    { target: 98,  delay: 1500 },
+    { target: 99,  pause: 2000 }, // Finalizing Pause
+    { target: 100, delay: 500 }
+];
+
+const statusMessages = [
+    "INITIALIZING SANDBOX",
+    "ROUTING PROJECT DOMAIN",
+    "BOOTING SECURE ENVIRONMENT",
+    "ESTABLISHING HANDSHAKE",
+    "OPTIMIZING NETWORK MAPPING"
+];
+
+let mIndex = 0;
+let sIndex = 0;
+
+function rotateStatus() {
     if (atlasSplashDismissed) return;
+    if (splashStatusText) {
+        splashStatusText.textContent = statusMessages[sIndex];
+        sIndex = (sIndex + 1) % statusMessages.length;
+    }
+    setTimeout(rotateStatus, 3000 + Math.random() * 2000);
+}
+rotateStatus();
 
-    const elapsed = Date.now() - atlasStartTime;
-    const minWait = 1000; // Fast-Boot: Reduced from 3s to 1s for better responsiveness
-    const remaining = Math.max(0, minWait - elapsed);
-
-    console.log(`[Atlas] Security Ready for ${tabId}. Smooth transition in ${remaining}ms...`);
-    
-    setTimeout(() => {
-        tabManager.finalizeHandshake(tabId);
-    }, remaining);
-};
-
-// 3. Failsafe Timeout (Max 10s)
-// Ensures the user isn't stuck if the handshake misses a signal.
-setTimeout(() => {
-    if (!atlasSplashDismissed) {
-        console.warn('[Atlas] Initialization timeout (10s). Forcing project load.');
-        // tab-1 is the predictable ID of the first tab created on launch
-        tabManager.finalizeHandshake('tab-1');
+async function runSplashSequence() {
+    for (const m of milestones) {
+        const startVal = currentProgress;
+        const targetVal = m.target;
+        const duration = m.delay || 500;
         
-        // Final fallback to clear UI
+        // Interpolate to milestone
+        const startTime = Date.now();
+        while (Date.now() - startTime < duration) {
+            if (atlasSplashDismissed) return;
+            const elapsed = Date.now() - startTime;
+            const t = elapsed / duration;
+            currentProgress = startVal + (targetVal - startVal) * t;
+            updateUI();
+            await new Promise(r => requestAnimationFrame(r));
+        }
+        
+        currentProgress = targetVal;
+        updateUI();
+
+        // Handle Pauses
+        if (m.pause) {
+            await new Promise(r => setTimeout(r, m.pause));
+        }
+
+        // 99% Milestone - Special Gate
+        if (currentProgress >= 99) {
+            // Wait for backend signal if we arrived early
+            while (!backendReady) {
+                if (splashFooter) splashFooter.textContent = "WAITING FOR ENGINE HANDSHAKE...";
+                await new Promise(r => setTimeout(r, 200));
+            }
+        }
+    }
+
+    // Done! 100% reached and backend is ready.
+    finalizeSplash();
+}
+
+function updateUI() {
+    if (splashFill) splashFill.style.width = `${currentProgress}%`;
+    if (splashProgressText) splashProgressText.textContent = `${currentProgress.toFixed(2)}%`;
+}
+
+function finalizeSplash() {
+    if (atlasSplashDismissed) return;
+    if (splashStatusText) splashStatusText.textContent = "SYSTEM READY";
+    if (splashFooter) splashFooter.textContent = "HANDSHAKE COMPLETE";
+    
+    // Smooth transition: Fade out Splash
+    setTimeout(() => {
         const splash = document.getElementById('atlas-init-splash');
+        const pill = document.getElementById('host-pill');
+        const bottomBar = document.querySelector('.bottom-accent') as HTMLElement;
+
+        if (pill) pill.style.opacity = '1';
+        if (bottomBar) bottomBar.style.opacity = '0.7';
+
         if (splash) {
             splash.style.opacity = '0';
-            setTimeout(() => { splash.remove(); atlasSplashDismissed = true; }, 360);
+            setTimeout(() => { 
+                splash.style.visibility = 'hidden';
+                splash.remove(); 
+                atlasSplashDismissed = true; 
+            }, 1000);
         }
-    }
-}, 10000);
+    }, 800);
+}
 
-// Dismiss init splash on first real URL load
+// Start the sequence immediately
+runSplashSequence();
+
+// 2. Initial Handshake Signal Receiver
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(window as any).__atlasProxyReady = (tabId: string) => {
+    console.log(`[Atlas] Security Backend Ready for ${tabId}. Letting splash sequence finalize.`);
+    backendReady = true;
+    tabManager.finalizeHandshake(tabId);
+};
+
+// Dismiss logic moved to finalizeSplash and runSplashSequence
 tabManager.onUrlChange = (url: string) => {
-    if (url && url !== 'about:blank' && url !== 'ABOUT:BLANK') {
-        const splash = document.getElementById('atlas-init-splash');
-        if (splash && !atlasSplashDismissed) {
-            splash.style.opacity = '0';
-            setTimeout(() => { splash.remove(); atlasSplashDismissed = true; }, 360);
-        }
-    }
+    // We no longer dismiss instantly on URL change. 
+    // We let the 100% animation finish for the "real" feel.
+    console.log(`[Atlas] Navigation detected: ${url}`);
 };
 
 // Listen for main-process new-window interceptions (target="_blank" links)
@@ -159,13 +242,26 @@ function formatDisplayURL(rawUrl: string) {
 }
 
 // Window Control Handlers
-(document.getElementById('win-min-btn') as HTMLElement).onclick = () => window.atlasControls.minimize();
-(document.getElementById('win-max-btn') as HTMLElement).onclick = () => window.atlasControls.maximize();
-(document.getElementById('win-close-btn') as HTMLElement).onclick = () => window.atlasControls.close();
+const minBtn = document.getElementById('win-min-btn');
+if (minBtn) minBtn.onclick = () => window.atlasControls.minimize();
+
+const maxBtn = document.getElementById('win-max-btn');
+if (maxBtn) maxBtn.onclick = () => window.atlasControls.maximize();
+
+const closeBtn = document.getElementById('win-close-btn');
+if (closeBtn) closeBtn.onclick = () => window.atlasControls.close();
+
+// Splash Screen Window Controls
+const splashMinBtn = document.getElementById('splash-min-btn');
+if (splashMinBtn) splashMinBtn.onclick = () => window.atlasControls.minimize();
+
+const splashCloseBtn = document.getElementById('splash-close-btn');
+if (splashCloseBtn) splashCloseBtn.onclick = () => window.atlasControls.close();
 
 // Navigation Handlers
 (document.getElementById('hud-back-btn') as HTMLElement).onclick = () => tabManager.goBack();
-(document.getElementById('hud-fwd-btn') as HTMLElement).onclick = () => tabManager.goForward();
+(document.getElementById('hud-forward-btn') as HTMLElement).onclick = () => tabManager.goForward();
+(document.getElementById('hud-reload-btn') as HTMLElement).onclick = () => tabManager.reload();
 
 // New Tab Button
 document.getElementById('atlas-new-tab-btn')!.onclick = () => tabManager.createTab('about:blank');

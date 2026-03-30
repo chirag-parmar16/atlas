@@ -35,18 +35,18 @@ body {
 
 /* --- SCREENSHOT-PERFECT HUD --- */
 .hud-bar {
-    height: 40px;
-    background: rgba(13, 13, 13, 0.98);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    height: 48px;
+    background: #1c1c1f;
     display: flex;
     align-items: center;
-    padding: 0 12px;
-    z-index: 2147483647;
+    padding: 0 16px;
+    z-index: 100;
     user-select: none;
     -webkit-app-region: drag;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    position: relative;
+    border: none !important; /* Zero borders to prevent light leakage */
+    box-shadow: none !important;
+    margin-top: -1px; 
 }
 
 .hud-nav-btns { 
@@ -78,13 +78,14 @@ body {
 }
 
 .hud-url-bar {
-    flex: 1; display: flex; align-items: center; gap: 8px;
-    background: #18181b; 
-    border: 1px solid #27272a; 
+    flex: 1; display: flex; align-items: center; gap: 10px;
+    background: #27272a; 
+    border: none;
     border-radius: 20px;
-    padding: 0 12px; height: 32px; min-width: 0;
+    padding: 0 16px; height: 36px; min-width: 0;
     -webkit-app-region: no-drag;
-    transition: border-color 0.2s;
+    transition: background 0.2s;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
 }
 .hud-url-bar:hover, .hud-url-bar:focus-within { border-color: #3f3f46; }
 
@@ -109,25 +110,26 @@ body {
 .hud-right { 
     display: flex; 
     align-items: center;
-    height: 100%;
+    height: 100%; /* Center controls vertically */
     -webkit-app-region: no-drag;
-    gap: 4px;
 }
 
 .win-control-btn {
-    background: transparent; border: none; color: #71717a;
-    width: 28px; height: 28px; border-radius: 6px;
+    background: transparent; border: none; color: #a1a1aa;
+    width: 45px; height: 32px; /* Standard Windows button proportion */
+    border-radius: 0;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
-    transition: all 0.15s;
+    transition: background 0.1s, color 0.1s;
+    -webkit-app-region: no-drag;
 }
-.win-control-btn:hover { background: rgba(255,255,255,0.06); color: #fff; }
-.win-control-btn.close:hover { background: #ef4444; color: #fff; }
-.win-control-btn svg { width: 12px; height: 12px; }
+.win-control-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.win-control-btn.close:hover { background: #e81123 !important; color: #fff !important; }
+.win-control-btn svg { width: 10px; height: 10px; stroke-width: 1.5; }
 
-/* Content */
+/* Content area matches new top header total height: 42 + 48 = 90px */
 .main-content {
-    /* Explicit height = 100vh minus HUD (40px) minus Tab Bar (32px) */
-    height: calc(100vh - 72px);
+    margin-top: -1px; /* Overlap HUD bar to prevent 'white line' gaps */
+    height: calc(100vh - 89px); /* Adjusted for -1px overlap of the 90px header */
     min-height: 0;
     background: #000;
     position: relative;
@@ -136,24 +138,28 @@ body {
 }
 
 #atlas-tab-bar {
-    height: 36px;
-    background: rgba(9, 9, 11, 0.98);
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    height: 42px;
+    background: rgba(11, 11, 13, 0.8); /* Glass foundation */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: space-between;
     -webkit-app-region: drag;
     user-select: none;
     flex-shrink: 0;
-    padding-left: 4px;
+    padding-left: 8px;
+    position: relative;
+    z-index: 1000;
 }
 
 .atlas-tab-scroll-container {
     display: flex;
-    align-items: center;
+    align-items: flex-end; 
     overflow-x: auto;
     overflow-y: hidden;
-    gap: 2px;
+    gap: 4px;
+    padding: 0 8px;
     flex: 1;
     height: 100%;
     -webkit-app-region: no-drag;
@@ -164,31 +170,86 @@ body {
 .atlas-tab {
     display: flex;
     align-items: center;
-    gap: 6px;
-    height: 24px;
-    padding: 0 8px;
-    border-radius: 6px;
+    gap: 8px;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 10px 10px 0 0;
     cursor: pointer;
     background: transparent;
-    min-width: 80px;
-    max-width: 180px;
-    flex-shrink: 0;
-    transition: background 0.15s;
-    color: #71717a;
-    font-size: 11px;
+    min-width: 140px;
+    max-width: 220px;
+    flex-shrink: 1;
+    transition: background 0.15s, color 0.1s;
+    color: #94a3b8;
+    font-size: 11.5px;
     font-weight: 500;
-    border: 1px solid transparent;
+    position: relative;
+    margin-right: 0px;
+    z-index: 5;
+    /* Transition for sliding focus feel */
+}
+
+/* Chrome Inactive Separator */
+.atlas-tab::after {
+    content: '';
+    position: absolute;
+    right: 0; 
+    top: 25%; 
+    bottom: 25%;
+    width: 1px;
+    background: rgba(255,255,255,0.12);
+    transition: opacity 0.2s;
+}
+
+.atlas-tab.active::after, 
+.atlas-tab:hover::after,
+.atlas-tab.active + .atlas-tab::after {
+    opacity: 0;
 }
 
 .atlas-tab:hover {
-    background: rgba(255,255,255,0.05);
-    color: #d4d4d8;
+    background: rgba(255,255,255,0.06);
+    color: #e2e8f0;
 }
 
+/* THE PERFECT CHROME 'FEET' */
 .atlas-tab.active {
-    background: rgba(255,255,255,0.08);
+    background: #1c1c1f; 
     color: #fff;
-    border-color: rgba(255,255,255,0.1);
+    z-index: 20;
+}
+
+/* Rounded foot - Left */
+.atlas-tab.active::before {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: -10px;
+    width: 10px;
+    height: 10px;
+    border-bottom-right-radius: 12px;
+    box-shadow: 4px 0 0 0 #1c1c1f;
+    pointer-events: none;
+    z-index: 20;
+}
+
+/* Rounded foot - Right */
+/* We use the same pseudo-element trick but positioned right */
+/* Since ::after was the separator, we overwrite it when active */
+.atlas-tab.active > .foot-right,
+.atlas-tab.active::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    right: -10px;
+    width: 10px;
+    height: 10px;
+    border-bottom-left-radius: 12px;
+    box-shadow: -4px 0 0 0 #1c1c1f;
+    background: transparent;
+    pointer-events: none;
+    z-index: 20;
+    top: auto; /* Reset top from separator style */
 }
 
 .atlas-tab-favicon {
@@ -232,18 +293,19 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%; /* Modern Chrome style circle */
     border: none;
     background: transparent;
     cursor: pointer;
-    color: #52525b;
+    color: #94a3b8;
     flex-shrink: 0;
-    transition: all 0.15s;
-    margin-left: 2px;
+    transition: all 0.2s;
+    margin-left: 6px;
+    margin-bottom: 3px; /* Center with the 34px tabs */
 }
-#atlas-new-tab-btn:hover { background: rgba(255,255,255,0.06); color: #d4d4d8; }
+#atlas-new-tab-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
 
 /* Webview stack inside container */
 .atlas-webview {
@@ -288,6 +350,8 @@ webview {
     transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.2s;
     user-select: none;
     z-index: 20000;
+    opacity: 0; /* Hidden during splash */
+    transition: opacity 0.8s ease, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.2s;
 }
 .pill-btn:hover { border-color: #3f3f46; background: #242427; }
 .pill-btn:active { cursor: grabbing; transform: scale(0.95); }
@@ -420,5 +484,6 @@ webview {
 .bottom-accent {
     position: fixed; bottom: 0; left: 0; width: 100%; height: 10px;
     background: #ffbb00; z-index: 10000; pointer-events: none;
-    opacity: 0.7;
+    opacity: 0; /* Hidden during splash */
+    transition: opacity 0.8s ease;
 }

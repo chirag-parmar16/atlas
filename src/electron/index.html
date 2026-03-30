@@ -7,68 +7,170 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';">
     <link rel="stylesheet" href="./renderer.css">
     <style>
-        /* ── Atlas Init Splash ─────────────────────────────────────────────── */
+        /* ── Atlas JARVIS Splash ── */
+
+        .hud-container {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* JARVIS HUD Rings - Refined for Spacing and Detail */
+        .hud-svg {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+        }
+        .hud-ring {
+            fill: none;
+            stroke: #39ff14;
+            stroke-width: 1.2;
+            stroke-linecap: butt;
+            transform-origin: center;
+            opacity: 0.5;
+        }
+        .ring-inner {
+            stroke-width: 2;
+            stroke-dasharray: 20, 200;
+            animation: spin 6s linear infinite;
+        }
+        .ring-mid {
+            stroke-width: 1;
+            stroke-dasharray: 5, 15, 60, 40;
+            animation: spin-reverse 15s linear infinite;
+            opacity: 0.3;
+        }
+        .ring-outer {
+            stroke-width: 0.8;
+            stroke-dasharray: 2, 4;
+            animation: spin 40s linear infinite;
+            opacity: 0.2;
+        }
+        /* Data Ticks (HUD visual complexity) */
+        .ring-ticks {
+            stroke-dasharray: 1, 19;
+            stroke-width: 6;
+            opacity: 0.4;
+        }
+        .ring-scanner {
+            stroke-width: 4;
+            stroke: #39ff14;
+            stroke-dasharray: 100, 1000;
+            filter: blur(2px);
+            animation: spin 5s ease-in-out infinite;
+            opacity: 0.6;
+        }
+
+        /* Atlas Logo - Fixed Spacing */
+        .splash-title {
+            font-size: 52px;
+            font-family: 'Inter', monospace;
+            font-style: italic;
+            font-weight: 900;
+            color: #39ff14;
+            letter-spacing: 12px;
+            text-shadow: 0 0 15px rgba(57, 255, 20, 0.6);
+            z-index: 10;
+            pointer-events: none;
+            margin-left: 10px; /* Precise offset */
+        }
+
+        /* Progress - Premium Styling */
+        .progress-hud {
+            margin-top: 40px;
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            letter-spacing: 0.25em;
+            color:rgba(57, 255, 20, 0.7);
+        }
+        .progress-track {
+            height: 1px;
+            background: rgba(57, 255, 20, 0.08);
+            position: relative;
+        }
+        .progress-fill {
+            position: absolute;
+            top: 0; left: 0; bottom: 0;
+            width: 0%;
+            background: #39ff14;
+            box-shadow: 0 0 10px #39ff14;
+            transition: width 0.3s linear;
+        }
+        .progress-footer {
+            display: flex;
+            justify-content: center;
+            font-size: 8px;
+            letter-spacing: 0.4em;
+            color: #39ff14;
+            opacity: 0.5;
+            text-transform: uppercase;
+        }
+
+        /* Immersion Layer: Shell remains visible, only content loads */
+        #atlas-hud-chrome {
+            opacity: 1; /* Shell is always visible now */
+            transition: opacity 1.2s ease;
+        }
+
         #atlas-init-splash {
-            position: fixed;
-            inset: 0;
-            z-index: 99999;
-            background: #0d0d0f;
+            position: absolute;
+            top: 89px; /* Seamless 1px Overlap with HUD (90px) to prevent 'white line' gaps */
+            left: 0; right: 0; bottom: 0;
+            z-index: 5000;
+            background: radial-gradient(circle at center, #070707 0%, #000 100%);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 18px;
-            transition: opacity 0.35s ease;
-            -webkit-app-region: drag;
+            transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.8s;
             user-select: none;
+            color: #39ff14;
         }
-        #atlas-init-splash .splash-logo {
-            color: #10b981;
-            animation: splash-pulse 2s ease-in-out infinite;
-        }
-        #atlas-init-splash .splash-name {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            font-size: 22px;
-            font-weight: 700;
-            color: #e2e8f0;
-            letter-spacing: 0.04em;
-        }
-        #atlas-init-splash .splash-status {
-            font-family: monospace;
-            font-size: 11px;
-            color: #10b981;
-            letter-spacing: 0.14em;
-            text-transform: uppercase;
-            opacity: 0.8;
-        }
-        #atlas-init-splash .splash-dots::after {
-            content: '';
-            animation: splash-ellipsis 1.4s steps(1, end) infinite;
-        }
-        @keyframes splash-pulse {
-            0%, 100% { opacity: 1;   transform: scale(1);    }
-            50%       { opacity: 0.6; transform: scale(0.95); }
-        }
-        @keyframes splash-ellipsis {
-            0%   { content: ''; }
-            33%  { content: '.'; }
-            66%  { content: '..'; }
-            100% { content: '...'; }
-        }
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes spin-reverse { 100% { transform: rotate(-360deg); } }
+
     </style>
 </head>
 <body>
-    <!-- ── INIT SPLASH: shown while webview is still about:blank ────────── -->
+    <!-- ── INIT SPLASH: JARVIS ENGINE INTERFACE ────────── -->
     <div id="atlas-init-splash">
-        <div class="splash-logo">
-            <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                <line x1="12" y1="22.08" x2="12" y2="12"/>
+        <!-- Minimal HUD-only interface (Window controls are in the main UI underneath) -->
+        <div class="hud-container">
+            <svg class="hud-svg" viewBox="0 0 400 400">
+                <circle class="hud-ring ring-outer" cx="200" cy="200" r="190" />
+                <circle class="hud-ring ring-mid" cx="200" cy="200" r="160" />
+                <circle class="hud-ring ring-inner" cx="200" cy="200" r="125" />
+                <circle class="hud-ring ring-ticks" cx="200" cy="200" r="140" />
+                <circle class="hud-ring ring-scanner" cx="200" cy="200" r="190" />
             </svg>
+            <div class="splash-title">ATLAS</div>
         </div>
-        <div class="splash-name">Atlas</div>
-        <div class="splash-status">Atlas is initializing<span class="splash-dots"></span></div>
+
+        <div class="progress-hud">
+            <div class="progress-header">
+                <span id="splash-status-text">INITIALIZING CORE...</span>
+                <span id="splash-progress-text">0.00%</span>
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill" id="splash-progress-fill"></div>
+            </div>
+            <div class="progress-footer">
+                SECURE HANDSHAKE PENDING
+            </div>
+        </div>
     </div>
 
     <!-- ── MAIN HUD CHROME: hidden until proxy is ready ────────────────── -->
@@ -82,23 +184,26 @@
         </div>
         <div class="hud-right">
             <button class="win-control-btn" id="win-min-btn" title="Minimize">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <svg width="10" height="10" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
             </button>
             <button class="win-control-btn" id="win-max-btn" title="Maximize">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0,0v10h10V0H0z M9,9H1V1h8V9z" fill="currentColor"/></svg>
             </button>
             <button class="win-control-btn close" id="win-close-btn" title="Close Session">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                <svg width="10" height="10" viewBox="0 0 10 10"><path d="M10,0.7L9.3,0L5,4.3L0.7,0L0,0.7L4.3,5L0,9.3L0.7,10L5,5.7l4.3,4.3l0.7,-0.7L5.7,5L10,0.7z" fill="currentColor"/></svg>
             </button>
         </div>
     </div>
     <div class="hud-bar">
         <div class="hud-nav-btns">
-            <button class="hud-nav-btn" id="hud-back-btn" title="Go Back">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            <button class="hud-nav-btn" id="hud-back-btn" title="Back">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
             </button>
-            <button class="hud-nav-btn" id="hud-fwd-btn" title="Go Forward">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            <button class="hud-nav-btn" id="hud-forward-btn" title="Forward">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button class="hud-nav-btn" id="hud-reload-btn" title="Reload">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
             </button>
         </div>
         <div class="hud-label">

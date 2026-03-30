@@ -60,6 +60,7 @@ export class AiService {
     /**
      * Provide a real-time explanation for a specific error.
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     public async explainError(message: string, context?: any): Promise<string | null> {
         if (!this.model) return null;
 
