@@ -64,8 +64,10 @@ export class ProxyEngine {
     public async handleRequest(request: HTTPRequest, page: Page, lastNavPath: string): Promise<boolean> {
         // 0. Initialization Gate: Hold the very first document request until Atlas is "Ready"
         // This prevents the "Raw Render" before TabID/Auth/Handshake is complete.
+        // Fast-Boot: Added a 2s timeout failsafe to avoid the "30s hang" if HUD is slow.
         if (!this.initializationComplete && request.isNavigationRequest() && request.resourceType() === 'document') {
-            await this.initPromise;
+            const gateTimeout = new Promise(resolve => setTimeout(resolve, 2000));
+            await Promise.race([this.initPromise, gateTimeout]);
         }
 
         const urlString = request.url();

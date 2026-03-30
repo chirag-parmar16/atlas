@@ -51,20 +51,19 @@ export function startServer(projectPath: string, onLog: (msg: string) => void = 
                     await spawnAsync('npm', ['install'], projectPath, onLog);
                 }
 
-                // 2. Build
+                // 2. Build (OPTIMIZATION: Skip building in Atlas Run for Instant-On speed)
+                // Users can build manually, but for a Sandbox session, we prioritize dev mode.
+                /* 
                 const pkg = JSON.parse(fs.readFileSync(path.join(projectPath, 'package.json'), 'utf-8'));
                 if (pkg.scripts) {
                     if (pkg.scripts.build) {
                         onLog("[Atlas] Building project...");
                         await spawnAsync('npm', ['run', 'build'], projectPath, onLog);
-                    } else if (pkg.scripts['build-client']) {
-                        onLog("[Atlas] Building client...");
-                        await spawnAsync('npm', ['run', 'build-client'], projectPath, onLog);
-                    } else if (pkg.scripts['build:all']) {
-                        onLog("[Atlas] Building all...");
-                        await spawnAsync('npm', ['run', 'build:all'], projectPath, onLog);
                     }
+                    // ... other build scripts
                 }
+                */
+                const pkg = JSON.parse(fs.readFileSync(path.join(projectPath, 'package.json'), 'utf-8'));
 
                 // 3. Start
                 let cmd = 'npm';

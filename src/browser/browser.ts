@@ -40,20 +40,28 @@ export interface PipelineEventPayload {
 // UI Suite (Structured)
 
 
-export async function launchBrowser(domain: string, localPort: number, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = [], projectName: string = '', engineConfig: { strictMode?: boolean, basePath?: string, allowedRoutes?: string[], appUrl?: string } = {}): Promise<{
+export async function launchBrowser(domain: string, localPortOrPromise: number | Promise<number>, projectPath: string, logger: (msg: string) => void = console.log, onBrowserClose?: () => void, disabledTabs: string[] = [], projectName: string = '', engineConfig: { strictMode?: boolean, basePath?: string, allowedRoutes?: string[], appUrl?: string } = {}): Promise<{
     broadcastLog: (msg: string) => void,
     close: () => Promise<void>,
     process: ChildProcess,
     reportManager: ReportManager
 }> {
     console.log('[Atlas] Launching Browser Orchestrator...');
-    const reportManager = new ReportManager(projectPath, `localhost:${localPort}`);
+    const localPortPromise = typeof localPortOrPromise === 'number' ? Promise.resolve(localPortOrPromise) : localPortOrPromise;
+    
+    // We'll resolve the actual port as soon as possible for reporting.
+    let resolvedPort = 0;
+    localPortPromise.then(p => resolvedPort = p).catch(() => {});
+
+    const reportManager = new ReportManager(projectPath, `localhost:${resolvedPort}`);
     let browser: Browser;
     let electronProcess: ChildProcess;
     let electronDebugPort: number;
 
     try {
-        const electronResult = await launchElectron(domain, localPort, projectName, disabledTabs);
+        // Use a placeholder for Electron launch if port is still pending
+        const initialPort = resolvedPort || 3000; 
+        const electronResult = await launchElectron(domain, initialPort, projectName, disabledTabs);
         electronProcess = electronResult.electronProcess;
         electronDebugPort = electronResult.debugPort;
 
@@ -299,9 +307,13 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         // ─── PHASE 1: Attach network interceptor IMMEDIATELY ──────────────────────
         // CRITICAL: Must happen before any navigation.
         await targetPage.setCacheEnabled(true);
+        
+        // Wait for the actual server port before attaching the interceptor
+        const finalPort = await localPortPromise;
+
         const netInterceptor = createNetworkInterceptor(targetPage, { 
             domain, 
-            localPort,
+            localPort: finalPort,
             strictMode: engineConfig.strictMode,
             basePath: engineConfig.basePath,
             allowedRoutes: engineConfig.allowedRoutes,
@@ -315,36 +327,42 @@ export async function launchBrowser(domain: string, localPort: number, projectPa
         
         // Critical: Wait for network engine to be READY.
         await netInterceptor.init();
+        // Fast-Boot: Signal initialized IMMEDIATELY to unlock the Proxy Gate.
         netInterceptor.setInitialized();
 
-        // ─── PHASE 2: Parallel Setup ──────────────────────────────────────────
-        // Run non-critical telemetry and bridge setup in the background to speed up startup.
+        // ─── PHASE 2: Signal Host & Setup ──────────────────────────────────────────
+        // Critical Handshake: Let the Host know we are ready to serve this page safely.
         (async () => {
             try {
-                // Resolve tab ID (Optimization: max 250ms lookup)
-                for (let i = 0; i < 5; i++) {
+                // Resolve tab ID (Optimization: max 5s lookup to handle cold boots)
+                for (let i = 0; i < 100; i++) {
                     tabId = await targetPage.evaluate(() => (window as { __atlasTabId?: string }).__atlasTabId) || '';
                     if (tabId) break;
+                    
+                    // First Tab Fast-Track: If this is the cold boot tab, don't wait for ID sync.
+                    // The Host already knows it's 'tab-1'.
+                    if (i > 10 && processedTargets.size <= 1) {
+                        tabId = 'tab-1';
+                        break;
+                    }
                     await new Promise(r => setTimeout(r, 50));
                 }
 
                 if (tabId) {
                     pageToTabId.set(targetPage, tabId);
                     
-                    // Final Handshake check: Did the host UI provide a target URL for this tabId?
-                    // 2-Way Update: We now explicitly tell the Host that THIS tab is ready.
-                    // The Host (renderer.ts) then handles the navigation logic and splash removal.
+                    // Final Handshake: Notify Host UI that THIS tab is secure and ready to load.
                     await mainWindow.evaluate((tid) => {
                         // @ts-ignore
                         if (window.__atlasProxyReady) window.__atlasProxyReady(tid);
                     }, tabId).catch(() => {});
                 }
             } catch (e) {
-                // Page might have closed or navigated - safe to ignore background errors
+                // Page might have closed or navigated - safe to ignore
             }
         })();
-        console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}. Signaling Proxy initialization.`);
         
+        console.log(`[Atlas] [DEBUG] Mapped page ${targetPage.url()} to tabId: ${tabId}. Signaling Proxy initialization.`);
         pageInitializationInProgress.delete(targetPage);
 
 

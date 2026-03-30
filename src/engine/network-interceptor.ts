@@ -131,7 +131,11 @@ export function createNetworkInterceptor(
     };
 
     return {
-        init: async () => { await exposeControls(); await attach(page); },
+        init: async () => { 
+            // Parallelize HUD setup (slow) and Proxy activation (fast)
+            exposeControls().catch(e => console.error('[Atlas] HUD Exposure delayed:', e));
+            await attach(page); 
+        },
         attach,
         cleanup: async () => { isCleanedUp = true; },
         setSecurityMode: (m: unknown) => {

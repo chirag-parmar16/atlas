@@ -97,7 +97,7 @@ let atlasSplashDismissed = false;
     if (atlasSplashDismissed) return;
 
     const elapsed = Date.now() - atlasStartTime;
-    const minWait = 3000; // User wants at least 3s for smoothness
+    const minWait = 1000; // Fast-Boot: Reduced from 3s to 1s for better responsiveness
     const remaining = Math.max(0, minWait - elapsed);
 
     console.log(`[Atlas] Security Ready for ${tabId}. Smooth transition in ${remaining}ms...`);
