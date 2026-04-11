@@ -92,7 +92,10 @@
     "localhost",
     "devtools"
   ],
-  "author": "Chirag Parmar",
+  "author": {
+    "name": "Chirag Parmar",
+    "email": "chirag.parmar16@example.com"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
