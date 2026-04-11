@@ -11,7 +11,7 @@ import path from 'path';
 program
     .name('atlas')
     .description('Atlas — Standalone Electron sandbox for web development')
-    .version('1.0.1')
+    .version('1.0.2')
     .option('-d, --disable <tabs>', 'Disable specific UI tabs (comma-separated)')
     .option('-e, --enable <tabs>', 'Enable specific UI tabs (comma-separated)');
 

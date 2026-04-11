@@ -1,3 +1,22 @@
+# 🗺️ Atlas v1.0.2 — Cross-Platform Compatibility Release
+
+> Full support for macOS and Linux, powered by GitHub Actions.
+
+This update resolves critical bugs that prevented Atlas from launching and installing correctly on macOS and Linux systems, ensuring a consistent developer experience across all major operating systems.
+
+---
+
+## 🐛 Bug Fixes & Cross-Platform Support
+
+- ✅ **Fixed hardcoded Windows executables**: The `atlas` CLI wrapper now correctly detects macOS and Linux and resolves the correct Electron binary (`Atlas-Sandbox.app` or `atlas-sandbox`) instead of crashing while looking for `.exe`.
+- ✅ **Fixed npm binary registration**: `package.json` now registers the cross-platform bash wrapper instead of the Windows-only `.cmd` script.
+- ✅ **Fixed startup crashes on Unix**: Replaced the Windows-only `\\.\CON` device path with a cross-platform approach (`/dev/tty` for macOS/Linux) when reading from detached standard input.
+- ✅ **Added macOS/Linux CI/CD pipelines**: Re-configured GitHub Actions to automatically run `electron-builder` on `macos-latest` and `ubuntu-latest`, generating native `.dmg`, `.AppImage`, and `.deb` releases.
+- ✅ **Dynamic User-Agent**: The Atlas browser now correctly reports the true host operating system in its User-Agent string instead of hardcoding `Windows NT`.
+- ✅ **macOS PATH helper**: Added a post-install hook that symlinks the `atlas` CLI command into `/usr/local/bin/atlas` after installing from the `.dmg`.
+
+---
+
 # 🗺️ Atlas v1.0.1 — First Official Release
 
 > The Electron-Powered Standalone Sandbox for Universal Web Development.

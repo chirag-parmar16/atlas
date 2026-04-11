@@ -18,13 +18,25 @@ async function readConsole(promptText: string): Promise<string> {
             return;
         }
 
-        // Fallback for packaged Electron Windows apps where stdin/stdout is detached
+        // Fallback for packaged Electron apps where stdin/stdout is detached
         try {
-            const fd = fs.openSync('\\\\.\\CON', 'rs');
-            const buf = Buffer.alloc(512);
-            const bytesRead = fs.readSync(fd, buf, 0, 512, null);
-            fs.closeSync(fd);
-            resolve(buf.toString('utf8', 0, bytesRead).trim());
+            let inputStr = '';
+            if (process.platform === 'win32') {
+                // Windows-only console device
+                const fd = fs.openSync('\\\\.\\CON', 'rs');
+                const buf = Buffer.alloc(512);
+                const bytesRead = fs.readSync(fd, buf, 0, 512, null);
+                fs.closeSync(fd);
+                inputStr = buf.toString('utf8', 0, bytesRead).trim();
+            } else {
+                // macOS / Linux: use /dev/tty
+                const fd = fs.openSync('/dev/tty', 'rs');
+                const buf = Buffer.alloc(512);
+                const bytesRead = fs.readSync(fd, buf, 0, 512, null);
+                fs.closeSync(fd);
+                inputStr = buf.toString('utf8', 0, bytesRead).trim();
+            }
+            resolve(inputStr);
         } catch (e) {
             // Absolute worst-case fallback, though CON should always work on Windows
             console.error('\n\x1b[31m[Error] Cannot read from console. Please run this command from a standard terminal.\x1b[0m');

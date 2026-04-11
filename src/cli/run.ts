@@ -68,7 +68,7 @@ export async function run() {
     console.log(NEON_GREEN.bold(`   /   |/_  __/ /   /   | / __/`));
     console.log(NEON_GREEN.bold(`  / /| | / / / /   / /| | \\ \\  `));
     console.log(NEON_GREEN.bold(` / ___ |/ / / /___/ ___ |__/ / `));
-    console.log(NEON_GREEN.bold(`/_/  |_/_/ /_____/_/  |_|___/  `) + GRAY(' v1.0.1 (Fast Boot)'));
+    console.log(NEON_GREEN.bold(`/_/  |_/_/ /_____/_/  |_|___/  `) + GRAY(' v1.0.2 (Fast Boot)'));
     console.log(GRAY('   ────────────────────────────────────────────────────────'));
 
     const configPath = path.join(projectPath, 'atlas.config.json');

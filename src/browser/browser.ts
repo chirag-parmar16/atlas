@@ -187,7 +187,12 @@ export async function launchBrowser(domain: string, localPortOrPromise: number |
         }
     };
 
-    const userAgentStr = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36';
+    const osPlatform = process.platform === 'darwin'
+        ? 'Macintosh; Intel Mac OS X 10_15_7'
+        : process.platform === 'linux'
+        ? 'X11; Linux x86_64'
+        : 'Windows NT 10.0; Win64; x64';
+    const userAgentStr = `Mozilla/5.0 (${osPlatform}) ATLAS/1.0 Chrome/120.0.0.0 Safari/537.36`;
 
     // Initialize Collectors
     const cleanupLinkScanner = startLinkScanner(

@@ -1,9 +1,29 @@
 #!/bin/bash
+# Atlas CLI — Unix/macOS wrapper
+# Detects the correct Electron binary for the current platform.
+
 export FORCE_COLOR=1
 export ELECTRON_RUN_AS_NODE=1
 export ATLAS_PACKAGED=true
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# macOS/Linux paths would be different, but assuming Windows installer target primarily right now
-"$DIR/Atlas-Sandbox.exe" "$DIR/resources/app.asar/dist/atlas.js" "$@"
+# Resolve the correct Electron binary per platform
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS: Electron is packaged as an .app bundle
+    ELECTRON_BIN="$DIR/Atlas-Sandbox.app/Contents/MacOS/Atlas-Sandbox"
+elif [[ "$OSTYPE" == "linux"* ]]; then
+    # Linux: AppImage or raw binary (no .exe)
+    ELECTRON_BIN="$DIR/atlas-sandbox"
+else
+    # Fallback for other Unix-like systems
+    ELECTRON_BIN="$DIR/Atlas-Sandbox"
+fi
+
+if [ ! -f "$ELECTRON_BIN" ] && [ ! -x "$ELECTRON_BIN" ]; then
+    echo "[Atlas] Error: Could not find Electron binary at: $ELECTRON_BIN" >&2
+    echo "[Atlas] Please reinstall Atlas." >&2
+    exit 1
+fi
+
+"$ELECTRON_BIN" "$DIR/resources/app.asar/dist/atlas.js" "$@"
