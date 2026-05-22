@@ -221,24 +221,40 @@ Atlas is built with a **layered event-driven architecture**. The Electron shell 
 │  ├─ electron-main.ts         App lifecycle & native IPC  │
 │  └─ renderer.ts              HUD Overlay (Shadow DOM)    │
 ├──────────────────────────────────────────────────────────┤
-│  Layer 6: UI (9 Dynamic Tool Panels + Drag & Drop Pill)  │
+│  Layer 6: UI (9 Dynamic Tool Panels + Drag & Drop Pill)    │
 ├──────────────────────────────────────────────────────────┤
 │  Layer 7: Collectors (link-scanner, storage-metrics)     │
 └──────────────────────────────────────────────────────────┘
 ```
 
+### Core Abstractions (God Nodes)
+
+| Component | Edges | Responsibility |
+|:----------|:-----:|:--------------|
+| **TabManager** | 17 | Central tab state management, data isolation |
+| **ReportManager** | 10 | Journey report generation (JSON + Markdown) |
+| **ProxyEngine** | 9 | CDP proxy + domain masking |
+| **ReportTabManager** | 9 | Report-specific tab operations |
+| **Pipeline** | 8 | Typed EventEmitter connecting Engine ↔ Transport ↔ UI |
+| **launchBrowser()** | 7 | Electron browser orchestration |
+| **ConfigManager** | 7 | Configuration loading and validation |
+| **SecurityScanner** | 7 | PII detection + CORS validation |
+| **AiService** | 6 | AI/ML service integration |
+| **$()** | 6 | DOM query utility |
+
+### Module Responsibilities
+
 | Component                | Responsibility                                                                |
-| :----------------------- | :---------------------------------------------------------------------------- |
-| **CLI**                  | Orchestrates env setup, server spawning, process cleanup, tab config          |
+| :----------------------- | :--------------------------------------------------------------------------- |
+| **CLI**                  | Orchestrates env setup, server spawning, processcleanup, tab config          |
 | **Server Manager**       | Auto-detect project, install deps, build, spawn server, health check          |
 | **Browser Orchestrator** | Launch Electron (kiosk), connect CDP, wire Pipeline, attach all modules       |
 | **Network Interceptor**  | CDP request interception, domain proxy, chaos injection, PII/perf scanning    |
 | **Security Warden**      | Pure functions for PII regex scanning and CORS header checking                |
 | **Performance Tracker**  | Rolling average latency with bounded LRU, anomaly detection                   |
-| **Pipeline**             | Typed EventEmitter connecting Engine ↔ Transport ↔ UI (50 max listeners)      |
 | **Report Manager**       | In-memory tree-structured journal, periodic flush, Markdown report generation |
 | **Session Recorder**     | `puppeteer-screen-recorder` + `ffmpeg` for multi-part video capture           |
-| **Transport**            | Shadow DOM injection, WebSocket broadcasting, action routing, static serving  |
+| **Transport**            | Shadow DOM injection, WebSocket broadcasting, action routing, static serving          |
 
 ---
 
